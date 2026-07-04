@@ -49,6 +49,8 @@ final class Note {
     var originalText: String = ""
     var audioFileName: String?
     var duration: TimeInterval?
+    /// True while a voice note is still being transcribed in the background.
+    var isTranscribing: Bool = false
 
     var polishedText: String?
     var polishStyleRaw: String?

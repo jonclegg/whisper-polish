@@ -84,7 +84,10 @@ struct NotesListView: View {
         }
         .task {
             guard hasCompletedSetup else { return }
-            async let _ = transcription.prepare()
+            // Unstructured task: an `async let` here would be cancelled the
+            // moment this scope exits, killing the warm-up right after launch.
+            Task { await transcription.prepare() }
+            resetOrphanedTranscriptions()
             if recordOnLaunch && !didAutoRecord {
                 didAutoRecord = true
                 showRecorder = true
@@ -134,6 +137,14 @@ struct NotesListView: View {
         }
         modelContext.delete(note)
     }
+
+    /// Notes stuck in `isTranscribing` from a previous run (app killed mid-job)
+    /// flip back to the normal empty/retry state.
+    private func resetOrphanedTranscriptions() {
+        for note in notes where note.isTranscribing {
+            note.isTranscribing = false
+        }
+    }
 }
 
 struct NoteCard: View {
@@ -145,11 +156,21 @@ struct NoteCard: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
-            Text(note.originalText.isEmpty ? "No text detected. Tap to retry." : note.originalText)
-                .font(.subheadline)
-                .foregroundStyle(note.originalText.isEmpty ? .secondary : .primary)
-                .lineLimit(4)
-                .multilineTextAlignment(.leading)
+            if note.isTranscribing {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Transcribing…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text(note.originalText.isEmpty ? "No text detected. Tap to retry." : note.originalText)
+                    .font(.subheadline)
+                    .foregroundStyle(note.originalText.isEmpty ? .secondary : .primary)
+                    .lineLimit(4)
+                    .multilineTextAlignment(.leading)
+            }
 
             HStack(spacing: 8) {
                 if let style = note.polishStyle, note.isPolished {

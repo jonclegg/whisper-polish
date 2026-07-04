@@ -64,7 +64,14 @@ struct NoteDetailView: View {
                         }
                     }
 
-                    if note.originalText.isEmpty && !showingPolished {
+                    if note.isTranscribing {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Transcribing…")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if note.originalText.isEmpty && !showingPolished {
                         emptyTranscript
                     } else {
                         Text(visibleText)
