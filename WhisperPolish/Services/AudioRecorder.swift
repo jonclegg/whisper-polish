@@ -12,6 +12,19 @@ final class AudioRecorder {
     private var timer: Timer?
     private var fileURL: URL?
 
+    static let levelWindowSize = 40
+    /// The meter reports full scale before it has processed real audio, and
+    /// the mic's auto-gain settles during the first fraction of a second —
+    /// both would draw a spurious burst of tall bars when recording starts.
+    static let meterWarmUp: TimeInterval = 0.3
+
+    /// Maps a metered dBFS reading (-160...0) to a 0...1 bar level,
+    /// treating anything inside the warm-up window as silence.
+    static func normalizedLevel(fromDb db: Float, at time: TimeInterval) -> Float {
+        guard time >= meterWarmUp else { return 0 }
+        return max(0, min(1, (db + 50) / 50))
+    }
+
     static func requestPermission() async -> Bool {
         await AVAudioApplication.requestRecordPermission()
     }
@@ -42,18 +55,18 @@ final class AudioRecorder {
         self.recorder = recorder
         self.fileURL = url
         self.elapsed = 0
-        self.levels = []
+        // Pre-fill with silence so the waveform is full-width from the first
+        // frame instead of growing bar by bar from the center.
+        self.levels = Array(repeating: 0, count: Self.levelWindowSize)
         self.isRecording = true
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self, let recorder = self.recorder else { return }
             recorder.updateMeters()
             self.elapsed = recorder.currentTime
-            // averagePower is dBFS (-160...0); map -50...0 dB to 0...1.
             let db = recorder.averagePower(forChannel: 0)
-            let level = max(0, min(1, (db + 50) / 50))
-            self.levels.append(level)
-            if self.levels.count > 40 { self.levels.removeFirst() }
+            self.levels.append(Self.normalizedLevel(fromDb: db, at: recorder.currentTime))
+            if self.levels.count > Self.levelWindowSize { self.levels.removeFirst() }
         }
     }
 
