@@ -101,6 +101,8 @@ struct SettingsView: View {
             case .downloading(let fraction):
                 ProgressView(value: fraction)
                     .frame(width: 60)
+            case .optimizing:
+                ProgressView()
             case .ready where transcription.loadedEngine == engine:
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Color.polishTeal)

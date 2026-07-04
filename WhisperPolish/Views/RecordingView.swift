@@ -49,7 +49,8 @@ struct RecordingView: View {
                 }
             case .transcribing:
                 VStack(spacing: 16) {
-                    if case .downloading(let fraction) = transcription.state {
+                    switch transcription.state {
+                    case .downloading(let fraction):
                         ProgressView(value: fraction)
                             .tint(.polishTeal)
                             .padding(.horizontal, 60)
@@ -58,7 +59,13 @@ struct RecordingView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
-                    } else {
+                    case .optimizing:
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Optimizing model for your device…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    default:
                         ProgressView()
                             .controlSize(.large)
                         Text("Transcribing…")

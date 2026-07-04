@@ -101,6 +101,16 @@ struct OnboardingView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+        case .optimizing:
+            VStack(spacing: 8) {
+                ProgressView()
+                Text("Optimizing model for your device…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Almost there — this runs once.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         case .ready where transcription.loadedEngine == transcription.selectedEngine:
             primaryButton("Continue") { step = 1 }
         case .failed(let message):

@@ -39,8 +39,10 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
 final class TranscriptionService {
     enum State: Equatable {
         case idle
-        /// Download/load in progress; fraction is 0...1 when known.
+        /// Downloading model files from the mirror; fraction is 0...1 when known.
         case downloading(Double?)
+        /// Files are local; CoreML is compiling them onto the Neural Engine.
+        case optimizing
         case ready
         case failed(String)
 
@@ -83,10 +85,15 @@ final class TranscriptionService {
         do {
             switch engine {
             case .parakeet:
-                let models = try await AsrModels.downloadAndLoad(progressHandler: { [weak self] progress in
-                    let fraction = progress.fractionCompleted
-                    Task { @MainActor in self?.noteProgress(fraction) }
-                })
+                // Pull from our CloudFront mirror into FluidAudio's cache dir.
+                // Byte-accurate progress; FluidAudio then loads from cache offline.
+                if !ModelMirror.isComplete() {
+                    try await ModelMirror.download { [weak self] fraction in
+                        Task { @MainActor in self?.noteDownload(fraction) }
+                    }
+                }
+                state = .optimizing
+                let models = try await AsrModels.downloadAndLoad()
                 let manager = AsrManager(config: .default)
                 try await manager.loadModels(models)
                 parakeet = manager
@@ -94,8 +101,9 @@ final class TranscriptionService {
             case .whisper:
                 let folder = try await WhisperKit.download(variant: engine.whisperVariant, progressCallback: { [weak self] progress in
                     let fraction = progress.fractionCompleted
-                    Task { @MainActor in self?.noteProgress(fraction) }
+                    Task { @MainActor in self?.noteDownload(fraction) }
                 })
+                state = .optimizing
                 let config = WhisperKitConfig(
                     model: engine.whisperVariant,
                     modelFolder: folder.path,
@@ -112,7 +120,7 @@ final class TranscriptionService {
         }
     }
 
-    private func noteProgress(_ fraction: Double) {
+    private func noteDownload(_ fraction: Double) {
         if state.isDownloading {
             state = .downloading(fraction)
         }
