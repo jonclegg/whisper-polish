@@ -101,6 +101,8 @@ struct OnboardingView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
         case .optimizing:
             VStack(spacing: 8) {
                 ProgressView()
@@ -111,6 +113,8 @@ struct OnboardingView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
         case .ready where transcription.loadedEngine == transcription.selectedEngine:
             primaryButton("Continue") { step = 1 }
         case .failed(let message):
@@ -119,10 +123,12 @@ struct OnboardingView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .lineLimit(3)
+                    .multilineTextAlignment(.center)
                 primaryButton("Retry download") {
                     Task { await transcription.prepare() }
                 }
             }
+            .frame(maxWidth: .infinity)
         default:
             primaryButton("Download \(TranscriptionEngine(rawValue: engineRaw)?.displayName ?? "")") {
                 Task { await transcription.prepare() }

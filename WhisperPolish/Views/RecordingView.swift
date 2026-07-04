@@ -16,7 +16,6 @@ struct RecordingView: View {
     enum Phase {
         case starting
         case recording
-        case transcribing
     }
 
     var body: some View {
@@ -46,32 +45,6 @@ struct RecordingView: View {
                     Text("Transcribing on-device · Parakeet V3")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-            case .transcribing:
-                VStack(spacing: 16) {
-                    switch transcription.state {
-                    case .downloading(let fraction):
-                        ProgressView(value: fraction)
-                            .tint(.polishTeal)
-                            .padding(.horizontal, 60)
-                        Text(fraction.map { "Downloading transcription model… \(Int($0 * 100))%" }
-                             ?? "Downloading transcription model…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    case .optimizing:
-                        ProgressView()
-                            .controlSize(.large)
-                        Text("Optimizing model for your device…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    default:
-                        ProgressView()
-                            .controlSize(.large)
-                        Text("Transcribing…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
                 }
             }
 
@@ -122,26 +95,30 @@ struct RecordingView: View {
         }
     }
 
+    /// Stop is instant: the note appears immediately and transcription
+    /// finishes in the background (the model warm-up usually beat us here).
     private func stopAndTranscribe() {
         guard let recorded = recorder.stop() else {
             dismiss()
             return
         }
-        phase = .transcribing
-        Task {
+        let note = Note(
+            source: .voice,
+            originalText: "",
+            audioFileName: recorded.url.lastPathComponent,
+            duration: recorded.duration
+        )
+        note.isTranscribing = true
+        modelContext.insert(note)
+        dismiss()
+        onComplete(note)
+        Task { @MainActor in
             let text = (try? await transcription.transcribe(url: recorded.url)) ?? ""
-            let note = Note(
-                source: .voice,
-                originalText: text,
-                audioFileName: recorded.url.lastPathComponent,
-                duration: recorded.duration
-            )
-            modelContext.insert(note)
+            note.originalText = text
+            note.isTranscribing = false
             if autoCopy && !text.isEmpty {
                 UIPasteboard.general.string = text
             }
-            dismiss()
-            onComplete(note)
         }
     }
 }
