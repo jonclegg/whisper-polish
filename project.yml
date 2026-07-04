@@ -1,0 +1,53 @@
+name: WhisperPolish
+options:
+  bundleIdPrefix: com.jonclegg
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    from: 0.12.4
+targets:
+  WhisperPolish:
+    type: application
+    platform: iOS
+    sources:
+      - WhisperPolish
+    dependencies:
+      - package: FluidAudio
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.jonclegg.WhisperPolish
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Whisper Polish records audio to transcribe your voice notes on-device."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.10"
+        CODE_SIGN_STYLE: Automatic
+  WhisperPolishTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: WhisperPolish
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.10"
+schemes:
+  WhisperPolish:
+    build:
+      targets:
+        WhisperPolish: all
+        WhisperPolishTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - WhisperPolishTests

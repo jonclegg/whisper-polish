@@ -1,0 +1,136 @@
+import SwiftUI
+
+struct PolishSheetView: View {
+    let hasAPIKey: Bool
+    let onPolish: (PolishStyle, Bool) -> Void
+
+    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.rawValue
+    @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
+
+    @State private var style: PolishStyle = .email
+    @State private var stealth = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Polish this note", systemImage: "sparkle")
+                .font(.headline)
+                .padding(.top, 18)
+
+            FlowChips(styles: PolishStyle.allCases, selection: $style)
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Stealth mode")
+                        .font(.subheadline.weight(.medium))
+                    Text("Runs the translation-hop pipeline. Slower (~30s), harder for AI detectors to flag.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $stealth)
+                    .labelsHidden()
+            }
+
+            if hasAPIKey {
+                Button {
+                    onPolish(style, stealth)
+                } label: {
+                    Text("Polish as \(style.displayName)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Capsule().fill(Color.polishTeal))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("Add your OpenRouter API key in Settings first.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Capsule().fill(Color(.systemGroupedBackground)))
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .onAppear {
+            style = PolishStyle(rawValue: defaultStyleRaw) ?? .email
+            stealth = stealthByDefault
+        }
+    }
+}
+
+/// Wrapping row of style chips.
+private struct FlowChips: View {
+    let styles: [PolishStyle]
+    @Binding var selection: PolishStyle
+
+    var body: some View {
+        FlowLayout(spacing: 8) {
+            ForEach(styles) { style in
+                Button {
+                    selection = style
+                } label: {
+                    Text(style.displayName)
+                        .font(.footnote.weight(selection == style ? .semibold : .regular))
+                        .foregroundStyle(selection == style ? .white : .primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(selection == style ? Color.polishTeal : Color(.systemGroupedBackground)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+/// Minimal left-aligned wrapping layout.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        let height = rows.map { $0.height }.reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: proposal.width ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in computeRows(proposal: proposal, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var height: CGFloat = 0
+    }
+
+    private func computeRows(proposal: ProposedViewSize, subviews: Subviews) -> [Row] {
+        let maxWidth = proposal.width ?? .infinity
+        var rows: [Row] = []
+        var current = Row()
+        var x: CGFloat = 0
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, !current.indices.isEmpty {
+                rows.append(current)
+                current = Row()
+                x = 0
+            }
+            current.indices.append(index)
+            current.height = max(current.height, size.height)
+            x += size.width + spacing
+        }
+        if !current.indices.isEmpty { rows.append(current) }
+        return rows
+    }
+}
