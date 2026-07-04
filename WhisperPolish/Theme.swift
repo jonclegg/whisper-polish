@@ -14,6 +14,8 @@ enum SettingsKeys {
     static let polishModel = "polishModel"
     static let defaultStyle = "defaultStyle"
     static let stealthByDefault = "stealthByDefault"
+    static let engine = "transcriptionEngine"
+    static let hasCompletedSetup = "hasCompletedSetup"
 
     static let defaultModel = "openai/gpt-4o"
 }
