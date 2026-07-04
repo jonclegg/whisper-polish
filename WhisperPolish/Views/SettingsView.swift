@@ -8,9 +8,13 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.autoCopyTranscript) private var autoCopy = false
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
     @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.rawValue
+    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
+    @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+
+    @State private var editingStyle: PolishStyle?
+    @State private var showingNewStyle = false
 
     private let modelPresets = [
         "openai/gpt-4o",
@@ -69,8 +73,8 @@ struct SettingsView: View {
                         }
                     }
                     Picker("Default style", selection: $defaultStyleRaw) {
-                        ForEach(PolishStyle.allCases) { style in
-                            Text(style.displayName).tag(style.rawValue)
+                        ForEach(PolishStyle.all(customJSON: customStylesJSON)) { style in
+                            Text(style.name).tag(style.id)
                         }
                     }
                     Toggle(isOn: $stealthByDefault) {
@@ -82,6 +86,33 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                Section {
+                    ForEach(customStyles) { style in
+                        Button {
+                            editingStyle = style
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(style.name)
+                                    .foregroundStyle(.primary)
+                                Text(style.instruction)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                    .onDelete(perform: deleteStyles)
+                    Button {
+                        showingNewStyle = true
+                    } label: {
+                        Label("New style", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Custom styles")
+                } footer: {
+                    Text("A style is just an instruction telling the model how to shape your text. Built-in styles can't be edited — make your own version instead.")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -90,6 +121,12 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
                 }
+            }
+            .sheet(isPresented: $showingNewStyle) {
+                StyleEditorView()
+            }
+            .sheet(item: $editingStyle) { style in
+                StyleEditorView(editing: style)
             }
         }
     }
@@ -119,5 +156,19 @@ struct SettingsView: View {
     private func selectEngine(_ engine: TranscriptionEngine) {
         engineRaw = engine.rawValue
         Task { await transcription.prepare() }
+    }
+
+    private var customStyles: [PolishStyle] {
+        PolishStyle.decodeCustom(customStylesJSON)
+    }
+
+    private func deleteStyles(at offsets: IndexSet) {
+        var styles = customStyles
+        let removed = offsets.map { styles[$0].id }
+        styles.remove(atOffsets: offsets)
+        customStylesJSON = PolishStyle.encodeCustom(styles)
+        if removed.contains(defaultStyleRaw) {
+            defaultStyleRaw = PolishStyle.email.id
+        }
     }
 }

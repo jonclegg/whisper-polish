@@ -13,6 +13,8 @@ enum SettingsKeys {
     static let openRouterKey = "openRouterKey"
     static let polishModel = "polishModel"
     static let defaultStyle = "defaultStyle"
+    /// JSON-encoded [PolishStyle] of user-created styles.
+    static let customStyles = "customStyles"
     static let stealthByDefault = "stealthByDefault"
     static let engine = "transcriptionEngine"
     static let hasCompletedSetup = "hasCompletedSetup"

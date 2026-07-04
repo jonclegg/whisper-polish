@@ -6,41 +6,6 @@ enum NoteSource: String, Codable {
     case text
 }
 
-enum PolishStyle: String, CaseIterable, Codable, Identifiable {
-    case email
-    case reddit
-    case marketing
-    case message
-    case cleanup
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .email: return "Email"
-        case .reddit: return "Reddit post"
-        case .marketing: return "Marketing"
-        case .message: return "Text message"
-        case .cleanup: return "Just clean it up"
-        }
-    }
-
-    var instruction: String {
-        switch self {
-        case .email:
-            return "Shape it into a short email: a natural greeting, the point up front, a clear ask, and a brief sign-off. Businesslike but warm."
-        case .reddit:
-            return "Shape it into a Reddit post: conversational, opinionated, first person. A little informal punctuation is fine. No corporate tone."
-        case .marketing:
-            return "Shape it into short marketing copy: punchy, concrete benefits, active voice. Confident but not hypey."
-        case .message:
-            return "Shape it into a text message: casual, brief, contractions everywhere. One or two short paragraphs at most."
-        case .cleanup:
-            return "Keep the same form and tone. Just remove filler, false starts, and repetition, and fix the grammar. Change as little as possible."
-        }
-    }
-}
-
 @Model
 final class Note {
     var id: UUID = UUID()
@@ -54,6 +19,9 @@ final class Note {
 
     var polishedText: String?
     var polishStyleRaw: String?
+    /// Style name captured at polish time, so the label survives even if a
+    /// custom style is later deleted. Nil on notes polished before this field.
+    var polishStyleName: String?
     var polishStealth: Bool = false
     var polishModel: String?
     var polishedAt: Date?
@@ -68,8 +36,14 @@ final class Note {
     }
 
     var source: NoteSource { NoteSource(rawValue: sourceRaw) ?? .voice }
-    var polishStyle: PolishStyle? { polishStyleRaw.flatMap(PolishStyle.init(rawValue:)) }
     var isPolished: Bool { polishedText != nil }
+
+    /// Display name of the style this note was polished with.
+    var polishStyleLabel: String? {
+        polishStyleName ?? polishStyleRaw.flatMap { raw in
+            PolishStyle.builtIns.first { $0.id == raw }?.name
+        }
+    }
 
     var audioURL: URL? {
         guard let audioFileName else { return nil }
@@ -78,7 +52,8 @@ final class Note {
 
     func applyPolish(_ result: PolishResult) {
         polishedText = result.text
-        polishStyleRaw = result.style.rawValue
+        polishStyleRaw = result.style.id
+        polishStyleName = result.style.name
         polishStealth = result.stealth
         polishModel = result.model
         polishedAt = Date()

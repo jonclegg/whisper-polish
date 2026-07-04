@@ -7,7 +7,7 @@ struct OnboardingView: View {
     @AppStorage(SettingsKeys.hasCompletedSetup) private var hasCompletedSetup = false
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.rawValue
+    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var step = 0
 
@@ -181,16 +181,16 @@ struct OnboardingView: View {
             )
 
             FlowLayout(spacing: 8) {
-                ForEach(PolishStyle.allCases) { style in
+                ForEach(PolishStyle.builtIns) { style in
                     Button {
-                        defaultStyleRaw = style.rawValue
+                        defaultStyleRaw = style.id
                     } label: {
-                        Text(style.displayName)
-                            .font(.footnote.weight(defaultStyleRaw == style.rawValue ? .semibold : .regular))
-                            .foregroundStyle(defaultStyleRaw == style.rawValue ? .white : .primary)
+                        Text(style.name)
+                            .font(.footnote.weight(defaultStyleRaw == style.id ? .semibold : .regular))
+                            .foregroundStyle(defaultStyleRaw == style.id ? .white : .primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 9)
-                            .background(Capsule().fill(defaultStyleRaw == style.rawValue ? Color.polishTeal : Color(.secondarySystemGroupedBackground)))
+                            .background(Capsule().fill(defaultStyleRaw == style.id ? Color.polishTeal : Color(.secondarySystemGroupedBackground)))
                     }
                     .buttonStyle(.plain)
                 }

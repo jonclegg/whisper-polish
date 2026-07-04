@@ -8,7 +8,7 @@ struct NoteDetailView: View {
     @Environment(TranscriptionService.self) private var transcription
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
     @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.rawValue
+    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
 
     @State private var showingPolished = false
@@ -40,9 +40,9 @@ struct NoteDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    if showingPolished, let style = note.polishStyle {
+                    if showingPolished, let styleLabel = note.polishStyleLabel {
                         HStack(spacing: 6) {
-                            Label(style.displayName, systemImage: "sparkle")
+                            Label(styleLabel, systemImage: "sparkle")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(Color.polishTeal)
                                 .padding(.horizontal, 8)
@@ -108,7 +108,7 @@ struct NoteDetailView: View {
                 showPolishSheet = false
                 runPolish(style: style, stealth: stealth)
             }
-            .presentationDetents([.height(340)])
+            .presentationDetents([.height(340), .medium, .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -260,7 +260,7 @@ struct NoteDetailView: View {
     }
 
     private func runPolish(style: PolishStyle, stealth: Bool) {
-        defaultStyleRaw = style.rawValue
+        defaultStyleRaw = style.id
         polishProgress = stealth ? "Starting…" : "Polishing…"
         Task {
             do {

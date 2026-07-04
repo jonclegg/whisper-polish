@@ -173,8 +173,8 @@ struct NoteCard: View {
             }
 
             HStack(spacing: 8) {
-                if let style = note.polishStyle, note.isPolished {
-                    Label("Polished · \(style.displayName)", systemImage: "sparkle")
+                if let styleLabel = note.polishStyleLabel, note.isPolished {
+                    Label("Polished · \(styleLabel)", systemImage: "sparkle")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Color.polishTeal)
                         .padding(.horizontal, 8)

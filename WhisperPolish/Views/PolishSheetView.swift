@@ -4,11 +4,13 @@ struct PolishSheetView: View {
     let hasAPIKey: Bool
     let onPolish: (PolishStyle, Bool) -> Void
 
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.rawValue
+    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
+    @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var style: PolishStyle = .email
     @State private var stealth = false
+    @State private var showingNewStyle = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -16,7 +18,9 @@ struct PolishSheetView: View {
                 .font(.headline)
                 .padding(.top, 18)
 
-            FlowChips(styles: PolishStyle.allCases, selection: $style)
+            FlowChips(styles: PolishStyle.all(customJSON: customStylesJSON),
+                      selection: $style,
+                      onNewStyle: { showingNewStyle = true })
 
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -35,7 +39,7 @@ struct PolishSheetView: View {
                 Button {
                     onPolish(style, stealth)
                 } label: {
-                    Text("Polish as \(style.displayName)")
+                    Text("Polish as \(style.name)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -56,16 +60,24 @@ struct PolishSheetView: View {
         }
         .padding(.horizontal, 18)
         .onAppear {
-            style = PolishStyle(rawValue: defaultStyleRaw) ?? .email
+            style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
             stealth = stealthByDefault
+        }
+        .sheet(isPresented: $showingNewStyle) {
+            // Seed with the selected style's instruction so "duplicate and
+            // tweak" is the natural way to make a new style.
+            StyleEditorView(seedInstruction: style.instruction) { saved in
+                style = saved
+            }
         }
     }
 }
 
-/// Wrapping row of style chips.
+/// Wrapping row of style chips, with a trailing chip to create a new style.
 private struct FlowChips: View {
     let styles: [PolishStyle]
     @Binding var selection: PolishStyle
+    var onNewStyle: () -> Void
 
     var body: some View {
         FlowLayout(spacing: 8) {
@@ -73,7 +85,7 @@ private struct FlowChips: View {
                 Button {
                     selection = style
                 } label: {
-                    Text(style.displayName)
+                    Text(style.name)
                         .font(.footnote.weight(selection == style ? .semibold : .regular))
                         .foregroundStyle(selection == style ? .white : .primary)
                         .padding(.horizontal, 14)
@@ -82,6 +94,15 @@ private struct FlowChips: View {
                 }
                 .buttonStyle(.plain)
             }
+            Button(action: onNewStyle) {
+                Label("New style", systemImage: "plus")
+                    .font(.footnote)
+                    .foregroundStyle(Color.polishTeal)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().strokeBorder(Color.polishTeal.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+            .buttonStyle(.plain)
         }
     }
 }
