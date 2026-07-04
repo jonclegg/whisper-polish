@@ -7,6 +7,7 @@ struct NotesListView: View {
     @Query(sort: \Note.createdAt, order: .reverse) private var notes: [Note]
 
     @AppStorage(SettingsKeys.recordOnLaunch) private var recordOnLaunch = false
+    @AppStorage(SettingsKeys.hasCompletedSetup) private var hasCompletedSetup = false
     @State private var path: [Note] = []
     @State private var searchText = ""
     @State private var showRecorder = false
@@ -75,7 +76,14 @@ struct NotesListView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .fullScreenCover(isPresented: .init(
+            get: { !hasCompletedSetup },
+            set: { _ in }
+        )) {
+            OnboardingView()
+        }
         .task {
+            guard hasCompletedSetup else { return }
             async let _ = transcription.prepare()
             if recordOnLaunch && !didAutoRecord {
                 didAutoRecord = true

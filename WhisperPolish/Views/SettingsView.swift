@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.rawValue
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
+    @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
 
     private let modelPresets = [
         "openai/gpt-4o",
@@ -26,27 +27,32 @@ struct SettingsView: View {
                     Toggle("Auto-copy transcript", isOn: $autoCopy)
                 }
 
-                Section("Transcription") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Parakeet V3 (on-device)")
-                            Text(transcriptionStatus)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        switch transcription.state {
-                        case .ready:
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.waveGreen)
-                        case .downloading:
-                            ProgressView()
-                        case .idle, .failed:
-                            Button("Download") {
-                                Task { await transcription.prepare() }
+                Section {
+                    ForEach(TranscriptionEngine.allCases) { engine in
+                        Button {
+                            selectEngine(engine)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(engine.displayName)
+                                        .foregroundStyle(.primary)
+                                    Text("\(engine.subtitle) · \(engine.sizeLabel)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                engineTrailing(engine)
                             }
-                            .font(.footnote.weight(.semibold))
                         }
+                        .disabled(transcription.state.isDownloading)
+                    }
+                } header: {
+                    Text("Transcription (on-device)")
+                } footer: {
+                    if case .failed(let message) = transcription.state {
+                        Text("Download failed: \(message)")
+                    } else if case .downloading = transcription.state {
+                        Text("Keep the app open while the model downloads.")
                     }
                 }
 
@@ -88,12 +94,28 @@ struct SettingsView: View {
         }
     }
 
-    private var transcriptionStatus: String {
-        switch transcription.state {
-        case .idle: return "0.6B · ~500 MB · not downloaded"
-        case .downloading: return "Downloading model…"
-        case .ready: return "0.6B · downloaded"
-        case .failed(let message): return "Download failed: \(message)"
+    @ViewBuilder
+    private func engineTrailing(_ engine: TranscriptionEngine) -> some View {
+        if engineRaw == engine.rawValue {
+            switch transcription.state {
+            case .downloading(let fraction):
+                ProgressView(value: fraction)
+                    .frame(width: 60)
+            case .ready where transcription.loadedEngine == engine:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Color.polishTeal)
+            default:
+                Image(systemName: "arrow.down.circle")
+                    .foregroundStyle(Color.polishTeal)
+            }
+        } else {
+            Image(systemName: "circle")
+                .foregroundStyle(Color(.systemFill))
         }
+    }
+
+    private func selectEngine(_ engine: TranscriptionEngine) {
+        engineRaw = engine.rawValue
+        Task { await transcription.prepare() }
     }
 }
