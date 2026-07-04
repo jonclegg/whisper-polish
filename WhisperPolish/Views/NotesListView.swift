@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct NotesListView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Environment(TranscriptionService.self) private var transcription
     @Query(sort: \Note.createdAt, order: .reverse) private var notes: [Note]
@@ -13,7 +14,8 @@ struct NotesListView: View {
     @State private var showRecorder = false
     @State private var showComposer = false
     @State private var showSettings = false
-    @State private var didAutoRecord = false
+    @State private var didRunStartupWork = false
+    @State private var launchRecordingGate = LaunchRecordingGate()
 
     private var filteredNotes: [Note] {
         guard !searchText.isEmpty else { return notes }
@@ -79,18 +81,15 @@ struct NotesListView: View {
         .fullScreenCover(isPresented: .init(
             get: { !hasCompletedSetup },
             set: { _ in }
-        )) {
+        ), onDismiss: handleAppReady) {
             OnboardingView()
         }
-        .task {
-            guard hasCompletedSetup else { return }
-            // Unstructured task: an `async let` here would be cancelled the
-            // moment this scope exits, killing the warm-up right after launch.
-            Task { await transcription.prepare() }
-            resetOrphanedTranscriptions()
-            if recordOnLaunch && !didAutoRecord {
-                didAutoRecord = true
-                showRecorder = true
+        .task { handleAppReady() }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                handleAppReady()
+            } else if newPhase == .background {
+                launchRecordingGate.didEnterBackground()
             }
         }
     }
@@ -144,6 +143,34 @@ struct NotesListView: View {
         for note in notes where note.isTranscribing {
             note.isTranscribing = false
         }
+    }
+
+    private func handleAppReady() {
+        guard hasCompletedSetup else { return }
+        runStartupWorkIfNeeded()
+        presentRecorderForLaunchIfNeeded()
+    }
+
+    private func runStartupWorkIfNeeded() {
+        guard !didRunStartupWork else { return }
+        didRunStartupWork = true
+        // Unstructured task: an `async let` here would be cancelled the
+        // moment this scope exits, killing the warm-up right after launch.
+        Task { await transcription.prepare() }
+        resetOrphanedTranscriptions()
+    }
+
+    private func presentRecorderForLaunchIfNeeded() {
+        guard launchRecordingGate.shouldStartRecording(
+            hasCompletedSetup: hasCompletedSetup,
+            recordOnLaunch: recordOnLaunch,
+            recorderIsPresented: showRecorder,
+            blockingModalIsPresented: showComposer || showSettings
+        ) else {
+            return
+        }
+
+        showRecorder = true
     }
 }
 
