@@ -1,9 +1,5 @@
 struct LaunchRecordingGate {
-    private var didStartRecordingInCurrentActivation = false
-
-    mutating func didEnterBackground() {
-        didStartRecordingInCurrentActivation = false
-    }
+    private var didConsumeLaunchOpportunity = false
 
     mutating func shouldStartRecording(
         hasCompletedSetup: Bool,
@@ -12,14 +8,13 @@ struct LaunchRecordingGate {
         blockingModalIsPresented: Bool
     ) -> Bool {
         guard hasCompletedSetup,
-              recordOnLaunch,
-              !didStartRecordingInCurrentActivation,
+              !didConsumeLaunchOpportunity,
               !recorderIsPresented,
               !blockingModalIsPresented else {
             return false
         }
 
-        didStartRecordingInCurrentActivation = true
-        return true
+        didConsumeLaunchOpportunity = true
+        return recordOnLaunch
     }
 }

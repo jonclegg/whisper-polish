@@ -37,7 +37,7 @@ final class LaunchRecordingGateTests: XCTestCase {
         ))
     }
 
-    func testStartsAgainAfterAppEntersBackground() {
+    func testDoesNotStartAgainAfterReturningToForegroundInSameLaunch() {
         var gate = LaunchRecordingGate()
 
         XCTAssertTrue(gate.shouldStartRecording(
@@ -46,9 +46,8 @@ final class LaunchRecordingGateTests: XCTestCase {
             recorderIsPresented: false,
             blockingModalIsPresented: false
         ))
-        gate.didEnterBackground()
 
-        XCTAssertTrue(gate.shouldStartRecording(
+        XCTAssertFalse(gate.shouldStartRecording(
             hasCompletedSetup: true,
             recordOnLaunch: true,
             recorderIsPresented: false,
@@ -79,6 +78,12 @@ final class LaunchRecordingGateTests: XCTestCase {
         XCTAssertFalse(gate.shouldStartRecording(
             hasCompletedSetup: true,
             recordOnLaunch: false,
+            recorderIsPresented: false,
+            blockingModalIsPresented: false
+        ))
+        XCTAssertFalse(gate.shouldStartRecording(
+            hasCompletedSetup: true,
+            recordOnLaunch: true,
             recorderIsPresented: false,
             blockingModalIsPresented: false
         ))
