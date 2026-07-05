@@ -88,8 +88,6 @@ struct NotesListView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 handleAppReady()
-            } else if newPhase == .background {
-                launchRecordingGate.didEnterBackground()
             }
         }
     }
