@@ -41,14 +41,28 @@ final class TranscriptionService {
         case idle
         /// Downloading model files from the mirror; fraction is 0...1 when known.
         case downloading(Double?)
-        /// Files are local; CoreML is compiling them onto the Neural Engine.
-        case optimizing
+        /// Files are local; loading model assets into memory.
+        case loading
         case ready
         case failed(String)
 
         var isDownloading: Bool {
             if case .downloading = self { return true }
             return false
+        }
+
+        var transcribingStatusMessage: String {
+            switch self {
+            case .downloading(let fraction):
+                if let fraction {
+                    return "Downloading transcription model... \(Int(fraction * 100))%"
+                }
+                return "Preparing transcription model..."
+            case .loading:
+                return "Loading transcription model..."
+            default:
+                return "Transcribing..."
+            }
         }
     }
 
@@ -81,29 +95,30 @@ final class TranscriptionService {
     }
 
     private func load(engine: TranscriptionEngine) async {
-        state = .downloading(nil)
         do {
             switch engine {
             case .parakeet:
                 // Pull from our CloudFront mirror into FluidAudio's cache dir.
                 // Byte-accurate progress; FluidAudio then loads from cache offline.
                 if !ModelMirror.isComplete() {
+                    state = .downloading(nil)
                     try await ModelMirror.download { [weak self] fraction in
                         Task { @MainActor in self?.noteDownload(fraction) }
                     }
                 }
-                state = .optimizing
+                state = .loading
                 let models = try await AsrModels.downloadAndLoad()
                 let manager = AsrManager(config: .default)
                 try await manager.loadModels(models)
                 parakeet = manager
                 whisper = nil
             case .whisper:
+                state = .downloading(nil)
                 let folder = try await WhisperKit.download(variant: engine.whisperVariant, progressCallback: { [weak self] progress in
                     let fraction = progress.fractionCompleted
                     Task { @MainActor in self?.noteDownload(fraction) }
                 })
-                state = .optimizing
+                state = .loading
                 let config = WhisperKitConfig(
                     model: engine.whisperVariant,
                     modelFolder: folder.path,

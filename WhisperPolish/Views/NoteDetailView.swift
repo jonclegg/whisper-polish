@@ -68,7 +68,7 @@ struct NoteDetailView: View {
                         HStack(spacing: 10) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Transcribing…")
+                            Text(transcription.state.transcribingStatusMessage)
                                 .foregroundStyle(.secondary)
                         }
                     } else if note.originalText.isEmpty && !showingPolished {

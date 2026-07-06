@@ -181,6 +181,8 @@ struct NotesListView: View {
 struct NoteCard: View {
     let note: Note
 
+    @Environment(TranscriptionService.self) private var transcription
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(note.createdAt.formatted(date: .numeric, time: .shortened))
@@ -191,7 +193,7 @@ struct NoteCard: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Transcribing…")
+                    Text(transcription.state.transcribingStatusMessage)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

@@ -57,6 +57,8 @@ struct SettingsView: View {
                         Text("Download failed: \(message)")
                     } else if case .downloading = transcription.state {
                         Text("Keep the app open while the model downloads.")
+                    } else if case .loading = transcription.state {
+                        Text("Loading the model into memory.")
                     }
                 }
 
@@ -138,7 +140,7 @@ struct SettingsView: View {
             case .downloading(let fraction):
                 ProgressView(value: fraction)
                     .frame(width: 60)
-            case .optimizing:
+            case .loading:
                 ProgressView()
             case .ready where transcription.loadedEngine == engine:
                 Image(systemName: "checkmark.circle.fill")

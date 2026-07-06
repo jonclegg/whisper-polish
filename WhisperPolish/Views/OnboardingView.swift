@@ -103,13 +103,13 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)
-        case .optimizing:
+        case .loading:
             VStack(spacing: 8) {
                 ProgressView()
-                Text("Optimizing model for your device…")
+                Text("Loading model into memory…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Almost there — this runs once.")
+                Text("This can take a moment after the app has been away.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
