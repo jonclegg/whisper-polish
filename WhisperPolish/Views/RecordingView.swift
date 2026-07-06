@@ -20,15 +20,14 @@ struct RecordingView: View {
 
     var body: some View {
         VStack {
-            HStack {
-                Button("Cancel") {
-                    recorder.cancel()
-                    dismiss()
+            if phase == .starting {
+                HStack {
+                    Button("Cancel", action: cancelRecording)
+                        .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                .foregroundStyle(.secondary)
-                Spacer()
+                .padding()
             }
-            .padding()
 
             Spacer()
 
@@ -51,16 +50,33 @@ struct RecordingView: View {
             Spacer()
 
             if phase == .recording {
-                Button(action: stopAndTranscribe) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(.systemBackground))
-                            .frame(width: 66, height: 66)
-                            .overlay(Circle().stroke(Color(.label), lineWidth: 4))
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(.red)
-                            .frame(width: 22, height: 22)
+                ZStack {
+                    Button(action: stopAndTranscribe) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .frame(width: 66, height: 66)
+                                .overlay(Circle().stroke(Color(.label), lineWidth: 4))
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(.red)
+                                .frame(width: 22, height: 22)
+                        }
                     }
+                    HStack {
+                        Button(action: cancelRecording) {
+                            VStack(spacing: 6) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .frame(width: 54, height: 54)
+                                    .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
+                                Text("Cancel")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 44)
                 }
                 .padding(.bottom, 30)
             }
@@ -80,6 +96,11 @@ struct RecordingView: View {
     private var timerLabel: String {
         let total = Int(recorder.elapsed)
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    private func cancelRecording() {
+        recorder.cancel()
+        dismiss()
     }
 
     private func startRecording() async {
