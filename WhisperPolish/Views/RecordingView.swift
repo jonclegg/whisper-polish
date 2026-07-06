@@ -41,7 +41,7 @@ struct RecordingView: View {
                     WaveformView(levels: recorder.levels)
                         .frame(height: 60)
                         .padding(.horizontal, 40)
-                    Text("Transcribing on-device · Parakeet V3")
+                    Text("Transcribing on-device · \(transcription.selectedEngine.displayName)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

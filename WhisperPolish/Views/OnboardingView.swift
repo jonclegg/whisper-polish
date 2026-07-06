@@ -110,10 +110,10 @@ struct OnboardingView: View {
         case .loading:
             VStack(spacing: 8) {
                 ProgressView()
-                Text("Loading model into memory…")
+                Text("Optimizing the model for your iPhone…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("This can take a moment after the app has been away.")
+                Text("One-time step — it can take a few minutes. Keep the app open.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

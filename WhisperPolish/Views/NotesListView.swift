@@ -16,6 +16,12 @@ struct NotesListView: View {
     @State private var showSettings = false
     @State private var didRunStartupWork = false
     @State private var launchRecordingGate = LaunchRecordingGate()
+    @State private var showModelBanner = false
+
+    /// True while the selected engine is downloading or being optimized.
+    private var isPreparingModel: Bool {
+        transcription.state == .loading || transcription.state.isDownloading
+    }
 
     private var filteredNotes: [Note] {
         guard !searchText.isEmpty else { return notes }
@@ -29,6 +35,9 @@ struct NotesListView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 12) {
+                    if showModelBanner {
+                        modelBanner
+                    }
                     if notes.isEmpty {
                         emptyState
                     }
@@ -85,6 +94,18 @@ struct NotesListView: View {
             OnboardingView()
         }
         .task { handleAppReady() }
+        // Delay so the banner never flashes during a normal fast launch;
+        // it only appears when the model is genuinely taking a while.
+        .task(id: isPreparingModel) {
+            guard isPreparingModel else {
+                showModelBanner = false
+                return
+            }
+            try? await Task.sleep(for: .seconds(2.5))
+            if !Task.isCancelled {
+                withAnimation { showModelBanner = true }
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
@@ -96,6 +117,30 @@ struct NotesListView: View {
                 break
             }
         }
+    }
+
+    private var modelBanner: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                if case .downloading(let fraction) = transcription.state {
+                    Text(fraction.map { "Downloading transcription model… \(Int($0 * 100))%" }
+                        ?? "Downloading transcription model…")
+                        .font(.footnote.weight(.semibold))
+                } else {
+                    Text("Optimizing transcription model for this iPhone")
+                        .font(.footnote.weight(.semibold))
+                    Text("One-time after app updates — keep the app open. You can record now; transcripts appear once it's done.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
     }
 
     private var emptyState: some View {
