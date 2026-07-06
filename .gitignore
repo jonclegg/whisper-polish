@@ -4,4 +4,5 @@ xcuserdata/
 build/
 DerivedData/
 .claude/worktrees/
+.worktrees/
 build/
