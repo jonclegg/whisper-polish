@@ -27,7 +27,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("General") {
-                    Toggle("Record on launch", isOn: $recordOnLaunch)
+                    Toggle("Record on open", isOn: $recordOnLaunch)
                     Toggle("Auto-copy transcript", isOn: $autoCopy)
                 }
 
