@@ -86,8 +86,14 @@ struct NotesListView: View {
         }
         .task { handleAppReady() }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
+            switch newPhase {
+            case .active:
+                launchRecordingGate.appBecameActive()
                 handleAppReady()
+            case .inactive, .background:
+                launchRecordingGate.appMovedAway()
+            @unknown default:
+                break
             }
         }
     }
