@@ -79,9 +79,16 @@ final class TranscriptionService {
     /// True when the currently selected engine is loaded and ready.
     var isReady: Bool { state == .ready && loadedEngine == selectedEngine }
 
+    /// Cancels an in-flight model download. If another engine was already
+    /// loaded, the selection reverts to it so transcription keeps working.
+    func cancelPreparation() {
+        prepareTask?.cancel()
+    }
+
     /// Downloads (first run) and loads the selected engine's models.
     /// Safe to call repeatedly; concurrent calls share one load.
     func prepare() async {
+        perfLog("prepare() called, state=\(state)")
         if isReady { return }
         if let prepareTask {
             await prepareTask.value
@@ -100,24 +107,44 @@ final class TranscriptionService {
             case .parakeet:
                 // Pull from our CloudFront mirror into FluidAudio's cache dir.
                 // Byte-accurate progress; FluidAudio then loads from cache offline.
-                if !ModelMirror.isComplete() {
+                let mirrorCheckStart = Date()
+                let mirrorComplete = ModelMirror.isComplete()
+                perfLog("ModelMirror.isComplete=\(mirrorComplete): \(Date().timeIntervalSince(mirrorCheckStart))s")
+                if !mirrorComplete {
                     state = .downloading(nil)
+                    let mirrorStart = Date()
                     try await ModelMirror.download { [weak self] fraction in
                         Task { @MainActor in self?.noteDownload(fraction) }
                     }
+                    perfLog("ModelMirror.download: \(Date().timeIntervalSince(mirrorStart))s")
                 }
                 state = .loading
+                let loadStart = Date()
                 let models = try await AsrModels.downloadAndLoad()
+                perfLog("AsrModels.downloadAndLoad: \(Date().timeIntervalSince(loadStart))s")
+                let managerStart = Date()
                 let manager = AsrManager(config: .default)
                 try await manager.loadModels(models)
+                perfLog("AsrManager.loadModels: \(Date().timeIntervalSince(managerStart))s")
                 parakeet = manager
                 whisper = nil
             case .whisper:
-                state = .downloading(nil)
-                let folder = try await WhisperKit.download(variant: engine.whisperVariant, progressCallback: { [weak self] progress in
-                    let fraction = progress.fractionCompleted
-                    Task { @MainActor in self?.noteDownload(fraction) }
-                })
+                // Never touch the network (or the model files) when the model is
+                // already on disk: WhisperKit.download re-syncs against HuggingFace
+                // and rewrites files, which invalidates iOS's compiled-model cache
+                // and forces a minutes-long re-optimization on the next load.
+                var folder = Self.whisperModelFolder(variant: engine.whisperVariant)
+                let cached = Self.whisperModelIsCached(at: folder)
+                perfLog("whisper model cached=\(cached) at \(folder.path)")
+                if !cached {
+                    state = .downloading(nil)
+                    let downloadStart = Date()
+                    folder = try await WhisperKit.download(variant: engine.whisperVariant, progressCallback: { [weak self] progress in
+                        let fraction = progress.fractionCompleted
+                        Task { @MainActor in self?.noteDownload(fraction) }
+                    })
+                    perfLog("WhisperKit.download: \(Date().timeIntervalSince(downloadStart))s")
+                }
                 state = .loading
                 let config = WhisperKitConfig(
                     model: engine.whisperVariant,
@@ -125,13 +152,43 @@ final class TranscriptionService {
                     load: true,
                     download: false
                 )
+                let whisperStart = Date()
                 whisper = try await WhisperKit(config)
+                perfLog("WhisperKit load: \(Date().timeIntervalSince(whisperStart))s")
                 parakeet = nil
             }
             loadedEngine = engine
             state = .ready
         } catch {
-            state = .failed(error.localizedDescription)
+            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                if let loadedEngine {
+                    UserDefaults.standard.set(loadedEngine.rawValue, forKey: SettingsKeys.engine)
+                    state = .ready
+                } else {
+                    state = .idle
+                }
+            } else {
+                state = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Where WhisperKit.download stores the model (HubApi's default layout
+    /// under Documents). Must stay in sync with the `download` call above.
+    private static func whisperModelFolder(variant: String) -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(variant)")
+    }
+
+    private static func whisperModelIsCached(at folder: URL) -> Bool {
+        let required = [
+            "config.json",
+            "AudioEncoder.mlmodelc/weights/weight.bin",
+            "TextDecoder.mlmodelc/weights/weight.bin",
+            "MelSpectrogram.mlmodelc/weights/weight.bin",
+        ]
+        return required.allSatisfy {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
         }
     }
 
@@ -154,6 +211,23 @@ final class TranscriptionService {
         default:
             throw TranscriptionError.notReady
         }
+    }
+}
+
+/// Timing diagnostics: stderr for attached consoles, plus an append-only file
+/// in Application Support so timings survive with no console attached.
+func perfLog(_ message: String) {
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    let line = "[perf] \(stamp) \(message)\n"
+    FileHandle.standardError.write(Data(line.utf8))
+    let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        .first!.appendingPathComponent("perf.log")
+    if let handle = try? FileHandle(forWritingTo: url) {
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(line.utf8))
+    } else {
+        try? Data(line.utf8).write(to: url)
     }
 }
 

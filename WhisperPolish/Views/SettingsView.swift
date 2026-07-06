@@ -50,6 +50,11 @@ struct SettingsView: View {
                         }
                         .disabled(transcription.state.isDownloading)
                     }
+                    if transcription.state.isDownloading {
+                        Button("Cancel download", role: .destructive) {
+                            transcription.cancelPreparation()
+                        }
+                    }
                 } header: {
                     Text("Transcription (on-device)")
                 } footer: {

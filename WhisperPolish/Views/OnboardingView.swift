@@ -100,6 +100,10 @@ struct OnboardingView: View {
                 Text("Keep the app open. This is the one-time part.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                Button("Cancel") { transcription.cancelPreparation() }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
             }
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)
