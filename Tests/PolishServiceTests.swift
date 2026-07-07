@@ -24,6 +24,14 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(messages[1], PolishService.Message(role: "user", content: "hello world"))
     }
 
+    func testNormalMessagesBanCommonAIPatterns() {
+        let system = PolishService.normalMessages(text: "hello world", style: .cleanup)[0].content
+        XCTAssertTrue(system.contains("Do not use em dashes"))
+        XCTAssertTrue(system.contains("not X, but Y"))
+        XCTAssertTrue(system.contains("not like AI"))
+        XCTAssertFalse(system.contains("—"))
+    }
+
     func testTranslationMessagesAreTranslationOnly() {
         let messages = PolishService.translationMessages(text: "moi", from: "Finnish", to: "English")
         XCTAssertTrue(messages[0].content.contains("Finnish"))
@@ -94,6 +102,27 @@ final class PolishServiceTests: XCTestCase {
         // Final hop translates step 3's output.
         let step4Messages = bodies[3]["messages"] as? [[String: String]] ?? []
         XCTAssertEqual(step4Messages.last?["content"], "suomenkielinen käännös")
+    }
+
+    func testStealthFinalEnglishHopIncludesAntiAIGuidance() async throws {
+        MockURLProtocol.responses = [
+            Self.chatBody("中文改写"),
+            Self.chatBody("日本語の書き直し"),
+            Self.chatBody("suomenkielinen käännös"),
+            Self.chatBody("Final English text."),
+        ]
+
+        _ = try await makeService().polish(
+            text: "raw ramble", style: .cleanup, stealth: true, apiKey: "sk-or-test", model: "openai/gpt-4o"
+        )
+
+        let finalMessages = MockURLProtocol.requestBodies[3]["messages"] as? [[String: String]] ?? []
+        let finalSystem = try XCTUnwrap(finalMessages.first?["content"])
+        XCTAssertTrue(finalSystem.contains("not like AI"))
+        XCTAssertTrue(finalSystem.contains("Do not use em dashes"))
+        XCTAssertTrue(finalSystem.contains("not X, but Y"))
+        XCTAssertTrue(finalSystem.contains(PolishStyle.cleanup.instruction))
+        XCTAssertFalse(finalSystem.contains("—"))
     }
 
     func testHTTPErrorSurfacesStatusCode() async {

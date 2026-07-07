@@ -76,16 +76,40 @@ final class PolishService {
 
     // MARK: - Prompts
 
+    private static let antiAIVoiceRules = """
+        - Vary sentence length. Use contractions. It's fine to start a sentence with And or But.
+        - Do not use em dashes. Use commas, periods, colons, semicolons, or parentheses instead.
+        - Avoid tidy AI contrast formulas such as "not X, but Y", "not just X, but Y", and "X, not Y".
+        - No AI tells: no "delve", "furthermore", "moreover", "it's worth noting", "I hope this finds you well". No bullet lists unless the content genuinely needs one.
+        """
+
     static func normalMessages(text: String, style: PolishStyle) -> [Message] {
         let system = """
-        You rewrite rough voice-note transcripts into finished text that reads like a thoughtful person wrote it — not like AI.
+        Rewrite rough voice-note transcripts into finished text that sounds like the speaker, not like AI.
 
         Rules:
         - Keep the speaker's meaning, specifics, and personality. Never invent facts.
-        - Vary sentence length. Use contractions. It's fine to start a sentence with And or But.
-        - No AI tells: no "delve", "furthermore", "moreover", "it's worth noting", "I hope this finds you well". No bullet lists unless the content genuinely needs one. Go easy on em dashes.
+        \(antiAIVoiceRules)
         - Cut filler, false starts, and repetition without flattening the voice.
         - Output only the rewritten text. No preamble, no explanation, no quotes around it.
+
+        \(style.instruction)
+        """
+        return [
+            Message(role: "system", content: system),
+            Message(role: "user", content: text),
+        ]
+    }
+
+    static func finalEnglishMessages(text: String, from source: String, style: PolishStyle) -> [Message] {
+        let system = """
+        Translate the \(source) text into natural English, then lightly revise it so it sounds like the same person wrote it, not like AI.
+
+        Rules:
+        - Keep every fact, detail, paragraph break, and the speaker's intent. Never invent facts.
+        - Preserve the selected style, but do not make the result sound generically polished.
+        \(antiAIVoiceRules)
+        - Output only the final English text. No preamble, no explanation, no quotes around it.
 
         \(style.instruction)
         """
@@ -140,7 +164,7 @@ final class PolishService {
 
         onProgress("Step 4 of 4 · translating")
         return try await chat(
-            messages: Self.translationMessages(text: finnish, from: "Finnish", to: "English"),
+            messages: Self.finalEnglishMessages(text: finnish, from: "Finnish", style: style),
             model: Self.englishHopModel,
             temperature: 0.2,
             apiKey: apiKey
