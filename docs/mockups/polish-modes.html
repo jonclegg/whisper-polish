@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Whisper Polish - Polish Modes Mockup</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #161514;
+      --muted: #6d716f;
+      --faint: #9a9f9d;
+      --paper: #f0f1f4;
+      --sheet: #f7f7f5;
+      --surface: #ffffff;
+      --line: #d9ddda;
+      --teal: #0f7f74;
+      --teal-dark: #07534d;
+      --teal-soft: #e3f2ee;
+      --clay: #d88954;
+      --ink-soft: #272625;
+      --disabled: #d7d9dc;
+      --radius: 8px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(15, 127, 116, 0.08), transparent 30%),
+        linear-gradient(180deg, #f9f7f1 0%, var(--paper) 45%, #e9ebef 100%);
+    }
+
+    button,
+    textarea {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0;
+      display: grid;
+      grid-template-columns: minmax(320px, 430px) minmax(320px, 1fr);
+      gap: clamp(22px, 5vw, 72px);
+      align-items: center;
+    }
+
+    .brief {
+      align-self: start;
+      padding-top: 36px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--teal-dark);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 11ch;
+      font-size: clamp(44px, 8vw, 88px);
+      line-height: 0.92;
+      letter-spacing: 0;
+    }
+
+    .brief p {
+      max-width: 52ch;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.55;
+    }
+
+    .legend {
+      display: grid;
+      gap: 10px;
+      margin-top: 34px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .legend li {
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 10px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .mark {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      margin-top: 1px;
+      display: grid;
+      place-items: center;
+      color: white;
+      background: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .mock-stage {
+      display: grid;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .phone {
+      width: min(430px, 100%);
+      min-height: 870px;
+      border: 1px solid rgba(22, 21, 20, 0.12);
+      border-radius: 44px;
+      background: #eeeff3;
+      box-shadow: 0 28px 80px rgba(22, 21, 20, 0.18);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .status {
+      height: 86px;
+      padding: 24px 30px 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      font-weight: 800;
+      font-size: 18px;
+    }
+
+    .island {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      width: 128px;
+      height: 40px;
+      transform: translateX(-50%);
+      border-radius: 24px;
+      background: #070707;
+    }
+
+    .signal {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      color: var(--ink);
+    }
+
+    .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #b7b9bc;
+    }
+
+    .battery {
+      width: 31px;
+      height: 15px;
+      border: 2px solid #111;
+      border-radius: 5px;
+      position: relative;
+    }
+
+    .battery::after {
+      content: "";
+      position: absolute;
+      right: -5px;
+      top: 4px;
+      width: 3px;
+      height: 5px;
+      border-radius: 0 2px 2px 0;
+      background: #111;
+    }
+
+    .battery::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: 2px;
+      background: #111;
+    }
+
+    .note-view {
+      padding: 18px 16px 0;
+    }
+
+    .back {
+      width: 50px;
+      height: 50px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--ink-soft);
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .date {
+      margin: -44px 0 42px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .transcript {
+      margin-top: 0;
+      padding: 22px 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.74);
+      font-size: 21px;
+      line-height: 1.25;
+    }
+
+    .audio {
+      margin-top: 26px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #8ab2ac;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 17px;
+    }
+
+    .wave {
+      width: 20px;
+      height: 26px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 2px;
+      align-items: center;
+    }
+
+    .wave span {
+      display: block;
+      width: 3px;
+      border-radius: 3px;
+      background: #28be5e;
+    }
+
+    .wave span:nth-child(1) { height: 12px; }
+    .wave span:nth-child(2) { height: 22px; }
+    .wave span:nth-child(3) { height: 17px; }
+    .wave span:nth-child(4) { height: 26px; }
+    .wave span:nth-child(5) { height: 14px; }
+
+    .dock-actions {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 86px;
+      display: grid;
+      grid-template-columns: 1fr 1.2fr 1fr;
+      gap: 12px;
+    }
+
+    .pill-action {
+      min-height: 54px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--ink);
+      font-weight: 800;
+      font-size: 17px;
+    }
+
+    .pill-action.primary {
+      color: white;
+      background: var(--ink);
+    }
+
+    .dock {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 74px;
+      border-top: 1px solid rgba(22, 21, 20, 0.1);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 28px;
+      padding-top: 18px;
+      background: rgba(245, 246, 248, 0.88);
+    }
+
+    .round {
+      border: 0;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      font-weight: 800;
+    }
+
+    .round.small {
+      width: 52px;
+      height: 52px;
+      background: white;
+      color: var(--teal-dark);
+      font-size: 18px;
+    }
+
+    .round.record {
+      width: 72px;
+      height: 72px;
+      margin-top: -16px;
+      background: #030303;
+      box-shadow: 0 0 0 5px white, 0 16px 34px rgba(22, 21, 20, 0.24);
+    }
+
+    .sheet {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      max-height: 720px;
+      border-radius: 38px;
+      background: var(--sheet);
+      box-shadow: 0 -18px 60px rgba(22, 21, 20, 0.18);
+      overflow: hidden;
+    }
+
+    .sheet-scroll {
+      max-height: 720px;
+      overflow: auto;
+      padding: 14px 18px 24px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(15, 127, 116, 0.35) transparent;
+    }
+
+    .grabber {
+      width: 42px;
+      height: 6px;
+      margin: 0 auto 16px;
+      border-radius: 999px;
+      background: #bfc1c4;
+    }
+
+    .sheet-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .spark {
+      width: 30px;
+      height: 30px;
+      position: relative;
+    }
+
+    .spark::before,
+    .spark::after {
+      content: "";
+      position: absolute;
+      inset: 4px 13px;
+      border-radius: 999px;
+      background: var(--ink);
+    }
+
+    .spark::after {
+      transform: rotate(90deg);
+    }
+
+    .sheet h2 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1;
+    }
+
+    .subhead {
+      margin: 0 0 26px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .label {
+      margin: 22px 0 12px;
+      color: #777b79;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .chip {
+      min-height: 40px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0 16px;
+      background: #fdfdfd;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .chip.active {
+      background: var(--teal);
+      color: white;
+    }
+
+    .chip.new {
+      color: var(--teal);
+      background: transparent;
+      border: 1.5px dashed #78b8b1;
+    }
+
+    .modes {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mode {
+      width: 100%;
+      min-height: 76px;
+      border: 1.5px solid transparent;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 42px 1fr 28px;
+      gap: 12px;
+      align-items: center;
+      color: var(--ink);
+      background: var(--surface);
+      text-align: left;
+      cursor: pointer;
+      transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    }
+
+    .mode:hover {
+      transform: translateY(-1px);
+    }
+
+    .mode.selected {
+      border-color: var(--teal);
+      background: #fffefd;
+    }
+
+    .mode-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: var(--teal);
+      background: var(--teal-soft);
+      font-weight: 900;
+      font-size: 20px;
+    }
+
+    .mode.selected .mode-icon {
+      color: white;
+      background: var(--teal);
+    }
+
+    .mode-name-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 3px;
+    }
+
+    .mode-name {
+      font-size: 17px;
+      font-weight: 850;
+    }
+
+    .badge {
+      padding: 3px 8px;
+      border-radius: 999px;
+      color: #747875;
+      background: #eceeec;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .badge.live {
+      color: var(--teal-dark);
+      background: var(--teal-soft);
+    }
+
+    .mode-copy {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.3;
+    }
+
+    .radio {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #e0e2e3;
+      border-radius: 50%;
+      justify-self: end;
+      position: relative;
+    }
+
+    .mode.selected .radio {
+      border-color: var(--teal);
+      background: var(--teal);
+    }
+
+    .mode.selected .radio::after {
+      content: "";
+      position: absolute;
+      left: 7px;
+      top: 4px;
+      width: 6px;
+      height: 10px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .preview {
+      display: none;
+      margin-top: 12px;
+      border-radius: var(--radius);
+      background: #eef0f1;
+      padding: 12px;
+      border: 1px solid rgba(22, 21, 20, 0.04);
+    }
+
+    .preview.visible {
+      display: block;
+    }
+
+    .sample-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-weight: 850;
+      font-size: 15px;
+    }
+
+    .sample-head span:last-child {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 98px;
+      max-height: 140px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--ink);
+      background: white;
+      line-height: 1.35;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(15, 127, 116, 0.14);
+    }
+
+    .checks {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .checks li {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .checks li::before {
+      content: "";
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: inset 0 0 0 5px var(--teal-soft);
+    }
+
+    .route {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .route span {
+      min-width: 42px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: var(--teal-dark);
+      background: var(--teal-soft);
+      text-align: center;
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .route b {
+      color: var(--faint);
+    }
+
+    .primary-cta {
+      width: 100%;
+      min-height: 52px;
+      margin-top: 14px;
+      border: 0;
+      border-radius: 999px;
+      color: white;
+      background: var(--teal);
+      font-size: 16px;
+      font-weight: 850;
+    }
+
+    .primary-cta:disabled {
+      color: #777b79;
+      background: var(--disabled);
+    }
+
+    .hint {
+      min-height: 18px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .side-panel {
+      margin-top: 34px;
+      width: min(430px, 100%);
+      border: 1px solid rgba(22, 21, 20, 0.1);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.55);
+      padding: 14px;
+    }
+
+    .side-panel h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .mode-readout {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .mode-readout strong {
+      color: var(--ink);
+    }
+
+    @media (max-width: 900px) {
+      .page {
+        grid-template-columns: 1fr;
+        padding-top: 22px;
+      }
+
+      .brief {
+        padding-top: 0;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(40px, 12vw, 64px);
+      }
+
+      .brief p {
+        margin-top: 14px;
+      }
+    }
+
+    @media (max-width: 700px) {
+      body {
+        overflow-x: hidden;
+      }
+
+      .page {
+        width: min(390px, 100vw);
+        margin: 0;
+        padding: 0 22px 24px;
+        overflow-x: hidden;
+      }
+
+      .brief {
+        min-width: 0;
+        width: 100%;
+        padding: 24px 0 0;
+        overflow: hidden;
+      }
+
+      .brief p {
+        max-width: none;
+        overflow-wrap: break-word;
+      }
+
+      .mock-stage {
+        min-width: 0;
+      }
+
+      h1 {
+        font-size: clamp(38px, 11vw, 46px);
+      }
+
+      .legend {
+        display: none;
+      }
+
+      .phone {
+        width: 100%;
+        max-width: none;
+        min-height: 100vh;
+        border-radius: 30px;
+        box-shadow: none;
+      }
+
+      .sheet {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 30px 30px 0 0;
+      }
+
+      .sheet-scroll {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brief" aria-labelledby="mock-title">
+      <p class="eyebrow">HTML mockup</p>
+      <h1 id="mock-title">Polish modes</h1>
+      <p>
+        A browser-only version of the Polish sheet. Click the rewrite modes to see the staged controls for Voice Match, Natural Audit, Alt Translation, and Translation Hop.
+      </p>
+      <ul class="legend">
+        <li><span class="mark">1</span><span>Normal and Translation Hop are the live paths that map to the current app behavior.</span></li>
+        <li><span class="mark">2</span><span>Preview modes are selectable so the sheet can be evaluated before service wiring exists.</span></li>
+        <li><span class="mark">3</span><span>The new modes focus on voice, cadence, and plain-language cleanup.</span></li>
+      </ul>
+      <aside class="side-panel" aria-live="polite">
+        <h3>Selected mode</h3>
+        <ul class="mode-readout">
+          <li><strong id="readout-name">Normal</strong></li>
+          <li id="readout-copy">Single model rewrite. Fastest.</li>
+          <li id="readout-state">Live: runs the current one-call polish flow.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="mock-stage" aria-label="Phone mockup">
+      <div class="phone">
+        <div class="island" aria-hidden="true"></div>
+        <div class="status" aria-hidden="true">
+          <span>2:10</span>
+          <span class="signal">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="battery"></span>
+          </span>
+        </div>
+
+        <div class="note-view">
+          <button class="back" aria-label="Back">‹</button>
+          <div class="date">7/8/2026, 9:15 AM</div>
+          <div class="transcript">
+            These are all billions. I get probably the same data.
+            <div class="audio">
+              <span class="wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+              <span>00:03 · Play</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dock-actions" aria-hidden="true">
+          <button class="pill-action">Copy</button>
+          <button class="pill-action primary">✦ Polish</button>
+          <button class="pill-action">Share</button>
+        </div>
+        <div class="dock" aria-hidden="true">
+          <button class="round small">Aa</button>
+          <button class="round record"></button>
+        </div>
+
+        <section class="sheet" aria-labelledby="sheet-title">
+          <div class="sheet-scroll">
+            <div class="grabber" aria-hidden="true"></div>
+            <div class="sheet-title">
+              <span class="spark" aria-hidden="true"></span>
+              <h2 id="sheet-title">Polish this note</h2>
+            </div>
+            <p class="subhead">Choose the shape, then choose how hard to rewrite it.</p>
+
+            <div class="label">Style</div>
+            <div class="chips" role="group" aria-label="Style">
+              <button class="chip active">Email</button>
+              <button class="chip">Reddit post</button>
+              <button class="chip">Marketing</button>
+              <button class="chip">Text message</button>
+              <button class="chip">Just clean it up</button>
+              <button class="chip new">+ New style</button>
+            </div>
+
+            <div class="label">Rewrite mode</div>
+            <div class="modes" role="radiogroup" aria-label="Rewrite mode">
+              <button class="mode selected" type="button" role="radio" aria-checked="true" data-mode="quick">
+                <span class="mode-icon">↯</span>
+                <span>
+                  <span class="mode-name-row"><span class="mode-name">Normal</span></span>
+                  <span class="mode-copy">Single model rewrite. Fastest.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+              <button class="mode" type="button" role="radio" aria-checked="false" data-mode="voice">
+                <span class="mode-icon">▤</span>
+                <span>
+                  <span class="mode-name-row"><span class="mode-name">Voice Match</span><span class="badge">Preview</span></span>
+                  <span class="mode-copy">Uses a writing sample to mirror cadence.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+              <button class="mode" type="button" role="radio" aria-checked="false" data-mode="audit">
+                <span class="mode-icon">☑</span>
+                <span>
+                  <span class="mode-name-row"><span class="mode-name">Natural Audit</span><span class="badge">Preview</span></span>
+                  <span class="mode-copy">Second pass for stiff phrasing.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+              <button class="mode" type="button" role="radio" aria-checked="false" data-mode="alt">
+                <span class="mode-icon">↻</span>
+                <span>
+                  <span class="mode-name-row"><span class="mode-name">Alt Translation</span><span class="badge">Preview</span></span>
+                  <span class="mode-copy">Different cross-language route.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+              <button class="mode" type="button" role="radio" aria-checked="false" data-mode="hop">
+                <span class="mode-icon">◎</span>
+                <span>
+                  <span class="mode-name-row"><span class="mode-name">Translation Hop</span><span class="badge live">Live</span></span>
+                  <span class="mode-copy">Current four-step chain.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+            </div>
+
+            <div class="preview" id="preview-voice">
+              <div class="sample-head"><span>Writing sample</span><span id="sample-count">0/1200</span></div>
+              <textarea id="sample" maxlength="1200" placeholder="Paste a few lines that sound like you."></textarea>
+            </div>
+
+            <div class="preview" id="preview-audit">
+              <ul class="checks">
+                <li>Stiff phrase cleanup</li>
+                <li>Plain wording pass</li>
+                <li>Protected names and links</li>
+              </ul>
+            </div>
+
+            <div class="preview" id="preview-alt">
+              <div class="route" aria-label="Alt Translation route">
+                <span>EN</span><b>→</b><span>ZH</span><b>→</b><span>TR</span><b>→</b><span>EN</span>
+              </div>
+            </div>
+
+            <div class="preview" id="preview-hop">
+              <ul class="checks">
+                <li>Chinese rewrite</li>
+                <li>Japanese rewrite</li>
+                <li>Finnish hop</li>
+                <li>English finish</li>
+              </ul>
+            </div>
+
+            <button class="primary-cta" id="cta" type="button">Polish as Email</button>
+            <div class="hint" id="hint"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const modeData = {
+      quick: {
+        name: "Normal",
+        copy: "Single model rewrite. Fastest.",
+        state: "Live: runs the current one-call polish flow.",
+        runnable: true,
+        preview: null
+      },
+      voice: {
+        name: "Voice Match",
+        copy: "Uses a writing sample to mirror cadence.",
+        state: "Preview: staged for writing-sample prompt wiring.",
+        runnable: false,
+        preview: "preview-voice"
+      },
+      audit: {
+        name: "Natural Audit",
+        copy: "Second pass for stiff phrasing.",
+        state: "Preview: staged for a second-pass cleanup flow.",
+        runnable: false,
+        preview: "preview-audit"
+      },
+      alt: {
+        name: "Alt Translation",
+        copy: "Different cross-language route.",
+        state: "Preview: staged for a new language-hop experiment.",
+        runnable: false,
+        preview: "preview-alt"
+      },
+      hop: {
+        name: "Translation Hop",
+        copy: "Current four-step chain.",
+        state: "Live: maps to the current translation-hop pipeline.",
+        runnable: true,
+        preview: "preview-hop"
+      }
+    };
+
+    const buttons = Array.from(document.querySelectorAll(".mode"));
+    const previews = Array.from(document.querySelectorAll(".preview"));
+    const cta = document.getElementById("cta");
+    const hint = document.getElementById("hint");
+    const readoutName = document.getElementById("readout-name");
+    const readoutCopy = document.getElementById("readout-copy");
+    const readoutState = document.getElementById("readout-state");
+
+    function selectMode(mode) {
+      const data = modeData[mode];
+      buttons.forEach((button) => {
+        const selected = button.dataset.mode === mode;
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-checked", selected ? "true" : "false");
+      });
+
+      previews.forEach((preview) => preview.classList.remove("visible"));
+      if (data.preview) {
+        document.getElementById(data.preview).classList.add("visible");
+      }
+
+      cta.textContent = data.runnable ? "Polish as Email" : "Mockup only";
+      cta.disabled = !data.runnable;
+      hint.textContent = data.runnable ? "" : "This mode is staged for the next implementation pass.";
+
+      readoutName.textContent = data.name;
+      readoutCopy.textContent = data.copy;
+      readoutState.textContent = data.state;
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => selectMode(button.dataset.mode));
+    });
+
+    const sample = document.getElementById("sample");
+    const sampleCount = document.getElementById("sample-count");
+    sample.addEventListener("input", () => {
+      sampleCount.textContent = `${sample.value.length}/1200`;
+    });
+  </script>
+</body>
+</html>
