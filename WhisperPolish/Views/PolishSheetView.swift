@@ -6,11 +6,11 @@ struct PolishSheetView: View {
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
+    @AppStorage(SettingsKeys.voiceMatchSample) private var voiceSample = ""
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var style: PolishStyle = .email
     @State private var mode: PolishRewriteMode = .normal
-    @State private var voiceSample = ""
     @State private var showingNewStyle = false
 
     var body: some View {
@@ -33,10 +33,15 @@ struct PolishSheetView: View {
                 sectionLabel("Rewrite mode")
                 VStack(spacing: 10) {
                     ForEach(PolishRewriteMode.allCases) { mode in
+                        let isEnabled = isModeEnabled(mode)
                         PolishModeCard(
                             mode: mode,
                             isSelected: self.mode == mode,
-                            onSelect: { self.mode = mode }
+                            isEnabled: isEnabled,
+                            onSelect: {
+                                guard isEnabled else { return }
+                                self.mode = mode
+                            }
                         )
                     }
                 }
@@ -103,18 +108,26 @@ struct PolishSheetView: View {
     }
 
     private var canRunSelectedMode: Bool {
-        mode != .voiceMatch || !voiceSample.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isModeEnabled(mode)
     }
 
     private var ctaTitle: String {
-        canRunSelectedMode ? "Polish as \(style.name)" : "Add writing sample"
+        canRunSelectedMode ? "Polish as \(style.name)" : "Configure in Settings"
     }
 
     private var modeHint: String? {
         if mode == .voiceMatch && !canRunSelectedMode {
-            return "Voice Match needs a few lines of your writing first."
+            return "Add a writing sample in Settings to use Voice Match."
         }
         return nil
+    }
+
+    private var hasVoiceSample: Bool {
+        !voiceSample.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func isModeEnabled(_ mode: PolishRewriteMode) -> Bool {
+        mode != .voiceMatch || hasVoiceSample
     }
 
     @ViewBuilder
@@ -123,35 +136,10 @@ struct PolishSheetView: View {
         case .normal:
             EmptyView()
         case .voiceMatch:
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "signature")
-                        .foregroundStyle(Color.polishTeal)
-                    Text("Writing sample")
-                        .font(.footnote.weight(.semibold))
-                    Spacer()
-                    Text("\(voiceSample.count)/1200")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                TextEditor(text: $voiceSample)
-                    .font(.footnote)
-                    .frame(minHeight: 84, maxHeight: 112)
-                    .scrollContentBackground(.hidden)
-                    .padding(9)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(.secondarySystemGroupedBackground)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color(.separator).opacity(0.25), lineWidth: 1)
-                    )
-                    .onChange(of: voiceSample) { _, newValue in
-                        if newValue.count > 1200 {
-                            voiceSample = String(newValue.prefix(1200))
-                        }
-                    }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(.systemGroupedBackground)))
+            ModePreviewRows(rows: [
+                ("signature", "Uses the writing sample saved in Settings"),
+                ("text.quote", "\(voiceSample.count) characters configured"),
+            ])
         case .naturalAudit:
             ModePreviewRows(rows: [
                 ("text.magnifyingglass", "Stiff phrase cleanup"),
@@ -191,6 +179,7 @@ struct PolishSheetView: View {
 private struct PolishModeCard: View {
     let mode: PolishRewriteMode
     let isSelected: Bool
+    let isEnabled: Bool
     let onSelect: () -> Void
 
     var body: some View {
@@ -198,22 +187,22 @@ private struct PolishModeCard: View {
             HStack(spacing: 12) {
                 Image(systemName: mode.icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isSelected ? .white : Color.polishTeal)
+                    .foregroundStyle(iconColor)
                     .frame(width: 34, height: 34)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.polishTeal : Color.polishTealSoft))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(iconBackground))
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(mode.title)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(isEnabled ? .primary : .secondary)
                         if let badge = mode.badge {
                             Text(badge)
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.polishTeal)
+                                .foregroundStyle(isEnabled ? Color.polishTeal : .secondary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.polishTealSoft))
+                                .background(Capsule().fill(isEnabled ? Color.polishTealSoft : Color(.systemFill)))
                         }
                     }
                     Text(mode.subtitle)
@@ -236,6 +225,18 @@ private struct PolishModeCard: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.52)
+    }
+
+    private var iconColor: Color {
+        if !isEnabled { return Color(.systemGray2) }
+        return isSelected ? .white : Color.polishTeal
+    }
+
+    private var iconBackground: Color {
+        if !isEnabled { return Color(.systemFill) }
+        return isSelected ? Color.polishTeal : Color.polishTealSoft
     }
 }
 

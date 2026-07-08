@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
     @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.voiceMatchSample) private var voiceMatchSample = ""
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
@@ -92,6 +93,41 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                }
+
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Label("Writing sample", systemImage: "signature")
+                            Spacer()
+                            Text("\(voiceMatchSample.count)/1200")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        ZStack(alignment: .topLeading) {
+                            if voiceMatchSample.isEmpty {
+                                Text("Paste a few lines that sound like you.")
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                            }
+                            TextEditor(text: $voiceMatchSample)
+                                .frame(minHeight: 120)
+                                .scrollContentBackground(.hidden)
+                                .autocorrectionDisabled()
+                        }
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(.secondarySystemGroupedBackground)))
+                    }
+                    .onChange(of: voiceMatchSample) { _, newValue in
+                        if newValue.count > 1200 {
+                            voiceMatchSample = String(newValue.prefix(1200))
+                        }
+                    }
+                } header: {
+                    Text("Voice Match")
+                } footer: {
+                    Text("Voice Match is available from the Polish sheet after this sample is configured.")
                 }
 
                 Section {
