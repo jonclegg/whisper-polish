@@ -9,9 +9,11 @@ struct NotesListView: View {
 
     @AppStorage(SettingsKeys.recordOnLaunch) private var recordOnLaunch = false
     @AppStorage(SettingsKeys.hasCompletedSetup) private var hasCompletedSetup = false
+    @AppStorage(SettingsKeys.autoCopyTranscript) private var autoCopy = false
     @State private var path: [Note] = []
     @State private var searchText = ""
-    @State private var showRecorder = false
+    @State private var recording = RecordingController()
+    @State private var dockContext = DockContext()
     @State private var showComposer = false
     @State private var showSettings = false
     @State private var didRunStartupWork = false
@@ -72,12 +74,23 @@ struct NotesListView: View {
                     }
                 }
             }
-            .overlay(alignment: .bottom) { dock }
         }
-        .fullScreenCover(isPresented: $showRecorder) {
-            RecordingView { note in
-                path.append(note)
-            }
+        .environment(dockContext)
+        .overlay(alignment: .bottom) {
+            RecordDock(
+                recording: recording,
+                context: dockContext,
+                onCompose: { showComposer = true },
+                onRecorded: handleRecorded
+            )
+        }
+        .alert("Recording problem", isPresented: .init(
+            get: { recording.errorMessage != nil },
+            set: { if !$0 { recording.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(recording.errorMessage ?? "")
         }
         .sheet(isPresented: $showComposer) {
             TextComposerView { note in
@@ -156,27 +169,26 @@ struct NotesListView: View {
         .padding(.top, 120)
     }
 
-    private var dock: some View {
-        HStack(spacing: 22) {
-            Button { showComposer = true } label: {
-                Text("Aa")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
-                    .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+    /// Stop is instant: the note appears immediately and transcription
+    /// finishes in the background (the model warm-up usually beat us here).
+    private func handleRecorded(url: URL, duration: TimeInterval) {
+        let note = Note(
+            source: .voice,
+            originalText: "",
+            audioFileName: url.lastPathComponent,
+            duration: duration
+        )
+        note.isTranscribing = true
+        modelContext.insert(note)
+        path.append(note)
+        Task { @MainActor in
+            let text = (try? await transcription.transcribe(url: url)) ?? ""
+            note.originalText = text
+            note.isTranscribing = false
+            if autoCopy && !text.isEmpty {
+                UIPasteboard.general.string = text
             }
-            Button { showRecorder = true } label: {
-                Circle()
-                    .fill(Color(.label))
-                    .frame(width: 66, height: 66)
-                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 4))
-                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
-            }
-            // Placeholder to keep the record button centered.
-            Color.clear.frame(width: 44, height: 44)
         }
-        .padding(.bottom, 12)
     }
 
     private func delete(_ note: Note) {
@@ -209,17 +221,19 @@ struct NotesListView: View {
         resetOrphanedTranscriptions()
     }
 
+    /// "Record on open" no longer takes over the screen — it just expands
+    /// the dock into the recording pill over whatever is showing.
     private func presentRecorderForLaunchIfNeeded() {
         guard launchRecordingGate.shouldStartRecording(
             hasCompletedSetup: hasCompletedSetup,
             recordOnLaunch: recordOnLaunch,
-            recorderIsPresented: showRecorder,
+            recorderIsPresented: recording.isActive,
             blockingModalIsPresented: showComposer || showSettings
         ) else {
             return
         }
 
-        showRecorder = true
+        Task { await recording.begin() }
     }
 }
 

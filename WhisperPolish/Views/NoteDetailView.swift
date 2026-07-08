@@ -6,6 +6,7 @@ struct NoteDetailView: View {
     @Bindable var note: Note
 
     @Environment(TranscriptionService.self) private var transcription
+    @Environment(DockContext.self) private var dockContext
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
     @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
@@ -96,13 +97,27 @@ struct NoteDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
                 .padding(14)
+                .padding(.bottom, 96)
             }
-
-            actionBar
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(action: copy) {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    .disabled(visibleText.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .onAppear(perform: syncDockActions)
+        .onChange(of: visibleText) { syncDockActions() }
+        .onChange(of: note.isTranscribing) { syncDockActions() }
         .sheet(isPresented: $showPolishSheet) {
             PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style, stealth in
                 showPolishSheet = false
@@ -138,7 +153,18 @@ struct NoteDetailView: View {
         }
         .onDisappear {
             player?.stop()
+            dockContext.noteActions = nil
         }
+    }
+
+    /// Publishes this note's actions into the persistent dock's side slots
+    /// (✦ Polish on the left, Share on the right).
+    private func syncDockActions() {
+        dockContext.noteActions = .init(
+            canPolish: !note.originalText.isEmpty && !note.isTranscribing,
+            shareText: visibleText,
+            requestPolish: { showPolishSheet = true }
+        )
     }
 
     private var emptyTranscript: some View {
@@ -155,48 +181,6 @@ struct NoteDetailView: View {
                 .disabled(retrying)
             }
         }
-    }
-
-    private var actionBar: some View {
-        HStack(spacing: 10) {
-            Button(action: copy) {
-                Text("Copy")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                showPolishSheet = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "sparkle")
-                        .foregroundStyle(Color.polishTealSoft)
-                    Text(note.isPolished ? "Re-polish" : "Polish")
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .background(Capsule().fill(Color(.label)))
-            }
-            .buttonStyle(.plain)
-            .disabled(note.originalText.isEmpty)
-
-            ShareLink(item: visibleText) {
-                Text("Share")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
-            }
-            .buttonStyle(.plain)
-            .disabled(visibleText.isEmpty)
-        }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 8)
     }
 
     private func polishingOverlay(_ message: String) -> some View {
