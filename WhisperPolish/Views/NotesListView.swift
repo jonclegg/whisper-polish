@@ -38,7 +38,7 @@ struct NotesListView: View {
 
             if recording.isActive {
                 RecordingScreen(recording: recording, onRecorded: handleRecorded)
-                    .transition(.scale(scale: 0.05, anchor: UnitPoint(x: 0.5, y: 0.9))
+                    .transition(.scale(scale: 0.05, anchor: UnitPoint(x: 0.5, y: 0.92))
                         .combined(with: .opacity))
                     .zIndex(1)
             }

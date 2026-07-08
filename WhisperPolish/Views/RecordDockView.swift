@@ -6,20 +6,20 @@ import SwiftUI
 struct RecordDockBar: View {
     /// Top padding + record button + bottom padding. Pushed screens don't
     /// inherit the root's `safeAreaInset`, so they reserve this explicitly.
-    static let height: CGFloat = 10 + 99 + 4
+    static let height: CGFloat = 10 + 66 + 4
 
     var recording: RecordingController
     var onCompose: () -> Void
 
     var body: some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 22) {
             Button(action: onCompose) {
                 Text("Aa")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 66, height: 66)
+                    .frame(width: 44, height: 44)
                     .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
-                    .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
+                    .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
             }
             .accessibilityLabel("New text note")
 
@@ -28,14 +28,14 @@ struct RecordDockBar: View {
             } label: {
                 Circle()
                     .fill(Color(.label))
-                    .frame(width: 99, height: 99)
-                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 6))
-                    .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+                    .frame(width: 66, height: 66)
+                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 4))
+                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
             }
             .accessibilityLabel("Record a new note")
 
             // Placeholder to keep the record button centered.
-            Color.clear.frame(width: 66, height: 66)
+            Color.clear.frame(width: 44, height: 44)
         }
         .padding(.top, 10)
         .padding(.bottom, 4)
@@ -91,11 +91,11 @@ struct RecordingScreen: View {
                 ZStack {
                     Circle()
                         .fill(Color(.systemBackground))
-                        .frame(width: 99, height: 99)
-                        .overlay(Circle().stroke(Color(.label), lineWidth: 6))
-                    RoundedRectangle(cornerRadius: 7)
+                        .frame(width: 66, height: 66)
+                        .overlay(Circle().stroke(Color(.label), lineWidth: 4))
+                    RoundedRectangle(cornerRadius: 5)
                         .fill(.red)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 22, height: 22)
                 }
             }
             .accessibilityLabel("Stop and save")
