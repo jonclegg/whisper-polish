@@ -100,6 +100,9 @@ struct NoteDetailView: View {
 
             actionBar
         }
+        // The root list gets this clearance from the dock's safeAreaInset,
+        // but pushed screens don't inherit it.
+        .padding(.bottom, RecordDockBar.height)
         .background(Color(.systemGroupedBackground))
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)

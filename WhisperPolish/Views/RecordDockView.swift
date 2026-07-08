@@ -1,70 +1,60 @@
 import SwiftUI
 
-/// Owns the record button and the recording experience. Idle, it's a red
-/// circle in the nav row of every screen (plus Aa on the list). Tapping it
-/// morphs into the full-screen recorder: the red dot travels down into the
-/// stop button while the screen blooms in around it — same destination as
-/// the old modal recorder, but one continuous gesture instead of a cover.
-struct RecordFlow: View {
-    var recording: RecordingController
-    var showsComposeButton: Bool
-    var onCompose: () -> Void
-    var onRecorded: (URL, TimeInterval) -> Void
+/// The persistent bottom dock: Aa composer + the big record button, present
+/// on every screen. Installed as a `safeAreaInset`, so it's a real section —
+/// content ends above it instead of scrolling underneath.
+struct RecordDockBar: View {
+    /// Top padding + record button + bottom padding. Pushed screens don't
+    /// inherit the root's `safeAreaInset`, so they reserve this explicitly.
+    static let height: CGFloat = 10 + 99 + 4
 
-    @Environment(TranscriptionService.self) private var transcription
-    @Namespace private var morph
+    var recording: RecordingController
+    var onCompose: () -> Void
 
     var body: some View {
-        ZStack(alignment: .top) {
-            if recording.isActive {
-                recordingScreen
-            } else {
-                idleControls
+        HStack(spacing: 28) {
+            Button(action: onCompose) {
+                Text("Aa")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 66, height: 66)
+                    .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
+                    .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: recording.isActive)
-    }
+            .accessibilityLabel("New text note")
 
-    // MARK: - Idle nav-row controls
-
-    private var idleControls: some View {
-        HStack(spacing: 10) {
-            Spacer()
-            if showsComposeButton {
-                Button(action: onCompose) {
-                    Text("Aa")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
-                        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-                }
-                .accessibilityLabel("New text note")
-            }
             Button {
                 Task { await recording.begin() }
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 32, height: 32)
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 11, height: 11)
-                }
-                .matchedGeometryEffect(id: "recordCore", in: morph)
-                .shadow(color: .red.opacity(0.35), radius: 4, y: 1)
+                Circle()
+                    .fill(Color(.label))
+                    .frame(width: 99, height: 99)
+                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 6))
+                    .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
             }
             .accessibilityLabel("Record a new note")
+
+            // Placeholder to keep the record button centered.
+            Color.clear.frame(width: 66, height: 66)
         }
-        .padding(.horizontal, 16)
-        .frame(height: 44)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .overlay(alignment: .top) { Divider() }
     }
+}
 
-    // MARK: - Full-screen recorder
+/// Full-screen recorder, zoomed out of the dock's record button (the scale
+/// transition in NotesListView anchors at the button) and back into it on
+/// stop or cancel.
+struct RecordingScreen: View {
+    var recording: RecordingController
+    var onRecorded: (URL, TimeInterval) -> Void
 
-    private var recordingScreen: some View {
+    @Environment(TranscriptionService.self) private var transcription
+
+    var body: some View {
         VStack {
             Spacer()
 
@@ -79,8 +69,6 @@ struct RecordFlow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.94))
-                    .animation(.easeOut(duration: 0.25).delay(0.12)))
             } else {
                 ProgressView()
             }
@@ -90,11 +78,7 @@ struct RecordFlow: View {
             bottomControls
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
-                .transition(.opacity.animation(.easeOut(duration: 0.2)))
-        )
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 
     private var bottomControls: some View {
@@ -107,12 +91,11 @@ struct RecordFlow: View {
                 ZStack {
                     Circle()
                         .fill(Color(.systemBackground))
-                        .frame(width: 66, height: 66)
-                        .overlay(Circle().stroke(Color(.label), lineWidth: 4))
-                    RoundedRectangle(cornerRadius: 5)
+                        .frame(width: 99, height: 99)
+                        .overlay(Circle().stroke(Color(.label), lineWidth: 6))
+                    RoundedRectangle(cornerRadius: 7)
                         .fill(.red)
-                        .frame(width: 22, height: 22)
-                        .matchedGeometryEffect(id: "recordCore", in: morph)
+                        .frame(width: 32, height: 32)
                 }
             }
             .accessibilityLabel("Stop and save")
@@ -135,7 +118,7 @@ struct RecordFlow: View {
             }
             .padding(.horizontal, 44)
         }
-        .padding(.bottom, 30)
+        .padding(.bottom, 16)
     }
 
     private var timerLabel: String {

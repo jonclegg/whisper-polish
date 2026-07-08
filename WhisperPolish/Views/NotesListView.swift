@@ -33,6 +33,20 @@ struct NotesListView: View {
     }
 
     var body: some View {
+        ZStack {
+            navigationContent
+
+            if recording.isActive {
+                RecordingScreen(recording: recording, onRecorded: handleRecorded)
+                    .transition(.scale(scale: 0.05, anchor: UnitPoint(x: 0.5, y: 0.9))
+                        .combined(with: .opacity))
+                    .zIndex(1)
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.86), value: recording.isActive)
+    }
+
+    private var navigationContent: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 12) {
@@ -67,20 +81,15 @@ struct NotesListView: View {
             }
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
                     }
                 }
             }
         }
-        .overlay {
-            RecordFlow(
-                recording: recording,
-                showsComposeButton: path.isEmpty,
-                onCompose: { showComposer = true },
-                onRecorded: handleRecorded
-            )
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            RecordDockBar(recording: recording, onCompose: { showComposer = true })
         }
         .alert("Recording problem", isPresented: .init(
             get: { recording.errorMessage != nil },
@@ -159,7 +168,7 @@ struct NotesListView: View {
             Image(systemName: "waveform")
                 .font(.system(size: 36))
                 .foregroundStyle(.tertiary)
-            Text("Tap the red button up top to capture a voice note,\nor Aa to paste text.")
+            Text("Tap the record button to capture a voice note,\nor Aa to paste text.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
