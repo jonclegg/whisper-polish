@@ -13,7 +13,6 @@ struct NotesListView: View {
     @State private var path: [Note] = []
     @State private var searchText = ""
     @State private var recording = RecordingController()
-    @State private var dockContext = DockContext()
     @State private var showComposer = false
     @State private var showSettings = false
     @State private var didRunStartupWork = false
@@ -58,7 +57,7 @@ struct NotesListView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .padding(.bottom, 110)
+                .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Whisper Polish")
@@ -68,18 +67,17 @@ struct NotesListView: View {
             }
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
                     }
                 }
             }
         }
-        .environment(dockContext)
-        .overlay(alignment: .bottom) {
-            RecordDock(
+        .overlay(alignment: .top) {
+            RecordTopBar(
                 recording: recording,
-                context: dockContext,
+                showsComposeButton: path.isEmpty,
                 onCompose: { showComposer = true },
                 onRecorded: handleRecorded
             )
@@ -161,7 +159,7 @@ struct NotesListView: View {
             Image(systemName: "waveform")
                 .font(.system(size: 36))
                 .foregroundStyle(.tertiary)
-            Text("Tap the record button to capture a voice note,\nor Aa to paste text.")
+            Text("Tap the red button up top to capture a voice note,\nor Aa to paste text.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

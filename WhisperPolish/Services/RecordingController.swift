@@ -29,7 +29,7 @@ final class RecordingController {
             return
         }
         do {
-            try recorder.start()
+            try await recorder.start()
             phase = .recording
         } catch {
             phase = .idle

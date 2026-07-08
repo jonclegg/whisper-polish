@@ -29,10 +29,14 @@ final class AudioRecorder {
         await AVAudioApplication.requestRecordPermission()
     }
 
-    func start() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-        try session.setActive(true)
+    /// Session activation takes ~200ms and would freeze the record-button
+    /// morph animation if run on the main thread, so it happens detached.
+    func start() async throws {
+        try await Task.detached(priority: .userInitiated) {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try session.setActive(true)
+        }.value
 
         let dir = URL.documentsDirectory.appending(path: "Audio")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
