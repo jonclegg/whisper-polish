@@ -2,14 +2,14 @@ import SwiftUI
 
 struct PolishSheetView: View {
     let hasAPIKey: Bool
-    let onPolish: (PolishStyle, Bool) -> Void
+    let onPolish: (PolishStyle, PolishRewriteMode, String) -> Void
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var style: PolishStyle = .email
-    @State private var mode: PolishRewriteMode = .quick
+    @State private var mode: PolishRewriteMode = .normal
     @State private var voiceSample = ""
     @State private var showingNewStyle = false
 
@@ -46,21 +46,21 @@ struct PolishSheetView: View {
                 if hasAPIKey {
                     VStack(spacing: 7) {
                         Button {
-                            guard mode.isRunnable else { return }
-                            onPolish(style, mode.usesTranslationHop)
+                            guard canRunSelectedMode else { return }
+                            onPolish(style, mode, voiceSample)
                         } label: {
-                            Text(mode.isRunnable ? "Polish as \(style.name)" : "Mockup only")
+                            Text(ctaTitle)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
-                                .background(Capsule().fill(mode.isRunnable ? Color.polishTeal : Color(.systemGray3)))
+                                .background(Capsule().fill(canRunSelectedMode ? Color.polishTeal : Color(.systemGray3)))
                         }
                         .buttonStyle(.plain)
-                        .disabled(!mode.isRunnable)
+                        .disabled(!canRunSelectedMode)
 
-                        if !mode.isRunnable {
-                            Text("This mode is staged for the next implementation pass.")
+                        if let hint = modeHint {
+                            Text(hint)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity)
@@ -83,7 +83,7 @@ struct PolishSheetView: View {
         }
         .onAppear {
             style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
-            mode = stealthByDefault ? .translationHop : .quick
+            mode = stealthByDefault ? .translationHop : .normal
         }
         .sheet(isPresented: $showingNewStyle) {
             // Seed with the selected style's instruction so "duplicate and
@@ -102,10 +102,25 @@ struct PolishSheetView: View {
             .tracking(0.6)
     }
 
+    private var canRunSelectedMode: Bool {
+        mode != .voiceMatch || !voiceSample.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var ctaTitle: String {
+        canRunSelectedMode ? "Polish as \(style.name)" : "Add writing sample"
+    }
+
+    private var modeHint: String? {
+        if mode == .voiceMatch && !canRunSelectedMode {
+            return "Voice Match needs a few lines of your writing first."
+        }
+        return nil
+    }
+
     @ViewBuilder
     private var modePreview: some View {
         switch mode {
-        case .quick:
+        case .normal:
             EmptyView()
         case .voiceMatch:
             VStack(alignment: .leading, spacing: 10) {
@@ -129,12 +144,17 @@ struct PolishSheetView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color(.separator).opacity(0.25), lineWidth: 1)
                     )
+                    .onChange(of: voiceSample) { _, newValue in
+                        if newValue.count > 1200 {
+                            voiceSample = String(newValue.prefix(1200))
+                        }
+                    }
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color(.systemGroupedBackground)))
         case .naturalAudit:
             ModePreviewRows(rows: [
-                ("text.magnifyingglass", "AI-ism cleanup"),
+                ("text.magnifyingglass", "Stiff phrase cleanup"),
                 ("quote.bubble", "Plain wording pass"),
                 ("lock.doc", "Protected names and links"),
             ])
@@ -168,70 +188,6 @@ struct PolishSheetView: View {
     }
 }
 
-private enum PolishRewriteMode: String, CaseIterable, Identifiable {
-    case quick
-    case voiceMatch
-    case naturalAudit
-    case altTranslation
-    case translationHop
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .quick: return "Normal"
-        case .voiceMatch: return "Voice Match"
-        case .naturalAudit: return "Natural Audit"
-        case .altTranslation: return "Alt Translation"
-        case .translationHop: return "Translation Hop"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .quick:
-            return "Single model rewrite. Fastest."
-        case .voiceMatch:
-            return "Uses a writing sample to mirror cadence."
-        case .naturalAudit:
-            return "Second pass for stiff phrasing."
-        case .altTranslation:
-            return "Different cross-language route."
-        case .translationHop:
-            return "Current four-step chain."
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .quick: return "bolt.fill"
-        case .voiceMatch: return "person.text.rectangle"
-        case .naturalAudit: return "checklist.checked"
-        case .altTranslation: return "arrow.triangle.2.circlepath"
-        case .translationHop: return "globe"
-        }
-    }
-
-    var badge: String? {
-        switch self {
-        case .quick: return nil
-        case .voiceMatch, .naturalAudit, .altTranslation: return "Preview"
-        case .translationHop: return "Live"
-        }
-    }
-
-    var isRunnable: Bool {
-        switch self {
-        case .quick, .translationHop:
-            return true
-        case .voiceMatch, .naturalAudit, .altTranslation:
-            return false
-        }
-    }
-
-    var usesTranslationHop: Bool { self == .translationHop }
-}
-
 private struct PolishModeCard: View {
     let mode: PolishRewriteMode
     let isSelected: Bool
@@ -254,10 +210,10 @@ private struct PolishModeCard: View {
                         if let badge = mode.badge {
                             Text(badge)
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(mode.isRunnable ? Color.polishTeal : .secondary)
+                                .foregroundStyle(Color.polishTeal)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(mode.isRunnable ? Color.polishTealSoft : Color(.systemFill)))
+                                .background(Capsule().fill(Color.polishTealSoft))
                         }
                     }
                     Text(mode.subtitle)
@@ -280,6 +236,18 @@ private struct PolishModeCard: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+private extension PolishRewriteMode {
+    var icon: String {
+        switch self {
+        case .normal: return "bolt.fill"
+        case .voiceMatch: return "person.text.rectangle"
+        case .naturalAudit: return "checklist.checked"
+        case .altTranslation: return "arrow.triangle.2.circlepath"
+        case .translationHop: return "globe"
+        }
     }
 }
 

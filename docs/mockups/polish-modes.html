@@ -768,7 +768,7 @@
       </p>
       <ul class="legend">
         <li><span class="mark">1</span><span>Normal and Translation Hop are the live paths that map to the current app behavior.</span></li>
-        <li><span class="mark">2</span><span>Preview modes are selectable so the sheet can be evaluated before service wiring exists.</span></li>
+        <li><span class="mark">2</span><span>Each mode maps to a runnable polish path, with Voice Match requiring a writing sample.</span></li>
         <li><span class="mark">3</span><span>The new modes focus on voice, cadence, and plain-language cleanup.</span></li>
       </ul>
       <aside class="side-panel" aria-live="polite">
@@ -846,7 +846,7 @@
               <button class="mode" type="button" role="radio" aria-checked="false" data-mode="voice">
                 <span class="mode-icon">▤</span>
                 <span>
-                  <span class="mode-name-row"><span class="mode-name">Voice Match</span><span class="badge">Preview</span></span>
+                  <span class="mode-name-row"><span class="mode-name">Voice Match</span><span class="badge">Sample</span></span>
                   <span class="mode-copy">Uses a writing sample to mirror cadence.</span>
                 </span>
                 <span class="radio"></span>
@@ -854,7 +854,7 @@
               <button class="mode" type="button" role="radio" aria-checked="false" data-mode="audit">
                 <span class="mode-icon">☑</span>
                 <span>
-                  <span class="mode-name-row"><span class="mode-name">Natural Audit</span><span class="badge">Preview</span></span>
+                  <span class="mode-name-row"><span class="mode-name">Natural Audit</span><span class="badge">2 pass</span></span>
                   <span class="mode-copy">Second pass for stiff phrasing.</span>
                 </span>
                 <span class="radio"></span>
@@ -862,7 +862,7 @@
               <button class="mode" type="button" role="radio" aria-checked="false" data-mode="alt">
                 <span class="mode-icon">↻</span>
                 <span>
-                  <span class="mode-name-row"><span class="mode-name">Alt Translation</span><span class="badge">Preview</span></span>
+                  <span class="mode-name-row"><span class="mode-name">Alt Translation</span><span class="badge">Route</span></span>
                   <span class="mode-copy">Different cross-language route.</span>
                 </span>
                 <span class="radio"></span>
@@ -870,7 +870,7 @@
               <button class="mode" type="button" role="radio" aria-checked="false" data-mode="hop">
                 <span class="mode-icon">◎</span>
                 <span>
-                  <span class="mode-name-row"><span class="mode-name">Translation Hop</span><span class="badge live">Live</span></span>
+                  <span class="mode-name-row"><span class="mode-name">Translation Hop</span><span class="badge live">4 steps</span></span>
                   <span class="mode-copy">Current four-step chain.</span>
                 </span>
                 <span class="radio"></span>
@@ -925,22 +925,22 @@
       voice: {
         name: "Voice Match",
         copy: "Uses a writing sample to mirror cadence.",
-        state: "Preview: staged for writing-sample prompt wiring.",
-        runnable: false,
+        state: "Live: uses the writing sample to guide cadence.",
+        runnable: true,
         preview: "preview-voice"
       },
       audit: {
         name: "Natural Audit",
         copy: "Second pass for stiff phrasing.",
-        state: "Preview: staged for a second-pass cleanup flow.",
-        runnable: false,
+        state: "Live: drafts once, then checks for stiff phrasing.",
+        runnable: true,
         preview: "preview-audit"
       },
       alt: {
         name: "Alt Translation",
         copy: "Different cross-language route.",
-        state: "Preview: staged for a new language-hop experiment.",
-        runnable: false,
+        state: "Live: runs the Chinese → Turkish → English route.",
+        runnable: true,
         preview: "preview-alt"
       },
       hop: {
@@ -973,9 +973,10 @@
         document.getElementById(data.preview).classList.add("visible");
       }
 
-      cta.textContent = data.runnable ? "Polish as Email" : "Mockup only";
-      cta.disabled = !data.runnable;
-      hint.textContent = data.runnable ? "" : "This mode is staged for the next implementation pass.";
+      const needsSample = mode === "voice" && sample.value.trim().length === 0;
+      cta.textContent = needsSample ? "Add writing sample" : "Polish as Email";
+      cta.disabled = needsSample;
+      hint.textContent = needsSample ? "Voice Match needs a few lines of your writing first." : "";
 
       readoutName.textContent = data.name;
       readoutCopy.textContent = data.copy;
@@ -990,6 +991,9 @@
     const sampleCount = document.getElementById("sample-count");
     sample.addEventListener("input", () => {
       sampleCount.textContent = `${sample.value.length}/1200`;
+      if (document.querySelector(".mode.selected")?.dataset.mode === "voice") {
+        selectMode("voice");
+      }
     });
   </script>
 </body>
