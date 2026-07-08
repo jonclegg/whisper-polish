@@ -49,7 +49,7 @@ struct NoteDetailView: View {
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(Color.polishTealSoft))
                             if note.polishStealth {
-                                Text("Stealth")
+                                Text("Translation Hop")
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.purple)
                                     .padding(.horizontal, 8)
@@ -111,7 +111,7 @@ struct NoteDetailView: View {
                 showPolishSheet = false
                 runPolish(style: style, stealth: stealth)
             }
-            .presentationDetents([.height(340), .medium, .large])
+            .presentationDetents([.height(620), .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {

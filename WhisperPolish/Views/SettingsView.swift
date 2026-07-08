@@ -86,7 +86,7 @@ struct SettingsView: View {
                     }
                     Toggle(isOn: $stealthByDefault) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Stealth by default")
+                            Text("Translation Hop by default")
                             Text("Always use the translation-hop pipeline")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
