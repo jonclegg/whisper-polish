@@ -74,8 +74,8 @@ struct NotesListView: View {
                 }
             }
         }
-        .overlay(alignment: .top) {
-            RecordTopBar(
+        .overlay {
+            RecordFlow(
                 recording: recording,
                 showsComposeButton: path.isEmpty,
                 onCompose: { showComposer = true },
