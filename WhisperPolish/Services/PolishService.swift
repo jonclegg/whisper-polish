@@ -3,12 +3,14 @@ import Foundation
 struct PolishResult: Equatable {
     let text: String
     let style: PolishStyle
+    let mode: PolishRewriteMode
     let stealth: Bool
     let model: String
 }
 
 enum PolishError: LocalizedError, Equatable {
     case missingAPIKey
+    case missingVoiceSample
     case emptyResponse
     case http(Int, String)
 
@@ -16,6 +18,8 @@ enum PolishError: LocalizedError, Equatable {
         switch self {
         case .missingAPIKey:
             return "Add your OpenRouter API key in Settings first."
+        case .missingVoiceSample:
+            return "Add a writing sample before using Voice Match."
         case .emptyResponse:
             return "The model returned an empty response. Try again."
         case .http(let code, let body):
@@ -25,12 +29,6 @@ enum PolishError: LocalizedError, Equatable {
 }
 
 /// Rewrites transcripts so they read like a person wrote them.
-///
-/// Normal mode is a single high-temperature chat call with a humanize prompt.
-/// Stealth mode ports lynote-ai/humanize-text: two creative LLM rewrites
-/// (Chinese, then Japanese with the first as history) followed by two
-/// translation hops (Japanese→Finnish, Finnish→English) on different models,
-/// so no single model's fingerprint survives.
 final class PolishService {
     struct Message: Codable, Equatable {
         let role: String
@@ -41,6 +39,7 @@ final class PolishService {
     /// and (typically) from the rewrite model.
     static let finnishHopModel = "google/gemini-2.5-flash"
     static let englishHopModel = "mistralai/mistral-small-3.2-24b-instruct"
+    static let turkishHopModel = "google/gemini-2.5-flash"
 
     private let session: URLSession
     private let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
@@ -52,7 +51,8 @@ final class PolishService {
     func polish(
         text: String,
         style: PolishStyle,
-        stealth: Bool,
+        mode: PolishRewriteMode,
+        voiceSample: String = "",
         apiKey: String,
         model: String,
         onProgress: @escaping @Sendable (String) -> Void = { _ in }
@@ -60,9 +60,8 @@ final class PolishService {
         guard !apiKey.isEmpty else { throw PolishError.missingAPIKey }
 
         let output: String
-        if stealth {
-            output = try await stealthPipeline(text: text, style: style, apiKey: apiKey, model: model, onProgress: onProgress)
-        } else {
+        switch mode {
+        case .normal:
             onProgress("Polishing…")
             output = try await chat(
                 messages: Self.normalMessages(text: text, style: style),
@@ -70,20 +69,42 @@ final class PolishService {
                 temperature: 0.9,
                 apiKey: apiKey
             )
+        case .voiceMatch:
+            let sample = voiceSample.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !sample.isEmpty else { throw PolishError.missingVoiceSample }
+            onProgress("Matching voice…")
+            output = try await chat(
+                messages: Self.voiceMatchMessages(text: text, style: style, voiceSample: sample),
+                model: model,
+                temperature: 0.95,
+                apiKey: apiKey
+            )
+        case .naturalAudit:
+            output = try await naturalAuditPipeline(text: text, style: style, apiKey: apiKey, model: model, onProgress: onProgress)
+        case .altTranslation:
+            output = try await altTranslationPipeline(text: text, style: style, apiKey: apiKey, model: model, onProgress: onProgress)
+        case .translationHop:
+            output = try await translationHopPipeline(text: text, style: style, apiKey: apiKey, model: model, onProgress: onProgress)
         }
-        return PolishResult(text: output, style: style, stealth: stealth, model: model)
+        return PolishResult(
+            text: output,
+            style: style,
+            mode: mode,
+            stealth: mode.storesTranslationHopFlag,
+            model: model
+        )
     }
 
     // MARK: - Prompts
 
     static func normalMessages(text: String, style: PolishStyle) -> [Message] {
         let system = """
-        You rewrite rough voice-note transcripts into finished text that reads like a thoughtful person wrote it — not like AI.
+        You rewrite rough voice-note transcripts into finished text that reads like a thoughtful person wrote it.
 
         Rules:
         - Keep the speaker's meaning, specifics, and personality. Never invent facts.
         - Vary sentence length. Use contractions. It's fine to start a sentence with And or But.
-        - No AI tells: no "delve", "furthermore", "moreover", "it's worth noting", "I hope this finds you well". No bullet lists unless the content genuinely needs one. Go easy on em dashes.
+        - Avoid stiff filler such as "delve", "furthermore", "moreover", "it's worth noting", and "I hope this finds you well". No bullet lists unless the content genuinely needs one. Go easy on em dashes.
         - Cut filler, false starts, and repetition without flattening the voice.
         - Output only the rewritten text. No preamble, no explanation, no quotes around it.
 
@@ -95,7 +116,41 @@ final class PolishService {
         ]
     }
 
-    static func stealthStep1Messages(text: String, style: PolishStyle) -> [Message] {
+    static func voiceMatchMessages(text: String, style: PolishStyle, voiceSample: String) -> [Message] {
+        let system = """
+        Rewrite the user's rough voice-note transcript so it sounds like the same person who wrote the sample.
+
+        Rules:
+        - Mirror the sample's cadence, sentence length, punctuation habits, and level of formality.
+        - Preserve the transcript's meaning, specifics, and intent. Never import facts or phrases from the sample.
+        - Keep the rewrite natural and direct. Avoid stiff filler such as "delve", "furthermore", "moreover", and "it's worth noting".
+        - \(style.instruction)
+        - Output only the rewritten text. No preamble, no explanation, no quotes around it.
+        """
+        return [
+            Message(role: "system", content: system),
+            Message(role: "user", content: "Writing sample:\n\(voiceSample)\n\nTranscript to rewrite:\n\(text)"),
+        ]
+    }
+
+    static func naturalAuditMessages(original: String, draft: String, style: PolishStyle) -> [Message] {
+        let system = """
+        Revise the draft one final time for natural flow.
+
+        Rules:
+        - Preserve the original meaning and facts.
+        - Remove stiff phrasing, generic transitions, over-polished wording, and unnecessary structure.
+        - Keep useful imperfections: contractions, short sentences, plain words, and occasional sentence fragments are fine.
+        - \(style.instruction)
+        - Output only the revised text. No preamble, no explanation, no quotes around it.
+        """
+        return [
+            Message(role: "system", content: system),
+            Message(role: "user", content: "Original transcript:\n\(original)\n\nDraft rewrite:\n\(draft)"),
+        ]
+    }
+
+    static func chineseRewriteMessages(text: String, style: PolishStyle) -> [Message] {
         let system = """
         Creatively rewrite the user's text in natural Chinese. Preserve every fact and detail, but restructure sentences freely and improve the flow. \(style.instruction) Output only the Chinese rewrite.
         """
@@ -112,9 +167,65 @@ final class PolishService {
         ]
     }
 
-    // MARK: - Stealth pipeline
+    // MARK: - Pipelines
 
-    private func stealthPipeline(
+    private func naturalAuditPipeline(
+        text: String,
+        style: PolishStyle,
+        apiKey: String,
+        model: String,
+        onProgress: @Sendable (String) -> Void
+    ) async throws -> String {
+        onProgress("Drafting…")
+        let draft = try await chat(
+            messages: Self.normalMessages(text: text, style: style),
+            model: model,
+            temperature: 0.9,
+            apiKey: apiKey
+        )
+
+        onProgress("Checking flow…")
+        return try await chat(
+            messages: Self.naturalAuditMessages(original: text, draft: draft, style: style),
+            model: model,
+            temperature: 0.7,
+            apiKey: apiKey
+        )
+    }
+
+    private func altTranslationPipeline(
+        text: String,
+        style: PolishStyle,
+        apiKey: String,
+        model: String,
+        onProgress: @Sendable (String) -> Void
+    ) async throws -> String {
+        onProgress("Step 1 of 3 · rewriting")
+        let chinese = try await chat(
+            messages: Self.chineseRewriteMessages(text: text, style: style),
+            model: model,
+            temperature: 1.1,
+            apiKey: apiKey
+        )
+
+        onProgress("Step 2 of 3 · translating")
+        let turkish = try await chat(
+            messages: Self.translationMessages(text: chinese, from: "Chinese", to: "Turkish"),
+            model: Self.turkishHopModel,
+            temperature: 0.2,
+            apiKey: apiKey
+        )
+
+        onProgress("Step 3 of 3 · translating")
+        return try await chat(
+            messages: Self.translationMessages(text: turkish, from: "Turkish", to: "English"),
+            model: Self.englishHopModel,
+            temperature: 0.2,
+            apiKey: apiKey
+        )
+    }
+
+    private func translationHopPipeline(
         text: String,
         style: PolishStyle,
         apiKey: String,
@@ -122,7 +233,7 @@ final class PolishService {
         onProgress: @Sendable (String) -> Void
     ) async throws -> String {
         onProgress("Step 1 of 4 · rewriting")
-        var messages = Self.stealthStep1Messages(text: text, style: style)
+        var messages = Self.chineseRewriteMessages(text: text, style: style)
         let chinese = try await chat(messages: messages, model: model, temperature: 1.3, apiKey: apiKey)
 
         onProgress("Step 2 of 4 · rewriting")
