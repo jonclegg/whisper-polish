@@ -47,10 +47,11 @@ final class PolishServiceTests: XCTestCase {
     func testNormalPolishMakesSingleCallAndReturnsContent() async throws {
         MockURLProtocol.responses = [Self.chatBody("Polished output.")]
         let result = try await makeService().polish(
-            text: "raw ramble", style: .email, stealth: false, apiKey: "sk-or-test", model: "openai/gpt-4o"
+            text: "raw ramble", style: .email, mode: .normal, apiKey: "sk-or-test", model: "openai/gpt-4o"
         )
         XCTAssertEqual(result.text, "Polished output.")
         XCTAssertEqual(result.model, "openai/gpt-4o")
+        XCTAssertEqual(result.mode, .normal)
         XCTAssertFalse(result.stealth)
         XCTAssertEqual(MockURLProtocol.requests.count, 1)
 
@@ -61,11 +62,16 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(auth, "Bearer sk-or-test")
     }
 
-    func testVerbatimPolishUsesLowTemperature() async throws {
+    // Verbatim ignores the rewrite mode entirely — a single low-temperature
+    // formatting call even when a heavier pipeline is selected.
+    func testVerbatimPolishIgnoresModeAndUsesLowTemperature() async throws {
         MockURLProtocol.responses = [Self.chatBody("Formatted output.")]
-        _ = try await makeService().polish(
-            text: "raw ramble", style: .paragraphs, stealth: false, apiKey: "sk-or-test", model: "openai/gpt-4o"
+        let result = try await makeService().polish(
+            text: "raw ramble", style: .paragraphs, mode: .translationHop, apiKey: "sk-or-test", model: "openai/gpt-4o"
         )
+        XCTAssertEqual(MockURLProtocol.requests.count, 1)
+        XCTAssertEqual(result.mode, .normal)
+        XCTAssertFalse(result.stealth)
         let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
         XCTAssertEqual(body["temperature"] as? Double, 0.2)
     }
@@ -73,7 +79,7 @@ final class PolishServiceTests: XCTestCase {
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {
         do {
             _ = try await makeService().polish(
-                text: "x", style: .email, stealth: false, apiKey: "", model: "m"
+                text: "x", style: .email, mode: .normal, apiKey: "", model: "m"
             )
             XCTFail("Expected missingAPIKey")
         } catch {
@@ -82,9 +88,93 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertTrue(MockURLProtocol.requests.isEmpty)
     }
 
-    // MARK: - Stealth mode
+    // MARK: - Voice Match
 
-    func testStealthPipelineChainsFourCallsWithCorrectModels() async throws {
+    func testVoiceMatchUsesWritingSampleInSingleCall() async throws {
+        MockURLProtocol.responses = [Self.chatBody("Voice matched output.")]
+        let result = try await makeService().polish(
+            text: "raw ramble",
+            style: .email,
+            mode: .voiceMatch,
+            voiceSample: "I usually write short direct updates.",
+            apiKey: "sk-or-test",
+            model: "openai/gpt-4o"
+        )
+        XCTAssertEqual(result.text, "Voice matched output.")
+        XCTAssertEqual(result.mode, .voiceMatch)
+        XCTAssertFalse(result.stealth)
+        XCTAssertEqual(MockURLProtocol.requests.count, 1)
+
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["temperature"] as? Double, 0.95)
+        let messages = body["messages"] as? [[String: String]] ?? []
+        XCTAssertTrue(messages.last?["content"]?.contains("Writing sample:") == true)
+        XCTAssertTrue(messages.last?["content"]?.contains("I usually write short direct updates.") == true)
+    }
+
+    func testVoiceMatchRequiresWritingSampleBeforeAnyNetworkCall() async {
+        do {
+            _ = try await makeService().polish(
+                text: "x", style: .email, mode: .voiceMatch, voiceSample: "   ", apiKey: "sk-or-test", model: "m"
+            )
+            XCTFail("Expected missingVoiceSample")
+        } catch {
+            XCTAssertEqual(error as? PolishError, PolishError.missingVoiceSample)
+        }
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+    }
+
+    // MARK: - Natural Audit
+
+    func testNaturalAuditRunsDraftThenAuditPass() async throws {
+        MockURLProtocol.responses = [
+            Self.chatBody("Draft output."),
+            Self.chatBody("Audited output."),
+        ]
+        let result = try await makeService().polish(
+            text: "raw ramble", style: .reddit, mode: .naturalAudit, apiKey: "sk-or-test", model: "openai/gpt-4o"
+        )
+        XCTAssertEqual(result.text, "Audited output.")
+        XCTAssertEqual(result.mode, .naturalAudit)
+        XCTAssertFalse(result.stealth)
+        XCTAssertEqual(MockURLProtocol.requests.count, 2)
+
+        let bodies = MockURLProtocol.requestBodies
+        XCTAssertEqual(bodies[0]["temperature"] as? Double, 0.9)
+        XCTAssertEqual(bodies[1]["temperature"] as? Double, 0.7)
+        let auditMessages = bodies[1]["messages"] as? [[String: String]] ?? []
+        XCTAssertTrue(auditMessages.last?["content"]?.contains("Draft output.") == true)
+        XCTAssertTrue(auditMessages.last?["content"]?.contains("raw ramble") == true)
+    }
+
+    // MARK: - Alt Translation
+
+    func testAltTranslationRunsChineseTurkishEnglishRoute() async throws {
+        MockURLProtocol.responses = [
+            Self.chatBody("中文改写"),
+            Self.chatBody("Türkçe çeviri"),
+            Self.chatBody("Final English text."),
+        ]
+        let result = try await makeService().polish(
+            text: "raw ramble", style: .email, mode: .altTranslation, apiKey: "sk-or-test", model: "openai/gpt-4o"
+        )
+        XCTAssertEqual(result.text, "Final English text.")
+        XCTAssertEqual(result.mode, .altTranslation)
+        XCTAssertFalse(result.stealth)
+        XCTAssertEqual(MockURLProtocol.requests.count, 3)
+
+        let bodies = MockURLProtocol.requestBodies
+        XCTAssertEqual(bodies[0]["model"] as? String, "openai/gpt-4o")
+        XCTAssertEqual(bodies[0]["temperature"] as? Double, 1.1)
+        XCTAssertEqual(bodies[1]["model"] as? String, PolishService.turkishHopModel)
+        XCTAssertEqual(bodies[2]["model"] as? String, PolishService.englishHopModel)
+        let step3Messages = bodies[2]["messages"] as? [[String: String]] ?? []
+        XCTAssertEqual(step3Messages.last?["content"], "Türkçe çeviri")
+    }
+
+    // MARK: - Translation Hop
+
+    func testTranslationHopPipelineChainsFourCallsWithCorrectModels() async throws {
         MockURLProtocol.responses = [
             Self.chatBody("中文改写"),
             Self.chatBody("日本語の書き直し"),
@@ -92,9 +182,10 @@ final class PolishServiceTests: XCTestCase {
             Self.chatBody("Final English text."),
         ]
         let result = try await makeService().polish(
-            text: "raw ramble", style: .reddit, stealth: true, apiKey: "sk-or-test", model: "openai/gpt-4o"
+            text: "raw ramble", style: .reddit, mode: .translationHop, apiKey: "sk-or-test", model: "openai/gpt-4o"
         )
         XCTAssertEqual(result.text, "Final English text.")
+        XCTAssertEqual(result.mode, .translationHop)
         XCTAssertTrue(result.stealth)
         XCTAssertEqual(MockURLProtocol.requests.count, 4)
 
@@ -119,7 +210,7 @@ final class PolishServiceTests: XCTestCase {
         MockURLProtocol.responses = [.init(status: 401, body: #"{"error":"bad key"}"#)]
         do {
             _ = try await makeService().polish(
-                text: "x", style: .email, stealth: false, apiKey: "sk-bad", model: "m"
+                text: "x", style: .email, mode: .normal, apiKey: "sk-bad", model: "m"
             )
             XCTFail("Expected http error")
         } catch let PolishError.http(code, _) {

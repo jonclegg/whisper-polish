@@ -47,8 +47,8 @@ struct NoteDetailView: View {
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(Color.polishTealSoft))
-                            if note.polishStealth {
-                                Text("Stealth")
+                            if let mode = note.polishMode, mode != .normal {
+                                Text(mode.title)
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.purple)
                                     .padding(.horizontal, 8)
@@ -106,11 +106,11 @@ struct NoteDetailView: View {
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPolishSheet) {
-            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style, stealth in
+            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style, mode, voiceSample in
                 showPolishSheet = false
-                runPolish(style: style, stealth: stealth)
+                runPolish(style: style, mode: mode, voiceSample: voiceSample)
             }
-            .presentationDetents([.height(340), .medium, .large])
+            .presentationDetents([.height(620), .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -261,15 +261,16 @@ struct NoteDetailView: View {
         }
     }
 
-    private func runPolish(style: PolishStyle, stealth: Bool) {
+    private func runPolish(style: PolishStyle, mode: PolishRewriteMode, voiceSample: String) {
         defaultStyleRaw = style.id
-        polishProgress = stealth ? "Starting…" : "Polishing…"
+        polishProgress = mode == .normal ? "Polishing…" : "Starting…"
         Task {
             do {
                 let result = try await polishService.polish(
                     text: note.originalText,
                     style: style,
-                    stealth: stealth,
+                    mode: mode,
+                    voiceSample: voiceSample,
                     apiKey: apiKey,
                     model: model,
                     onProgress: { progress in
