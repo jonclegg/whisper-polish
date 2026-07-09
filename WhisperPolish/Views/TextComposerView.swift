@@ -12,19 +12,29 @@ struct TextComposerView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                TextEditor(text: $text)
-                    .focused($focused)
-                    .scrollContentBackground(.hidden)
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
-                    .overlay(alignment: .topLeading) {
-                        if text.isEmpty {
-                            Text("Type or paste the text you want to polish…")
-                                .foregroundStyle(.tertiary)
-                                .padding(20)
-                                .allowsHitTesting(false)
-                        }
+                // Padding must be contentMargins (scroll insets), not outer
+                // .padding. Outer padding shrinks the TextEditor frame without
+                // growing its scrollable content area, so after pasting a long
+                // note you can never scroll the last lines into view.
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $text)
+                        .focused($focused)
+                        .scrollContentBackground(.hidden)
+                        .contentMargins(.horizontal, 12, for: .scrollContent)
+                        .contentMargins(.vertical, 12, for: .scrollContent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if text.isEmpty {
+                        Text("Type or paste the text you want to polish…")
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 17)
+                            .padding(.vertical, 20)
+                            .allowsHitTesting(false)
                     }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
 
                 if text.isEmpty, UIPasteboard.general.hasStrings {
                     Button {
@@ -41,6 +51,7 @@ struct TextComposerView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("New text note")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -54,6 +65,10 @@ struct TextComposerView: View {
                     }
                     .fontWeight(.semibold)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focused = false }
                 }
             }
             .onAppear { focused = true }
