@@ -59,20 +59,24 @@ final class PolishService {
     ) async throws -> PolishResult {
         guard !apiKey.isEmpty else { throw PolishError.missingAPIKey }
 
-        // A verbatim style formats without rewriting, so rewrite modes — which
-        // are all strategies for rewriting harder — don't apply.
-        let mode = style.isVerbatim ? .normal : mode
-
         let output: String
         switch mode {
+        case .formatting:
+            onProgress("Formatting…")
+            output = try await chat(
+                messages: Self.verbatimMessages(text: text),
+                model: model,
+                // Formatting is transcription cleanup, not creative writing —
+                // high temperature would invite the rewrites it forbids.
+                temperature: 0.2,
+                apiKey: apiKey
+            )
         case .normal:
             onProgress("Polishing…")
             output = try await chat(
                 messages: Self.normalMessages(text: text, style: style),
                 model: model,
-                // Verbatim styles are a formatting task, not a creative one —
-                // high temperature would invite the rewrites they forbid.
-                temperature: style.isVerbatim ? 0.2 : 0.9,
+                temperature: 0.9,
                 apiKey: apiKey
             )
         case .voiceMatch:
@@ -111,9 +115,6 @@ final class PolishService {
         """
 
     static func normalMessages(text: String, style: PolishStyle) -> [Message] {
-        if style.isVerbatim {
-            return verbatimMessages(text: text)
-        }
         let system = """
         Rewrite rough voice-note transcripts into finished text that sounds like the speaker, not like AI.
 
@@ -131,9 +132,8 @@ final class PolishService {
         ]
     }
 
-    /// The normal prompt tells the model to rewrite; verbatim styles need the
-    /// opposite, so they get their own system prompt instead of an
-    /// instruction fragment appended to it.
+    /// The other prompts tell the model to rewrite; Formatting mode needs the
+    /// opposite, so it gets its own system prompt and ignores the style axis.
     static func verbatimMessages(text: String) -> [Message] {
         let system = """
         You format rough voice-note transcripts. You do not rewrite them.
@@ -142,7 +142,7 @@ final class PolishService {
         - Keep the speaker's exact wording. Do not rephrase, reorder, shorten, or expand anything.
         - Break the text into paragraphs where the topic shifts. Structure is your only job.
         - Add sentence punctuation and capitalization where the transcript lacks it.
-        - Fix only unambiguous mistakes: clear grammar slips and obvious mis-transcriptions. When in doubt, leave it as spoken.
+        - Fix only unambiguous mistakes: clear typos, grammar slips, and obvious mis-transcriptions. When in doubt, leave it as spoken.
         - Output only the formatted text. No preamble, no explanation, no quotes around it.
         """
         return [

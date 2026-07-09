@@ -41,12 +41,16 @@ struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if showingPolished, let styleLabel = note.polishStyleLabel {
                         HStack(spacing: 6) {
-                            Label(styleLabel, systemImage: "sparkle")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.polishTeal)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.polishTealSoft))
+                            // Formatting ignores the style axis, so badging the
+                            // style would claim a shaping that never happened.
+                            if note.polishMode?.usesStyle ?? true {
+                                Label(styleLabel, systemImage: "sparkle")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.polishTeal)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(Color.polishTealSoft))
+                            }
                             if let mode = note.polishMode, mode != .normal {
                                 Text(mode.title)
                                     .font(.caption2.weight(.semibold))

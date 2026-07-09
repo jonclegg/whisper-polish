@@ -24,12 +24,12 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(messages[1], PolishService.Message(role: "user", content: "hello world"))
     }
 
-    // The verbatim style must not inherit the rewrite prompt — its whole
-    // contract is that the wording survives untouched.
-    func testVerbatimStyleGetsFormattingPromptNotRewritePrompt() {
-        let messages = PolishService.normalMessages(text: "hello world", style: .paragraphs)
+    // Formatting must not inherit the rewrite prompt — its whole contract is
+    // that the wording survives untouched.
+    func testVerbatimMessagesForbidRewriting() {
+        let messages = PolishService.verbatimMessages(text: "hello world")
         XCTAssertEqual(messages.count, 2)
-        XCTAssertFalse(messages[0].content.contains("rewrite rough voice-note transcripts"))
+        XCTAssertTrue(messages[0].content.contains("You do not rewrite them"))
         XCTAssertTrue(messages[0].content.contains("Keep the speaker's exact wording"))
         XCTAssertEqual(messages[1], PolishService.Message(role: "user", content: "hello world"))
     }
@@ -62,18 +62,21 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(auth, "Bearer sk-or-test")
     }
 
-    // Verbatim ignores the rewrite mode entirely — a single low-temperature
-    // formatting call even when a heavier pipeline is selected.
-    func testVerbatimPolishIgnoresModeAndUsesLowTemperature() async throws {
+    // Formatting is a single low-temperature call on the verbatim prompt; the
+    // selected style plays no part.
+    func testFormattingModeMakesSingleVerbatimLowTemperatureCall() async throws {
         MockURLProtocol.responses = [Self.chatBody("Formatted output.")]
         let result = try await makeService().polish(
-            text: "raw ramble", style: .paragraphs, mode: .translationHop, apiKey: "sk-or-test", model: "openai/gpt-4o"
+            text: "raw ramble", style: .email, mode: .formatting, apiKey: "sk-or-test", model: "openai/gpt-4o"
         )
         XCTAssertEqual(MockURLProtocol.requests.count, 1)
-        XCTAssertEqual(result.mode, .normal)
+        XCTAssertEqual(result.mode, .formatting)
         XCTAssertFalse(result.stealth)
         let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
         XCTAssertEqual(body["temperature"] as? Double, 0.2)
+        let messages = body["messages"] as? [[String: String]] ?? []
+        XCTAssertTrue(messages.first?["content"]?.contains("You do not rewrite them") ?? false)
+        XCTAssertFalse(messages.first?["content"]?.contains(PolishStyle.email.instruction) ?? true)
     }
 
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {

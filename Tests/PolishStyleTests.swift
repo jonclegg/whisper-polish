@@ -6,13 +6,7 @@ final class PolishStyleTests: XCTestCase {
     // Old notes and the default-style setting persist these ids as raw strings.
     func testBuiltInIdsAreStable() {
         XCTAssertEqual(PolishStyle.builtIns.map(\.id),
-                       ["email", "reddit", "marketing", "message", "cleanup", "paragraphs"])
-    }
-
-    func testOnlyParagraphsStyleIsVerbatim() {
-        XCTAssertTrue(PolishStyle.paragraphs.isVerbatim)
-        XCTAssertFalse(PolishStyle.cleanup.isVerbatim)
-        XCTAssertFalse(PolishStyle(id: "custom-1", name: "X", instruction: "y").isVerbatim)
+                       ["email", "reddit", "marketing", "message", "cleanup"])
     }
 
     func testCustomStylesRoundTripThroughJSON() {

@@ -25,38 +25,38 @@ struct PolishSheetView: View {
                 }
                 .padding(.top, 18)
 
-                sectionLabel("Style")
-                FlowChips(styles: PolishStyle.all(customJSON: customStylesJSON),
-                          selection: $style,
-                          onNewStyle: { showingNewStyle = true })
-
-                // A verbatim style formats without rewriting, so the rewrite
-                // modes — all strategies for rewriting harder — don't apply.
-                if !style.isVerbatim {
-                    sectionLabel("Rewrite mode")
-                    VStack(spacing: 10) {
-                        ForEach(PolishRewriteMode.allCases) { mode in
-                            let isEnabled = isModeEnabled(mode)
-                            PolishModeCard(
-                                mode: mode,
-                                isSelected: self.mode == mode,
-                                isEnabled: isEnabled,
-                                onSelect: {
-                                    guard isEnabled else { return }
-                                    self.mode = mode
-                                }
-                            )
-                        }
-                    }
-
-                    modePreview
+                // Formatting never rewrites, so there's no shape for a style
+                // to give — the style section only applies to rewrite modes.
+                if mode.usesStyle {
+                    sectionLabel("Style")
+                    FlowChips(styles: PolishStyle.all(customJSON: customStylesJSON),
+                              selection: $style,
+                              onNewStyle: { showingNewStyle = true })
                 }
+
+                sectionLabel("Rewrite mode")
+                VStack(spacing: 10) {
+                    ForEach(PolishRewriteMode.allCases) { mode in
+                        let isEnabled = isModeEnabled(mode)
+                        PolishModeCard(
+                            mode: mode,
+                            isSelected: self.mode == mode,
+                            isEnabled: isEnabled,
+                            onSelect: {
+                                guard isEnabled else { return }
+                                self.mode = mode
+                            }
+                        )
+                    }
+                }
+
+                modePreview
 
                 if hasAPIKey {
                     VStack(spacing: 7) {
                         Button {
                             guard canRunSelectedMode else { return }
-                            onPolish(style, style.isVerbatim ? .normal : mode, voiceSample)
+                            onPolish(style, mode, voiceSample)
                         } label: {
                             Text(ctaTitle)
                                 .font(.subheadline.weight(.semibold))
@@ -112,11 +112,12 @@ struct PolishSheetView: View {
     }
 
     private var canRunSelectedMode: Bool {
-        style.isVerbatim || isModeEnabled(mode)
+        isModeEnabled(mode)
     }
 
     private var ctaTitle: String {
-        canRunSelectedMode ? "Polish as \(style.name)" : "Configure in Settings"
+        guard canRunSelectedMode else { return "Configure in Settings" }
+        return mode.usesStyle ? "Polish as \(style.name)" : "Format transcript"
     }
 
     private var modeHint: String? {
@@ -137,6 +138,12 @@ struct PolishSheetView: View {
     @ViewBuilder
     private var modePreview: some View {
         switch mode {
+        case .formatting:
+            ModePreviewRows(rows: [
+                ("text.justify.left", "Paragraph breaks where topics shift"),
+                ("textformat.abc.dottedunderline", "Typos and obvious slips fixed"),
+                ("lock.fill", "Every word kept as spoken"),
+            ])
         case .normal:
             EmptyView()
         case .voiceMatch:
@@ -247,6 +254,7 @@ private struct PolishModeCard: View {
 private extension PolishRewriteMode {
     var icon: String {
         switch self {
+        case .formatting: return "text.alignleft"
         case .normal: return "bolt.fill"
         case .voiceMatch: return "person.text.rectangle"
         case .naturalAudit: return "checklist.checked"

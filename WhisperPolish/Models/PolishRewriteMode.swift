@@ -1,6 +1,7 @@
 import Foundation
 
 enum PolishRewriteMode: String, CaseIterable, Identifiable {
+    case formatting
     case normal
     case voiceMatch
     case naturalAudit
@@ -11,6 +12,7 @@ enum PolishRewriteMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .formatting: return "Formatting"
         case .normal: return "Normal"
         case .voiceMatch: return "Voice Match"
         case .naturalAudit: return "Natural Audit"
@@ -21,6 +23,8 @@ enum PolishRewriteMode: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .formatting:
+            return "Paragraphs and typo fixes only. Changes nothing else."
         case .normal:
             return "Single model rewrite. Fastest."
         case .voiceMatch:
@@ -36,6 +40,8 @@ enum PolishRewriteMode: String, CaseIterable, Identifiable {
 
     var badge: String? {
         switch self {
+        case .formatting:
+            return "Verbatim"
         case .normal:
             return nil
         case .voiceMatch:
@@ -48,6 +54,10 @@ enum PolishRewriteMode: String, CaseIterable, Identifiable {
             return "4 steps"
         }
     }
+
+    /// Formatting never rewrites, so the style axis (email, reddit, …) has
+    /// nothing to shape — the sheet hides style selection for it.
+    var usesStyle: Bool { self != .formatting }
 
     var storesTranslationHopFlag: Bool { self == .translationHop }
 }
