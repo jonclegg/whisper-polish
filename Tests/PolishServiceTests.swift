@@ -24,6 +24,16 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(messages[1], PolishService.Message(role: "user", content: "hello world"))
     }
 
+    // The verbatim style must not inherit the rewrite prompt — its whole
+    // contract is that the wording survives untouched.
+    func testVerbatimStyleGetsFormattingPromptNotRewritePrompt() {
+        let messages = PolishService.normalMessages(text: "hello world", style: .paragraphs)
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertFalse(messages[0].content.contains("rewrite rough voice-note transcripts"))
+        XCTAssertTrue(messages[0].content.contains("Keep the speaker's exact wording"))
+        XCTAssertEqual(messages[1], PolishService.Message(role: "user", content: "hello world"))
+    }
+
     func testTranslationMessagesAreTranslationOnly() {
         let messages = PolishService.translationMessages(text: "moi", from: "Finnish", to: "English")
         XCTAssertTrue(messages[0].content.contains("Finnish"))
@@ -49,6 +59,15 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(body["temperature"] as? Double, 0.9)
         let auth = MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization")
         XCTAssertEqual(auth, "Bearer sk-or-test")
+    }
+
+    func testVerbatimPolishUsesLowTemperature() async throws {
+        MockURLProtocol.responses = [Self.chatBody("Formatted output.")]
+        _ = try await makeService().polish(
+            text: "raw ramble", style: .paragraphs, stealth: false, apiKey: "sk-or-test", model: "openai/gpt-4o"
+        )
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["temperature"] as? Double, 0.2)
     }
 
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {

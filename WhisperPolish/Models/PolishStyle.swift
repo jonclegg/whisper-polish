@@ -9,6 +9,11 @@ struct PolishStyle: Identifiable, Codable, Equatable, Hashable {
     var instruction: String
 
     var isBuiltIn: Bool { Self.builtIns.contains { $0.id == id } }
+
+    /// Verbatim styles format the transcript without rewriting it, so they
+    /// get their own system prompt (the normal one says to cut filler and
+    /// rephrase) and stealth mode — which rewrites by design — doesn't apply.
+    var isVerbatim: Bool { id == Self.paragraphs.id }
 }
 
 extension PolishStyle {
@@ -38,7 +43,13 @@ extension PolishStyle {
         instruction: "Keep the same form and tone. Just remove filler, false starts, and repetition, and fix the grammar. Change as little as possible."
     )
 
-    static let builtIns: [PolishStyle] = [.email, .reddit, .marketing, .message, .cleanup]
+    static let paragraphs = PolishStyle(
+        id: "paragraphs",
+        name: "Just paragraphs",
+        instruction: "Break it into paragraphs and fix only obvious grammar mistakes. Keep every word as spoken."
+    )
+
+    static let builtIns: [PolishStyle] = [.email, .reddit, .marketing, .message, .cleanup, .paragraphs]
 
     // MARK: - Custom style persistence
 
