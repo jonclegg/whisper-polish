@@ -1,6 +1,7 @@
 import AVFoundation
 import Observation
 
+@MainActor
 @Observable
 final class AudioRecorder {
     private(set) var isRecording = false
@@ -20,7 +21,7 @@ final class AudioRecorder {
 
     /// Maps a metered dBFS reading (-160...0) to a 0...1 bar level,
     /// treating anything inside the warm-up window as silence.
-    static func normalizedLevel(fromDb db: Float, at time: TimeInterval) -> Float {
+    nonisolated static func normalizedLevel(fromDb db: Float, at time: TimeInterval) -> Float {
         guard time >= meterWarmUp else { return 0 }
         return max(0, min(1, (db + 50) / 50))
     }
@@ -65,12 +66,14 @@ final class AudioRecorder {
         self.isRecording = true
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self, let recorder = self.recorder else { return }
-            recorder.updateMeters()
-            self.elapsed = recorder.currentTime
-            let db = recorder.averagePower(forChannel: 0)
-            self.levels.append(Self.normalizedLevel(fromDb: db, at: recorder.currentTime))
-            if self.levels.count > Self.levelWindowSize { self.levels.removeFirst() }
+            MainActor.assumeIsolated {
+                guard let self, let recorder = self.recorder else { return }
+                recorder.updateMeters()
+                self.elapsed = recorder.currentTime
+                let db = recorder.averagePower(forChannel: 0)
+                self.levels.append(Self.normalizedLevel(fromDb: db, at: recorder.currentTime))
+                if self.levels.count > Self.levelWindowSize { self.levels.removeFirst() }
+            }
         }
     }
 
