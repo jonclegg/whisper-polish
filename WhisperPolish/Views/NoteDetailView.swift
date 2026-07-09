@@ -9,7 +9,6 @@ struct NoteDetailView: View {
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
     @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
-    @AppStorage(SettingsKeys.stealthByDefault) private var stealthByDefault = false
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false

@@ -67,7 +67,9 @@ final class PolishService {
             output = try await chat(
                 messages: Self.normalMessages(text: text, style: style),
                 model: model,
-                temperature: 0.9,
+                // Verbatim styles are a formatting task, not a creative one —
+                // high temperature would invite the rewrites they forbid.
+                temperature: style.isVerbatim ? 0.2 : 0.9,
                 apiKey: apiKey
             )
         }
@@ -77,6 +79,9 @@ final class PolishService {
     // MARK: - Prompts
 
     static func normalMessages(text: String, style: PolishStyle) -> [Message] {
+        if style.isVerbatim {
+            return verbatimMessages(text: text)
+        }
         let system = """
         You rewrite rough voice-note transcripts into finished text that reads like a thoughtful person wrote it — not like AI.
 
@@ -88,6 +93,26 @@ final class PolishService {
         - Output only the rewritten text. No preamble, no explanation, no quotes around it.
 
         \(style.instruction)
+        """
+        return [
+            Message(role: "system", content: system),
+            Message(role: "user", content: text),
+        ]
+    }
+
+    /// The normal prompt tells the model to rewrite; verbatim styles need the
+    /// opposite, so they get their own system prompt instead of an
+    /// instruction fragment appended to it.
+    static func verbatimMessages(text: String) -> [Message] {
+        let system = """
+        You format rough voice-note transcripts. You do not rewrite them.
+
+        Rules:
+        - Keep the speaker's exact wording. Do not rephrase, reorder, shorten, or expand anything.
+        - Break the text into paragraphs where the topic shifts. Structure is your only job.
+        - Add sentence punctuation and capitalization where the transcript lacks it.
+        - Fix only unambiguous mistakes: clear grammar slips and obvious mis-transcriptions. When in doubt, leave it as spoken.
+        - Output only the formatted text. No preamble, no explanation, no quotes around it.
         """
         return [
             Message(role: "system", content: system),

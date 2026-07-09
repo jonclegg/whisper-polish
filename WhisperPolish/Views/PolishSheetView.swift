@@ -22,22 +22,26 @@ struct PolishSheetView: View {
                       selection: $style,
                       onNewStyle: { showingNewStyle = true })
 
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Stealth mode")
-                        .font(.subheadline.weight(.medium))
-                    Text("Runs the translation-hop pipeline. Slower (~30s), harder for AI detectors to flag.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            // Stealth rewrites through translation hops — the opposite of a
+            // verbatim style's contract — so it disappears for those.
+            if !style.isVerbatim {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Stealth mode")
+                            .font(.subheadline.weight(.medium))
+                        Text("Runs the translation-hop pipeline. Slower (~30s), harder for AI detectors to flag.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $stealth)
+                        .labelsHidden()
                 }
-                Spacer()
-                Toggle("", isOn: $stealth)
-                    .labelsHidden()
             }
 
             if hasAPIKey {
                 Button {
-                    onPolish(style, stealth)
+                    onPolish(style, style.isVerbatim ? false : stealth)
                 } label: {
                     Text("Polish as \(style.name)")
                         .font(.subheadline.weight(.semibold))
