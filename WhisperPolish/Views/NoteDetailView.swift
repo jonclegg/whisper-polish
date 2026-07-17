@@ -7,7 +7,6 @@ struct NoteDetailView: View {
 
     @Environment(TranscriptionService.self) private var transcription
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
-    @AppStorage(SettingsKeys.polishModel) private var model = SettingsKeys.defaultModel
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var showingPolished = false
@@ -41,24 +40,12 @@ struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if showingPolished, let styleLabel = note.polishStyleLabel {
                         HStack(spacing: 6) {
-                            // Formatting ignores the style axis, so badging the
-                            // style would claim a shaping that never happened.
-                            if note.polishMode?.usesStyle ?? true {
-                                Label(styleLabel, systemImage: "sparkle")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(Color.polishTeal)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(Color.polishTealSoft))
-                            }
-                            if let mode = note.polishMode, mode != .normal {
-                                Text(mode.title)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.purple)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(.purple.opacity(0.12)))
-                            }
+                            Label(styleLabel, systemImage: "sparkle")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Color.polishTeal)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.polishTealSoft))
                             if let model = note.polishModel {
                                 Text(model)
                                     .font(.caption2)
@@ -110,11 +97,11 @@ struct NoteDetailView: View {
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPolishSheet) {
-            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style, mode, voiceSample in
+            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style in
                 showPolishSheet = false
-                runPolish(style: style, mode: mode, voiceSample: voiceSample)
+                runPolish(style: style)
             }
-            .presentationDetents([.height(620), .large])
+            .presentationDetents([.height(340), .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -265,21 +252,15 @@ struct NoteDetailView: View {
         }
     }
 
-    private func runPolish(style: PolishStyle, mode: PolishRewriteMode, voiceSample: String) {
+    private func runPolish(style: PolishStyle) {
         defaultStyleRaw = style.id
-        polishProgress = mode == .normal ? "Polishing…" : "Starting…"
+        polishProgress = "Polishing…"
         Task {
             do {
                 let result = try await polishService.polish(
                     text: note.originalText,
                     style: style,
-                    mode: mode,
-                    voiceSample: voiceSample,
-                    apiKey: apiKey,
-                    model: model,
-                    onProgress: { progress in
-                        Task { @MainActor in polishProgress = progress }
-                    }
+                    apiKey: apiKey
                 )
                 note.applyPolish(result)
                 showingPolished = true

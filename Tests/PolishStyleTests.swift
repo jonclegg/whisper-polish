@@ -5,8 +5,9 @@ final class PolishStyleTests: XCTestCase {
 
     // Old notes and the default-style setting persist these ids as raw strings.
     func testBuiltInIdsAreStable() {
-        XCTAssertEqual(PolishStyle.builtIns.map(\.id),
-                       ["email", "reddit", "marketing", "message", "cleanup"])
+        XCTAssertEqual(Set(PolishStyle.builtIns.map(\.id)),
+                       ["email", "reddit", "marketing", "message", "cleanup",
+                        "slack", "bullets", "blog", "social", "formal"])
     }
 
     func testCustomStylesRoundTripThroughJSON() {
