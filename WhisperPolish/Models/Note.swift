@@ -22,8 +22,6 @@ final class Note {
     /// Style name captured at polish time, so the label survives even if a
     /// custom style is later deleted. Nil on notes polished before this field.
     var polishStyleName: String?
-    var polishStealth: Bool = false
-    var polishModeRaw: String?
     var polishModel: String?
     var polishedAt: Date?
 
@@ -46,10 +44,6 @@ final class Note {
         }
     }
 
-    var polishMode: PolishRewriteMode? {
-        polishModeRaw.flatMap(PolishRewriteMode.init(rawValue:))
-    }
-
     var audioURL: URL? {
         guard let audioFileName else { return nil }
         return URL.documentsDirectory.appending(path: "Audio").appending(path: audioFileName)
@@ -59,8 +53,6 @@ final class Note {
         polishedText = result.text
         polishStyleRaw = result.style.id
         polishStyleName = result.style.name
-        polishStealth = result.stealth
-        polishModeRaw = result.mode.rawValue
         polishModel = result.model
         polishedAt = Date()
     }

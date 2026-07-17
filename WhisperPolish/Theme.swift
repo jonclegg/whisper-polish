@@ -11,14 +11,9 @@ enum SettingsKeys {
     static let recordOnLaunch = "recordOnLaunch"
     static let autoCopyTranscript = "autoCopyTranscript"
     static let openRouterKey = "openRouterKey"
-    static let polishModel = "polishModel"
     static let defaultStyle = "defaultStyle"
-    static let voiceMatchSample = "voiceMatchSample"
     /// JSON-encoded [PolishStyle] of user-created styles.
     static let customStyles = "customStyles"
-    static let stealthByDefault = "stealthByDefault"
     static let engine = "transcriptionEngine"
     static let hasCompletedSetup = "hasCompletedSetup"
-
-    static let defaultModel = "openai/gpt-4o"
 }

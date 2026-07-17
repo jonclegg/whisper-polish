@@ -37,8 +37,35 @@ extension PolishStyle {
         name: "Just clean it up",
         instruction: "Keep the same form and tone. Just remove filler, false starts, and repetition, and fix the grammar. Change as little as possible."
     )
+    static let slack = PolishStyle(
+        id: "slack",
+        name: "Slack update",
+        instruction: "Shape it into a Slack message to coworkers: friendly and direct, short lines, no greeting or sign-off. Get to the point in the first line."
+    )
+    static let bullets = PolishStyle(
+        id: "bullets",
+        name: "Bullet summary",
+        instruction: "Shape it into a tight bullet summary: one short line per point, most important first. A one-line lead-in is fine. Drop anything that isn't a point."
+    )
+    static let blog = PolishStyle(
+        id: "blog",
+        name: "Blog post",
+        instruction: "Shape it into a short blog post: a hook up front, one clear thread through the middle, an ending that lands. First person, conversational but composed."
+    )
+    static let social = PolishStyle(
+        id: "social",
+        name: "Social post",
+        instruction: "Shape it into a social media post: one or two punchy sentences that make the point fast. No hashtags or emoji unless they were spoken."
+    )
+    static let formal = PolishStyle(
+        id: "formal",
+        name: "Formal",
+        instruction: "Shape it into formal, professional writing: measured tone, precise wording, complete sentences, no slang. Polished but still human."
+    )
 
-    static let builtIns: [PolishStyle] = [.email, .reddit, .marketing, .message, .cleanup]
+    static let builtIns: [PolishStyle] = [
+        .email, .message, .slack, .reddit, .social, .blog, .marketing, .bullets, .formal, .cleanup,
+    ]
 
     // MARK: - Custom style persistence
 
