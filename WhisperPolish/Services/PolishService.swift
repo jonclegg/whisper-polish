@@ -78,9 +78,17 @@ final class PolishService {
     // MARK: - OpenRouter
 
     private struct ChatRequest: Encodable {
+        struct Reasoning: Encodable {
+            let enabled: Bool
+        }
+
         let model: String
         let messages: [Message]
         let temperature: Double
+        /// Polishing doesn't need thinking tokens; they just add latency.
+        /// OpenRouter maps this to minimal effort on models that can't
+        /// disable reasoning outright.
+        let reasoning = Reasoning(enabled: false)
     }
 
     private struct ChatResponse: Decodable {

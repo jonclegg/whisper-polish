@@ -44,6 +44,7 @@ final class PolishServiceTests: XCTestCase {
         let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
         XCTAssertEqual(body["model"] as? String, "z-ai/glm-5.2")
         XCTAssertEqual(body["temperature"] as? Double, 0.9)
+        XCTAssertEqual((body["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
         let auth = MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization")
         XCTAssertEqual(auth, "Bearer sk-or-test")
     }
