@@ -2,13 +2,16 @@ import SwiftUI
 
 struct PolishSheetView: View {
     let hasAPIKey: Bool
-    let onPolish: (PolishStyle) -> Void
+    let onPolish: (PolishStyle, PolishModel) -> Void
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
     @State private var style: PolishStyle = .email
+    @State private var model: PolishModel = .default
     @State private var showingNewStyle = false
+    @State private var showingModelPicker = false
 
     var body: some View {
         ScrollView {
@@ -27,9 +30,26 @@ struct PolishSheetView: View {
                           selection: $style,
                           onNewStyle: { showingNewStyle = true })
 
+                sectionLabel("Model")
+                Button {
+                    showingModelPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                            .font(.footnote.weight(.semibold))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color(.systemGroupedBackground)))
+                }
+                .buttonStyle(.plain)
+
                 if hasAPIKey {
                     Button {
-                        onPolish(style)
+                        onPolish(style, model)
                     } label: {
                         Text("Polish as \(style.name)")
                             .font(.subheadline.weight(.semibold))
@@ -56,6 +76,11 @@ struct PolishSheetView: View {
         }
         .onAppear {
             style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
+            model = PolishModel(rawValue: modelRaw) ?? .default
+        }
+        .sheet(isPresented: $showingModelPicker) {
+            ModelPickerView(selection: $model)
+                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showingNewStyle) {
             // Seed with the selected style's instruction so "duplicate and

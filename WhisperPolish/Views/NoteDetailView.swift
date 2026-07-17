@@ -8,6 +8,7 @@ struct NoteDetailView: View {
     @Environment(TranscriptionService.self) private var transcription
     @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false
@@ -47,7 +48,7 @@ struct NoteDetailView: View {
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(Color.polishTealSoft))
                             if let model = note.polishModel {
-                                Text(model)
+                                Text(PolishModel.label(for: model))
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }
@@ -97,11 +98,11 @@ struct NoteDetailView: View {
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPolishSheet) {
-            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style in
+            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style, model in
                 showPolishSheet = false
-                runPolish(style: style)
+                runPolish(style: style, model: model)
             }
-            .presentationDetents([.height(340), .large])
+            .presentationDetents([.height(400), .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -252,14 +253,16 @@ struct NoteDetailView: View {
         }
     }
 
-    private func runPolish(style: PolishStyle) {
+    private func runPolish(style: PolishStyle, model: PolishModel) {
         defaultStyleRaw = style.id
+        modelRaw = model.rawValue
         polishProgress = "Polishing…"
         Task {
             do {
                 let result = try await polishService.polish(
                     text: note.originalText,
                     style: style,
+                    model: model,
                     apiKey: apiKey
                 )
                 note.applyPolish(result)

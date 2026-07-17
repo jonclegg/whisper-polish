@@ -32,25 +32,39 @@ final class PolishServiceTests: XCTestCase {
 
     // MARK: - Polish
 
-    func testPolishMakesSingleGLMCallAndReturnsContent() async throws {
+    func testPolishMakesSingleCallAndReturnsContent() async throws {
         MockURLProtocol.responses = [Self.chatBody("Polished output.")]
         let result = try await makeService().polish(
-            text: "raw ramble", style: .email, apiKey: "sk-or-test"
+            text: "raw ramble", style: .email, model: .glm52, apiKey: "sk-or-test"
         )
         XCTAssertEqual(result.text, "Polished output.")
-        XCTAssertEqual(result.model, PolishService.model)
+        XCTAssertEqual(result.model, PolishModel.glm52.rawValue)
         XCTAssertEqual(MockURLProtocol.requests.count, 1)
 
         let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
         XCTAssertEqual(body["model"] as? String, "z-ai/glm-5.2")
         XCTAssertEqual(body["temperature"] as? Double, 0.9)
+        XCTAssertEqual((body["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
         let auth = MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization")
         XCTAssertEqual(auth, "Bearer sk-or-test")
     }
 
+    func testPolishSendsSelectedModelID() async throws {
+        for model in PolishModel.allCases {
+            MockURLProtocol.reset()
+            MockURLProtocol.responses = [Self.chatBody("ok")]
+            let result = try await makeService().polish(
+                text: "x", style: .cleanup, model: model, apiKey: "sk-or-test"
+            )
+            XCTAssertEqual(result.model, model.rawValue)
+            let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+            XCTAssertEqual(body["model"] as? String, model.rawValue)
+        }
+    }
+
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {
         do {
-            _ = try await makeService().polish(text: "x", style: .email, apiKey: "")
+            _ = try await makeService().polish(text: "x", style: .email, model: .glm52, apiKey: "")
             XCTFail("Expected missingAPIKey")
         } catch {
             XCTAssertEqual(error as? PolishError, PolishError.missingAPIKey)
@@ -61,7 +75,7 @@ final class PolishServiceTests: XCTestCase {
     func testHTTPErrorSurfacesStatusCode() async {
         MockURLProtocol.responses = [.init(status: 401, body: #"{"error":"bad key"}"#)]
         do {
-            _ = try await makeService().polish(text: "x", style: .email, apiKey: "sk-bad")
+            _ = try await makeService().polish(text: "x", style: .email, model: .glm52, apiKey: "sk-bad")
             XCTFail("Expected http error")
         } catch let PolishError.http(code, _) {
             XCTAssertEqual(code, 401)
@@ -73,7 +87,7 @@ final class PolishServiceTests: XCTestCase {
     func testEmptyResponseThrows() async {
         MockURLProtocol.responses = [Self.chatBody("   ")]
         do {
-            _ = try await makeService().polish(text: "x", style: .email, apiKey: "sk-or-test")
+            _ = try await makeService().polish(text: "x", style: .email, model: .glm52, apiKey: "sk-or-test")
             XCTFail("Expected emptyResponse")
         } catch {
             XCTAssertEqual(error as? PolishError, PolishError.emptyResponse)

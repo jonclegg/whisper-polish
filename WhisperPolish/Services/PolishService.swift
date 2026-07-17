@@ -30,9 +30,6 @@ final class PolishService {
         let content: String
     }
 
-    /// Every polish is a single GLM 5.2 call via OpenRouter.
-    static let model = "z-ai/glm-5.2"
-
     private let session: URLSession
     private let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
 
@@ -40,14 +37,15 @@ final class PolishService {
         self.session = session
     }
 
-    func polish(text: String, style: PolishStyle, apiKey: String) async throws -> PolishResult {
+    func polish(text: String, style: PolishStyle, model: PolishModel, apiKey: String) async throws -> PolishResult {
         guard !apiKey.isEmpty else { throw PolishError.missingAPIKey }
         let output = try await chat(
+            model: model,
             messages: Self.messages(text: text, style: style),
             temperature: 0.9,
             apiKey: apiKey
         )
-        return PolishResult(text: output, style: style, model: Self.model)
+        return PolishResult(text: output, style: style, model: model.rawValue)
     }
 
     // MARK: - Prompt
@@ -80,9 +78,17 @@ final class PolishService {
     // MARK: - OpenRouter
 
     private struct ChatRequest: Encodable {
+        struct Reasoning: Encodable {
+            let enabled: Bool
+        }
+
         let model: String
         let messages: [Message]
         let temperature: Double
+        /// Polishing doesn't need thinking tokens; they just add latency.
+        /// OpenRouter maps this to minimal effort on models that can't
+        /// disable reasoning outright.
+        let reasoning = Reasoning(enabled: false)
     }
 
     private struct ChatResponse: Decodable {
@@ -93,12 +99,12 @@ final class PolishService {
         let choices: [Choice]
     }
 
-    private func chat(messages: [Message], temperature: Double, apiKey: String) async throws -> String {
+    private func chat(model: PolishModel, messages: [Message], temperature: Double, apiKey: String) async throws -> String {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(ChatRequest(model: Self.model, messages: messages, temperature: temperature))
+        request.httpBody = try JSONEncoder().encode(ChatRequest(model: model.rawValue, messages: messages, temperature: temperature))
 
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {

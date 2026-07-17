@@ -12,6 +12,8 @@ enum SettingsKeys {
     static let autoCopyTranscript = "autoCopyTranscript"
     static let openRouterKey = "openRouterKey"
     static let defaultStyle = "defaultStyle"
+    /// Raw value of the last-used `PolishModel`.
+    static let polishModel = "polishModel"
     /// JSON-encoded [PolishStyle] of user-created styles.
     static let customStyles = "customStyles"
     static let engine = "transcriptionEngine"
