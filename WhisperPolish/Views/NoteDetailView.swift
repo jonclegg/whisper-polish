@@ -102,7 +102,7 @@ struct NoteDetailView: View {
                 showPolishSheet = false
                 runPolish(style: style, model: model)
             }
-            .presentationDetents([.height(420), .large])
+            .presentationDetents([.height(400), .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {

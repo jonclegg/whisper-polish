@@ -11,6 +11,7 @@ struct PolishSheetView: View {
     @State private var style: PolishStyle = .email
     @State private var model: PolishModel = .default
     @State private var showingNewStyle = false
+    @State private var showingModelPicker = false
 
     var body: some View {
         ScrollView {
@@ -30,7 +31,21 @@ struct PolishSheetView: View {
                           onNewStyle: { showingNewStyle = true })
 
                 sectionLabel("Model")
-                ModelChips(selection: $model)
+                Button {
+                    showingModelPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                            .font(.footnote.weight(.semibold))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color(.systemGroupedBackground)))
+                }
+                .buttonStyle(.plain)
 
                 if hasAPIKey {
                     Button {
@@ -62,6 +77,10 @@ struct PolishSheetView: View {
         .onAppear {
             style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
             model = PolishModel(rawValue: modelRaw) ?? .default
+        }
+        .sheet(isPresented: $showingModelPicker) {
+            ModelPickerView(selection: $model)
+                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showingNewStyle) {
             // Seed with the selected style's instruction so "duplicate and
@@ -111,29 +130,6 @@ private struct FlowChips: View {
                     .background(Capsule().strokeBorder(Color.polishTeal.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
             .buttonStyle(.plain)
-        }
-    }
-}
-
-/// Wrapping row of model chips, matching the style chips' look.
-private struct ModelChips: View {
-    @Binding var selection: PolishModel
-
-    var body: some View {
-        FlowLayout(spacing: 8) {
-            ForEach(PolishModel.allCases) { model in
-                Button {
-                    selection = model
-                } label: {
-                    Text(model.displayName)
-                        .font(.footnote.weight(selection == model ? .semibold : .regular))
-                        .foregroundStyle(selection == model ? .white : .primary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(selection == model ? Color.polishTeal : Color(.systemGroupedBackground)))
-                }
-                .buttonStyle(.plain)
-            }
         }
     }
 }
