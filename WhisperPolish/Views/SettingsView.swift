@@ -70,7 +70,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Polish")
                 } footer: {
-                    Text("Polishing runs on \(PolishService.model) via OpenRouter.")
+                    Text("Polishing runs via OpenRouter on the model you pick in the polish sheet.")
                 }
 
                 Section {

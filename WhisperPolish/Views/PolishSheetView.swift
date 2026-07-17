@@ -2,12 +2,14 @@ import SwiftUI
 
 struct PolishSheetView: View {
     let hasAPIKey: Bool
-    let onPolish: (PolishStyle) -> Void
+    let onPolish: (PolishStyle, PolishModel) -> Void
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
     @State private var style: PolishStyle = .email
+    @State private var model: PolishModel = .default
     @State private var showingNewStyle = false
 
     var body: some View {
@@ -27,9 +29,12 @@ struct PolishSheetView: View {
                           selection: $style,
                           onNewStyle: { showingNewStyle = true })
 
+                sectionLabel("Model")
+                ModelChips(selection: $model)
+
                 if hasAPIKey {
                     Button {
-                        onPolish(style)
+                        onPolish(style, model)
                     } label: {
                         Text("Polish as \(style.name)")
                             .font(.subheadline.weight(.semibold))
@@ -56,6 +61,7 @@ struct PolishSheetView: View {
         }
         .onAppear {
             style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
+            model = PolishModel(rawValue: modelRaw) ?? .default
         }
         .sheet(isPresented: $showingNewStyle) {
             // Seed with the selected style's instruction so "duplicate and
@@ -105,6 +111,29 @@ private struct FlowChips: View {
                     .background(Capsule().strokeBorder(Color.polishTeal.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Wrapping row of model chips, matching the style chips' look.
+private struct ModelChips: View {
+    @Binding var selection: PolishModel
+
+    var body: some View {
+        FlowLayout(spacing: 8) {
+            ForEach(PolishModel.allCases) { model in
+                Button {
+                    selection = model
+                } label: {
+                    Text(model.displayName)
+                        .font(.footnote.weight(selection == model ? .semibold : .regular))
+                        .foregroundStyle(selection == model ? .white : .primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(selection == model ? Color.polishTeal : Color(.systemGroupedBackground)))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
