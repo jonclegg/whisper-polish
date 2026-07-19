@@ -13,6 +13,7 @@ struct NoteDetailView: View {
     @State private var showingPolished = false
     @State private var showPolishSheet = false
     @State private var polishProgress: String?
+    @State private var polishTask: Task<Void, Never>?
     @State private var errorMessage: String?
     @State private var copied = false
     @State private var retrying = false
@@ -202,6 +203,11 @@ struct NoteDetailView: View {
                 Text(message)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                Button("Cancel", role: .cancel) {
+                    cancelPolish()
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.polishTeal)
             }
             .padding(28)
             .background(RoundedRectangle(cornerRadius: 20).fill(.regularMaterial))
@@ -257,7 +263,7 @@ struct NoteDetailView: View {
         defaultStyleRaw = style.id
         modelRaw = model.rawValue
         polishProgress = "Polishing…"
-        Task {
+        polishTask = Task {
             do {
                 let result = try await polishService.polish(
                     text: note.originalText,
@@ -267,10 +273,23 @@ struct NoteDetailView: View {
                 )
                 note.applyPolish(result)
                 showingPolished = true
+            } catch is CancellationError {
+            } catch let error as URLError where error.code == .cancelled {
             } catch {
                 errorMessage = error.localizedDescription
             }
-            polishProgress = nil
+            // A cancelled task's state was already cleared by cancelPolish;
+            // clearing here would clobber a re-polish started after cancel.
+            if !Task.isCancelled {
+                polishProgress = nil
+                polishTask = nil
+            }
         }
+    }
+
+    private func cancelPolish() {
+        polishTask?.cancel()
+        polishTask = nil
+        polishProgress = nil
     }
 }
