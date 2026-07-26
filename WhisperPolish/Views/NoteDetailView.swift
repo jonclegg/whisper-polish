@@ -12,8 +12,11 @@ struct NoteDetailView: View {
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false
-    @State private var polishProgress: String?
-    @State private var polishTask: Task<Void, Never>?
+    /// Shared by polish and fact-check: only one model call runs at a time.
+    @State private var progressMessage: String?
+    @State private var modelTask: Task<Void, Never>?
+    @State private var factCheckReport: FactCheckReport?
+    @State private var errorTitle = "Polish failed"
     @State private var errorMessage: String?
     @State private var copied = false
     @State private var retrying = false
@@ -21,6 +24,7 @@ struct NoteDetailView: View {
     @State private var isPlaying = false
 
     private let polishService = PolishService()
+    private let factCheckService = FactCheckService()
 
     private var visibleText: String {
         showingPolished ? (note.polishedText ?? "") : note.originalText
@@ -106,9 +110,14 @@ struct NoteDetailView: View {
             .presentationDetents([.height(400), .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(item: $factCheckReport) { report in
+            FactCheckReportView(report: report)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         .overlay {
-            if let polishProgress {
-                polishingOverlay(polishProgress)
+            if let progressMessage {
+                progressOverlay(progressMessage)
             }
         }
         .overlay(alignment: .bottom) {
@@ -123,7 +132,7 @@ struct NoteDetailView: View {
                     .transition(.opacity)
             }
         }
-        .alert("Polish failed", isPresented: .init(
+        .alert(errorTitle, isPresented: .init(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -153,7 +162,7 @@ struct NoteDetailView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button(action: copy) {
                 Text("Copy")
                     .font(.subheadline.weight(.semibold))
@@ -180,6 +189,19 @@ struct NoteDetailView: View {
             .buttonStyle(.plain)
             .disabled(note.originalText.isEmpty)
 
+            Button(action: runFactCheck) {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.seal")
+                    Text("Check")
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
+            }
+            .buttonStyle(.plain)
+            .disabled(visibleText.isEmpty)
+
             ShareLink(item: visibleText) {
                 Text("Share")
                     .font(.subheadline.weight(.semibold))
@@ -190,11 +212,15 @@ struct NoteDetailView: View {
             .buttonStyle(.plain)
             .disabled(visibleText.isEmpty)
         }
+        // Four capsules is a tight fit: "Re-polish" wraps and breaks the pill
+        // without this. Shrink rather than wrap.
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
     }
 
-    private func polishingOverlay(_ message: String) -> some View {
+    private func progressOverlay(_ message: String) -> some View {
         ZStack {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 14) {
@@ -204,7 +230,7 @@ struct NoteDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Button("Cancel", role: .cancel) {
-                    cancelPolish()
+                    cancelModelTask()
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.polishTeal)
@@ -262,34 +288,53 @@ struct NoteDetailView: View {
     private func runPolish(style: PolishStyle, model: PolishModel) {
         defaultStyleRaw = style.id
         modelRaw = model.rawValue
-        polishProgress = "Polishing…"
-        polishTask = Task {
+        run("Polishing…", errorTitle: "Polish failed") {
+            let result = try await polishService.polish(
+                text: note.originalText,
+                style: style,
+                model: model,
+                apiKey: apiKey
+            )
+            note.applyPolish(result)
+            showingPolished = true
+        }
+    }
+
+    private func runFactCheck() {
+        // Checks whichever version you're reading, so the report always matches
+        // the text on screen.
+        let text = visibleText
+        // Web search across several claims takes a while; the cancel button in
+        // the overlay is the escape hatch.
+        run("Checking facts…", errorTitle: "Fact check failed") {
+            factCheckReport = try await factCheckService.check(text: text, apiKey: apiKey)
+        }
+    }
+
+    /// Runs one cancellable model call behind the progress overlay.
+    private func run(_ message: String, errorTitle title: String, work: @MainActor @escaping () async throws -> Void) {
+        progressMessage = message
+        modelTask = Task {
             do {
-                let result = try await polishService.polish(
-                    text: note.originalText,
-                    style: style,
-                    model: model,
-                    apiKey: apiKey
-                )
-                note.applyPolish(result)
-                showingPolished = true
+                try await work()
             } catch is CancellationError {
             } catch let error as URLError where error.code == .cancelled {
             } catch {
+                errorTitle = title
                 errorMessage = error.localizedDescription
             }
-            // A cancelled task's state was already cleared by cancelPolish;
-            // clearing here would clobber a re-polish started after cancel.
+            // A cancelled task's state was already cleared by cancelModelTask;
+            // clearing here would clobber a run started after the cancel.
             if !Task.isCancelled {
-                polishProgress = nil
-                polishTask = nil
+                progressMessage = nil
+                modelTask = nil
             }
         }
     }
 
-    private func cancelPolish() {
-        polishTask?.cancel()
-        polishTask = nil
-        polishProgress = nil
+    private func cancelModelTask() {
+        modelTask?.cancel()
+        modelTask = nil
+        progressMessage = nil
     }
 }
