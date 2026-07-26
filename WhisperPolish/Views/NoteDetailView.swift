@@ -162,7 +162,7 @@ struct NoteDetailView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button(action: copy) {
                 Text("Copy")
                     .font(.subheadline.weight(.semibold))
@@ -201,21 +201,7 @@ struct NoteDetailView: View {
             }
             .buttonStyle(.plain)
             .disabled(visibleText.isEmpty)
-
-            ShareLink(item: visibleText) {
-                Text("Share")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
-            }
-            .buttonStyle(.plain)
-            .disabled(visibleText.isEmpty)
         }
-        // Four capsules is a tight fit: "Re-polish" wraps and breaks the pill
-        // without this. Shrink rather than wrap.
-        .lineLimit(1)
-        .minimumScaleFactor(0.8)
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
     }
