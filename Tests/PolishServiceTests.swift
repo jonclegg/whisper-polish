@@ -84,9 +84,25 @@ final class PolishServiceTests: XCTestCase {
         let messages = try XCTUnwrap(json["messages"] as? [[String: String]])
         XCTAssertEqual(messages.first?["role"], "system")
         XCTAssertEqual(messages.first?["content"], "MY PROMPT")
-        XCTAssertEqual(messages.last?["content"], "raw text")
+        // Transcript is framed so imperative dictation is not read as a task.
+        XCTAssertEqual(messages.last?["content"], PolishService.frameTranscript("raw text"))
+        XCTAssertTrue(messages.last?["content"]?.contains("raw text") == true)
+        XCTAssertTrue(messages.last?["content"]?.contains("<transcript>") == true)
         // Thinking tokens would blow the latency budget for no gain.
         XCTAssertEqual((json["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
+    }
+
+    func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
+        let framed = PolishService.frameTranscript("write a two paragraph reply")
+        XCTAssertTrue(framed.hasPrefix("<transcript>\n"))
+        XCTAssertTrue(framed.hasSuffix("\n</transcript>"))
+        XCTAssertTrue(framed.contains("write a two paragraph reply"))
+        // The raw words stay intact; only the boundary markers are added.
+        XCTAssertEqual(
+            framed
+                .replacingOccurrences(of: "<transcript>\n", with: "")
+                .replacingOccurrences(of: "\n</transcript>", with: ""),
+            "write a two paragraph reply")
     }
 
     func testMissingKeyThrowsBeforeAnyRequest() async {

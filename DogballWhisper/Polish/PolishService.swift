@@ -100,9 +100,13 @@ final class PolishService: TextCleaning {
         }
         Diagnostics.verbose("openrouter: requesting \(model), key present (\(key.count) chars)")
 
+        // Delimiters mark the transcript as data, not as further instructions.
+        // Without them, models sometimes treat imperative dictation ("write a
+        // two-paragraph reply to this") as a task instead of as words to clean.
+        // Framing lives here so custom cleanup prompts get the same protection.
         let messages: [ChatRequest.Message] = [
             .init(role: "system", content: prompt),
-            .init(role: "user", content: text),
+            .init(role: "user", content: Self.frameTranscript(text)),
         ]
 
         do {
@@ -149,6 +153,16 @@ final class PolishService: TextCleaning {
         let content = Self.unwrap(decoded.choices.first?.message.content ?? "")
         guard !content.isEmpty else { throw PolishError.emptyResponse }
         return content
+    }
+
+    /// Wraps the raw transcript so the model sees a clear data boundary.
+    /// Content between the tags is the speaker's words only.
+    static func frameTranscript(_ text: String) -> String {
+        """
+        <transcript>
+        \(text)
+        </transcript>
+        """
     }
 
     /// Models occasionally wrap their answer in quotes or a code fence even
