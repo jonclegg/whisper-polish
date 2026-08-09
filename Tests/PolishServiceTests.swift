@@ -21,13 +21,26 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(messages.count, 2)
         XCTAssertEqual(messages[0].role, "system")
         XCTAssertTrue(messages[0].content.contains(PolishStyle.reddit.instruction))
-        XCTAssertEqual(messages[1], PolishService.Message(role: "user", content: "hello world"))
+        // Transcript is framed so imperative notes are not read as model tasks.
+        XCTAssertEqual(messages[1], PolishService.Message(
+            role: "user", content: PolishService.frameTranscript("hello world")))
+        XCTAssertTrue(messages[1].content.contains("hello world"))
+        XCTAssertTrue(messages[1].content.contains("<transcript>"))
     }
 
     func testMessagesCarryAntiAIVoiceRules() {
         let messages = PolishService.messages(text: "hello", style: .email)
         XCTAssertTrue(messages[0].content.contains("Do not use em dashes"))
         XCTAssertTrue(messages[0].content.contains("Never invent facts"))
+        // Dictation that sounds like a command must still be treated as speech.
+        XCTAssertTrue(messages[0].content.contains("not a request for you"))
+    }
+
+    func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
+        let framed = PolishService.frameTranscript("write a two paragraph reply")
+        XCTAssertTrue(framed.hasPrefix("<transcript>\n"))
+        XCTAssertTrue(framed.hasSuffix("\n</transcript>"))
+        XCTAssertTrue(framed.contains("write a two paragraph reply"))
     }
 
     // MARK: - Polish
