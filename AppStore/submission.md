@@ -12,8 +12,13 @@
 - Copyright: 2026 Jonathan Clegg
 - Availability: All supported countries and regions
 
-The English (U.S.) listing copy lives in `Metadata/en-US/`. Upload the five files in
-`Screenshots/iphone-65/` in filename order.
+The English (U.S.) listing copy lives in `Metadata/en-US/`. Upload the five customer-facing
+files in `Screenshots/iphone-65-marketing/` in filename order. They are reproducibly rendered
+from the raw simulator captures with:
+
+```sh
+swift AppStore/Scripts/render-marketing-screenshots.swift AppStore
+```
 
 ## Subscription
 
