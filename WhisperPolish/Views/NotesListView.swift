@@ -222,9 +222,17 @@ struct NotesListView: View {
     private func runStartupWorkIfNeeded() {
         guard !didRunStartupWork else { return }
         didRunStartupWork = true
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(AppStoreScreenshotFixtures.launchArgument) {
+            _ = try? AppStoreScreenshotFixtures.seedIfNeeded(in: modelContext)
+        } else {
+            Task { await transcription.prepare() }
+        }
+        #else
+        Task { await transcription.prepare() }
+        #endif
         // Unstructured task: an `async let` here would be cancelled the
         // moment this scope exits, killing the warm-up right after launch.
-        Task { await transcription.prepare() }
         resetOrphanedTranscriptions()
     }
 

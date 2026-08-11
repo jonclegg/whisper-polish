@@ -39,6 +39,37 @@ final class SubscriptionStore {
     }
 
     init() {
+        #if DEBUG
+        if Self.defaultScreenshotMode {
+            configureScreenshotEntitlement()
+            return
+        }
+        #endif
+        startObservingStoreKit()
+    }
+
+    #if DEBUG
+    init(screenshotMode: Bool) {
+        if screenshotMode {
+            configureScreenshotEntitlement()
+            return
+        }
+        startObservingStoreKit()
+    }
+
+    private func configureScreenshotEntitlement() {
+        entitlementJWS = "app-store-screenshot-entitlement"
+        expirationDate = Date().addingTimeInterval(30 * 24 * 60 * 60)
+        usage = CloudUsage(
+            used: 13,
+            limit: CloudPlan.monthlyPolishLimit,
+            remaining: CloudPlan.monthlyPolishLimit - 13,
+            resetsAt: Date().addingTimeInterval(30 * 24 * 60 * 60)
+        )
+    }
+    #endif
+
+    private func startObservingStoreKit() {
         updatesTask = observeTransactions()
         Task { await load() }
     }
@@ -115,4 +146,10 @@ final class SubscriptionStore {
             }
         }
     }
+
+    #if DEBUG
+    private static var defaultScreenshotMode: Bool {
+        ProcessInfo.processInfo.arguments.contains(AppStoreScreenshotFixtures.launchArgument)
+    }
+    #endif
 }

@@ -9,7 +9,8 @@ The cloud service is a portable Node.js API backed by Postgres. It:
 - caps notes at 8,000 UTF-8 bytes and output at 2,000 tokens;
 - stops a billing period if wholesale model spend reaches $2.20, in addition to the 300-request limit;
 - refuses service if the configured model's price rises above its approved ceiling;
-- records request counts and provider cost without storing note text.
+- does not store input note text, but does retain generated output so an interrupted request can be retried safely;
+- records request counts and provider cost.
 
 ## Local setup
 

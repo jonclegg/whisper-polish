@@ -1,0 +1,17 @@
+Turn rough voice notes into clear text you can actually send.
+
+Whisper Polish records and transcribes on your iPhone. When you want a cleaner version, choose a style—email, text message, Slack update, bullet summary, and more.
+
+• On-device voice transcription
+• Keep original and polished versions together
+• Use your own OpenRouter key or optional Whisper Polish Cloud
+• Create custom polish styles
+• Record voice notes or type directly
+• No account required
+
+The app is free. Bring your own OpenRouter key and pay OpenRouter directly, or subscribe to Whisper Polish Cloud for 300 cloud polishes each month with no API-key setup.
+
+Whisper Polish Cloud is $4.99 per month in the United States. Pricing may vary by region. Payment is charged to your Apple Account, and the subscription renews automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel your subscription in App Store settings.
+
+Privacy Policy: https://yallware.com/whisper-polish/privacy/
+Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
