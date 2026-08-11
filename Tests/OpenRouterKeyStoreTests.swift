@@ -28,8 +28,10 @@ final class OpenRouterKeyStoreTests: XCTestCase {
     }
 
     func testUpdatePersistsTrimmedKeyAndEmptyUpdateDeletesIt() throws {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
         let secrets = MemorySecretStore()
-        let store = OpenRouterKeyStore(secrets: secrets, defaults: .standard)
+        let store = OpenRouterKeyStore(secrets: secrets, defaults: defaults)
 
         try store.update("  sk-or-new  ")
         XCTAssertEqual(store.value, "sk-or-new")
