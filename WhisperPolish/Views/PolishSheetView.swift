@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct PolishSheetView: View {
+    let accessMode: CloudAccessMode
     let hasAPIKey: Bool
+    let hasSubscription: Bool
     let onPolish: (PolishStyle, PolishModel) -> Void
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
@@ -30,24 +32,31 @@ struct PolishSheetView: View {
                           selection: $style,
                           onNewStyle: { showingNewStyle = true })
 
-                sectionLabel("Model")
-                Button {
-                    showingModelPicker = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(model.displayName)
-                            .font(.footnote.weight(.semibold))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                if accessMode == .personalKey {
+                    sectionLabel("Model")
+                    Button {
+                        showingModelPicker = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(model.displayName)
+                                .font(.footnote.weight(.semibold))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color(.systemGroupedBackground)))
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(Color(.systemGroupedBackground)))
+                    .buttonStyle(.plain)
+                } else {
+                    sectionLabel("Cloud plan")
+                    Label("Cost-controlled cloud model", systemImage: "cloud.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.polishTeal)
                 }
-                .buttonStyle(.plain)
 
-                if hasAPIKey {
+                if canPolish {
                     Button {
                         onPolish(style, model)
                     } label: {
@@ -61,7 +70,7 @@ struct PolishSheetView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 2)
                 } else {
-                    Text("Add your OpenRouter API key in Settings first.")
+                    Text(unavailableMessage)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -88,6 +97,17 @@ struct PolishSheetView: View {
             StyleEditorView(seedInstruction: style.instruction) { saved in
                 style = saved
             }
+        }
+    }
+
+    private var canPolish: Bool {
+        accessMode == .personalKey ? hasAPIKey : hasSubscription
+    }
+
+    private var unavailableMessage: String {
+        switch accessMode {
+        case .personalKey: return "Add your OpenRouter API key in Settings first."
+        case .subscription: return "Subscribe to Whisper Polish Cloud in Settings first."
         }
     }
 

@@ -22,8 +22,8 @@ final class ModelMirrorIntegrationTests: XCTestCase {
 
         // 3. With network fetching disabled, FluidAudio must still load the model —
         //    which only works if the mirror delivered a complete, correct model.
-        DownloadUtils.enforceOffline = true
-        defer { DownloadUtils.enforceOffline = false }
+        ModelHub.offlineMode = true
+        defer { ModelHub.offlineMode = false }
         let models = try await AsrModels.downloadAndLoad()
         let manager = AsrManager(config: .default)
         try await manager.loadModels(models)
