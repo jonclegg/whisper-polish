@@ -15,7 +15,7 @@ identity is restricted to sending email from `alerts@yallware.com` only to
 
 The API checks the OpenRouter key every five minutes. It emails on the first
 provider failure, on recovery, and when the key's remaining spend allowance falls below $25.
-Repeated failures and low-balance checks are suppressed until recovery.
+Repeated failures and low-allowance checks are suppressed until recovery.
 
 From the repository root on the server:
 

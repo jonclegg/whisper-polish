@@ -24,7 +24,7 @@ const environmentSchema = z.object({
   ALERT_EMAIL_TO: z.email(),
   ALERT_EMAIL_FROM: z.email(),
   AWS_REGION: z.string().min(1).default("us-east-1"),
-  OPENROUTER_LOW_BALANCE_DOLLARS: z.coerce.number().positive().default(25),
+  OPENROUTER_LOW_ALLOWANCE_DOLLARS: z.coerce.number().positive().default(25),
   OPENROUTER_HEALTH_CHECK_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
   PORT: z.coerce.number().int().positive().default(8080),
 });
@@ -131,7 +131,7 @@ await server.listen({ port: env.PORT, host: "0.0.0.0" });
 
 const checkOpenRouter = async () => {
   try {
-    await openRouter.checkHealth(env.OPENROUTER_LOW_BALANCE_DOLLARS);
+    await openRouter.checkHealth(env.OPENROUTER_LOW_ALLOWANCE_DOLLARS);
   } catch (error) {
     server.log.error(error, "OpenRouter health check failed");
   }

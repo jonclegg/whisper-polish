@@ -20,14 +20,14 @@ describe("OpenRouterIncidentReporter", () => {
     });
   });
 
-  it("sends one low-balance warning until the balance recovers", async () => {
+  it("sends one low-allowance warning until the allowance recovers", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const reporter = new OpenRouterIncidentReporter({ send });
 
-    await reporter.reportBalance(19.5, 25);
-    await reporter.reportBalance(18, 25);
-    await reporter.reportBalance(30, 25);
-    await reporter.reportBalance(20, 25);
+    await reporter.reportAllowance(19.5, 25);
+    await reporter.reportAllowance(18, 25);
+    await reporter.reportAllowance(30, 25);
+    await reporter.reportAllowance(20, 25);
 
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[0]![0].subject).toBe("[Whisper Polish] OpenRouter key allowance is low");
@@ -71,5 +71,41 @@ describe("OpenRouterIncidentReporter", () => {
 
     release();
     await Promise.all([first, second]);
+  });
+
+  it("coalesces concurrent recovery alerts", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const send = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(pending);
+    const reporter = new OpenRouterIncidentReporter({ send });
+    await reporter.reportFailure("chat completions", "HTTP 502");
+
+    const first = reporter.reportRecovery("chat completions");
+    const second = reporter.reportRecovery("chat completions");
+    expect(send).toHaveBeenCalledTimes(2);
+
+    release();
+    await Promise.all([first, second]);
+  });
+
+  it("reports a new failure that arrives while recovery is being delivered", async () => {
+    let releaseRecovery!: () => void;
+    const pendingRecovery = new Promise<void>((resolve) => { releaseRecovery = resolve; });
+    const send = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(pendingRecovery)
+      .mockResolvedValueOnce(undefined);
+    const reporter = new OpenRouterIncidentReporter({ send });
+    await reporter.reportFailure("chat completions", "HTTP 502");
+
+    const recovery = reporter.reportRecovery("chat completions");
+    const newFailure = reporter.reportFailure("chat completions", "HTTP 503");
+    releaseRecovery();
+    await Promise.all([recovery, newFailure]);
+
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(send.mock.calls[2]![0].text).toContain("HTTP 503");
   });
 });

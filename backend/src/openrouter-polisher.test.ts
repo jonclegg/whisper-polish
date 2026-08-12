@@ -130,12 +130,12 @@ describe("OpenRouterPolisher", () => {
 function incidentSink(): OpenRouterIncidentSink & {
   reportFailure: ReturnType<typeof vi.fn>;
   reportRecovery: ReturnType<typeof vi.fn>;
-  reportBalance: ReturnType<typeof vi.fn>;
+  reportAllowance: ReturnType<typeof vi.fn>;
 } {
   return {
     reportFailure: vi.fn().mockResolvedValue(undefined),
     reportRecovery: vi.fn().mockResolvedValue(undefined),
-    reportBalance: vi.fn().mockResolvedValue(undefined),
+    reportAllowance: vi.fn().mockResolvedValue(undefined),
   };
 }
 

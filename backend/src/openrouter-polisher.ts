@@ -79,7 +79,7 @@ export class OpenRouterPolisher implements CloudPolisher {
     }
   }
 
-  async checkHealth(lowBalanceThresholdDollars: number): Promise<void> {
+  async checkHealth(lowAllowanceThresholdDollars: number): Promise<void> {
     let remaining: number | null | undefined;
     try {
       const response = await this.fetcher("https://openrouter.ai/api/v1/key", {
@@ -98,7 +98,7 @@ export class OpenRouterPolisher implements CloudPolisher {
       throw error;
     }
     if (typeof remaining === "number" && Number.isFinite(remaining)) {
-      void this.incidents?.reportBalance(remaining, lowBalanceThresholdDollars).catch(() => undefined);
+      void this.incidents?.reportAllowance(remaining, lowAllowanceThresholdDollars).catch(() => undefined);
     }
     void this.incidents?.reportRecovery("key health check").catch(() => undefined);
   }
