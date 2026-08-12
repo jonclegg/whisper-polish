@@ -23,6 +23,13 @@ services:
       APP_BUNDLE_ID: com.jonclegg.WhisperPolish
       APP_APPLE_ID: "6800487416"
       APPLE_ROOT_CERTIFICATES_DIR: /app/certs
+      ALERT_EMAIL_TO: jon@yallware.com
+      ALERT_EMAIL_FROM: alerts@yallware.com
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      OPENROUTER_LOW_BALANCE_DOLLARS: "25"
+      OPENROUTER_HEALTH_CHECK_INTERVAL_MS: "300000"
       PORT: "8080"
     depends_on:
       db:

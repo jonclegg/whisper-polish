@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenRouterPolisher } from "./openrouter-polisher.js";
+import type { OpenRouterIncidentSink } from "./openrouter-incident-reporter.js";
 
 const input = {
   text: "rough words",
@@ -77,7 +78,45 @@ describe("OpenRouterPolisher", () => {
     await expect(new OpenRouterPolisher("secret", "z-ai/glm-5.2", fetcher).polish(input))
       .rejects.toThrow("valid usage cost");
   });
+
+  it("alerts on insufficient credits without including the provider response body", async () => {
+    const incidents = incidentSink();
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({
+        data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.0000004", completion: "0.0000012" } }],
+      }))
+      .mockResolvedValueOnce(new Response("private provider detail", { status: 402 }));
+
+    await expect(new OpenRouterPolisher(
+      "secret",
+      "z-ai/glm-5.2",
+      fetcher,
+      undefined,
+      incidents,
+    ).polish(input)).rejects.toThrow("OpenRouter error 402");
+
+    expect(incidents.reportFailure).toHaveBeenCalledWith(
+      "chat completions",
+      "HTTP 402: the OpenRouter account or API key has insufficient credits.",
+    );
+    expect(incidents.reportFailure).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("private provider detail"),
+    );
+  });
 });
+
+function incidentSink(): OpenRouterIncidentSink & {
+  reportFailure: ReturnType<typeof vi.fn>;
+  reportRecovery: ReturnType<typeof vi.fn>;
+  reportBalance: ReturnType<typeof vi.fn>;
+} {
+  return {
+    reportFailure: vi.fn().mockResolvedValue(undefined),
+    reportRecovery: vi.fn().mockResolvedValue(undefined),
+    reportBalance: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
