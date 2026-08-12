@@ -7,6 +7,23 @@ const input = {
 };
 
 describe("OpenRouterPolisher", () => {
+  it("accepts the approved GLM 5.2 launch price", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({
+        data: [{
+          id: "z-ai/glm-5.2",
+          pricing: { prompt: "0.0000005586", completion: "0.0000017556" },
+        }],
+      }))
+      .mockResolvedValueOnce(json({
+        choices: [{ message: { content: "Finished" } }],
+        usage: { cost: 0.0042 },
+      }));
+
+    await expect(new OpenRouterPolisher("secret", "z-ai/glm-5.2", fetcher).polish(input))
+      .resolves.toMatchObject({ text: "Finished" });
+  });
+
   it("returns metered cost and applies bounded privacy-conscious parameters", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(json({
@@ -29,7 +46,7 @@ describe("OpenRouterPolisher", () => {
 
   it("refuses to spend when model pricing exceeds the approved ceiling", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({
-      data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.0000006", completion: "0.0000012" } }],
+      data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.00000061", completion: "0.0000012" } }],
     }));
 
     await expect(new OpenRouterPolisher("secret", "z-ai/glm-5.2", fetcher).polish(input))

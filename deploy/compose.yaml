@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: whisper_polish
+      POSTGRES_USER: whisper_polish
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whisper_polish -d whisper_polish"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://whisper_polish:${POSTGRES_PASSWORD}@db:5432/whisper_polish
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      APP_BUNDLE_ID: com.jonclegg.WhisperPolish
+      APP_APPLE_ID: "6800487416"
+      APPLE_ROOT_CERTIFICATES_DIR: /app/certs
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

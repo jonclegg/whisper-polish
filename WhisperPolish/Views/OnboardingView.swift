@@ -179,7 +179,7 @@ struct OnboardingView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(CloudPlan.monthlyPolishLimit) cloud polishes per month")
+                    Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes per month")
                         .font(.headline)
                     Text("\(subscription.priceText)/month · cancel anytime")
                         .font(.subheadline)

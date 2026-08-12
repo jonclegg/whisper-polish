@@ -28,7 +28,7 @@ swift AppStore/Scripts/render-marketing-screenshots.swift AppStore
 - Subscription Apple ID: 6800487749
 - Duration: 1 month
 - U.S. price: $4.99
-- Included usage: 300 cloud polishes per billing period
+- Included usage: Up to 300 cloud polishes per billing period
 - Family Sharing: Off
 
 Use `Screenshots/iphone-65/04-cloud-plan.png` as the subscription review screenshot.
@@ -37,7 +37,7 @@ Use `Screenshots/iphone-65/04-cloud-plan.png` as the subscription review screens
 
 Whisper Polish does not require an account. Recording and transcription work on-device.
 The optional Personal Key mode requires a user-provided OpenRouter API key. The optional
-Whisper Polish Cloud mode is unlocked by the auto-renewable subscription and includes 300
+Whisper Polish Cloud mode is unlocked by the auto-renewable subscription and includes up to 300
 cloud polishes per month. No reviewer credentials are required.
 
 ## App privacy answers

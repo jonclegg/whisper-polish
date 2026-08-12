@@ -8,7 +8,7 @@ Whisper Polish is a free, open-source iPhone voice-notes app. Recording and tran
 - Typed and recorded notes stored locally with SwiftData
 - Built-in and custom rewrite styles
 - Personal Key mode with the key stored in the iOS Keychain
-- Optional monthly cloud plan with 300 polishes per billing period
+- Optional monthly cloud plan with up to 300 polishes per billing period
 - Fact checking with live web search in Personal Key mode
 
 ## Build the iOS app
@@ -36,7 +36,7 @@ The included `WhisperPolish.storekit` file supplies a local $4.99 monthly produc
 
 ## Cloud service
 
-Personal Key mode talks directly to OpenRouter and does not need the backend. Subscription mode sends the App Store-signed StoreKit transaction to the service on every request; the server verifies it and enforces the 300-polish allowance without creating a separate user account.
+Personal Key mode talks directly to OpenRouter and does not need the backend. Subscription mode sends the App Store-signed StoreKit transaction to the service on every request; the server verifies it and enforces the plan allowance without creating a separate user account.
 
 Build with the service's HTTPS base URL:
 

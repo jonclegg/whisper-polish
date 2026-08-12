@@ -214,7 +214,7 @@ let slides = [
     Slide(
         source: "04-cloud-plan.png",
         output: "04-simple-cloud-plan.png",
-        headline: "300 cloud polishes.\n$4.99 a month.",
+        headline: "Up to 300 cloud polishes.\n$4.99 a month.",
         subhead: "No API key required. One predictable monthly plan.",
         backgroundTop: NSColor(hex: 0x15201E),
         backgroundBottom: NSColor(hex: 0x080D0C),

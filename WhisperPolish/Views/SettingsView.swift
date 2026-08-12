@@ -87,11 +87,11 @@ struct SettingsView: View {
                         if let usage = subscription.usage {
                             LabeledContent("This month", value: "\(usage.remaining) of \(usage.limit) left")
                         } else {
-                            LabeledContent("Included", value: "\(CloudPlan.monthlyPolishLimit) polishes/month")
+                            LabeledContent("Included", value: "Up to \(CloudPlan.monthlyPolishLimit) polishes/month")
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("\(CloudPlan.monthlyPolishLimit) cloud polishes each month")
+                            Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes each month")
                                 .font(.subheadline.weight(.semibold))
                             Text("\(subscription.priceText) per month · cancel anytime")
                                 .font(.caption)

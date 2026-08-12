@@ -10,8 +10,8 @@ export class OpenRouterPolisher implements CloudPolisher {
     private readonly model = "z-ai/glm-5.2",
     private readonly fetcher: typeof fetch = fetch,
     private readonly maximumPricePerToken = {
-      prompt: 0.0000005,
-      completion: 0.0000015,
+      prompt: 0.0000006,
+      completion: 0.0000019,
     },
   ) {}
 

@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import { Pool } from "pg";
 import { z } from "zod";
 import { AppleEntitlementVerifier } from "./apple-entitlement-verifier.js";
@@ -44,6 +45,7 @@ const application = new PolishApplication(
 );
 
 const server = Fastify({
+  trustProxy: ["loopback", "linklocal", "uniquelocal"],
   logger: {
     level: "info",
     redact: ["req.headers.authorization"],
@@ -51,9 +53,18 @@ const server = Fastify({
   bodyLimit: 32 * 1024,
 });
 
+await server.register(rateLimit, { global: false });
+
 server.get("/health", async () => ({ ok: true }));
 
-server.post("/v1/polish", async (request, reply) => {
+server.post("/v1/polish", {
+  config: {
+    rateLimit: {
+      max: 30,
+      timeWindow: "1 minute",
+    },
+  },
+}, async (request, reply) => {
   const authorization = request.headers.authorization;
   const transactionJWS = authorization?.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length)

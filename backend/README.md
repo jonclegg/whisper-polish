@@ -4,7 +4,7 @@ The cloud service is a portable Node.js API backed by Postgres. It:
 
 - verifies StoreKit 2 signed transactions using Apple's official server library;
 - accepts only the configured Whisper Polish subscription product;
-- provides at most 300 successful polish reservations per renewal transaction;
+- provides up to 300 successful polish reservations per renewal transaction;
 - makes idempotent requests safe to retry;
 - caps notes at 8,000 UTF-8 bytes and output at 2,000 tokens;
 - stops a billing period if wholesale model spend reaches $2.20, in addition to the 300-request limit;
@@ -16,7 +16,7 @@ The cloud service is a portable Node.js API backed by Postgres. It:
 
 1. Start Postgres and create a database.
 2. Copy `.env.example` to `.env` and replace every placeholder.
-3. Download Apple's current root certificates from the Apple PKI page into `certs/`.
+3. Refresh the bundled root certificates in `certs/` from Apple's PKI page when Apple changes its published roots.
 4. Install and run:
 
 ```sh

@@ -9,7 +9,7 @@ Whisper Polish records and transcribes on your iPhone. When you want a cleaner v
 • Record voice notes or type directly
 • No account required
 
-The app is free. Bring your own OpenRouter key and pay OpenRouter directly, or subscribe to Whisper Polish Cloud for 300 cloud polishes each month with no API-key setup.
+The app is free. Bring your own OpenRouter key and pay OpenRouter directly, or subscribe to Whisper Polish Cloud for up to 300 cloud polishes each month with no API-key setup.
 
 Whisper Polish Cloud is $4.99 per month in the United States. Pricing may vary by region. Payment is charged to your Apple Account, and the subscription renews automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel your subscription in App Store settings.
 

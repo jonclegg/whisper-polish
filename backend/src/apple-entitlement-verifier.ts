@@ -17,7 +17,7 @@ export class AppleEntitlementVerifier implements EntitlementVerifier {
     enableOnlineChecks?: boolean;
   }) {
     const roots = readdirSync(options.rootCertificatesDirectory)
-      .filter((name) => name.endsWith(".cer"))
+      .filter((name) => !name.startsWith(".") && name.endsWith(".cer"))
       .map((name) => readFileSync(join(options.rootCertificatesDirectory, name)));
     if (!roots.length) throw new Error("No Apple root certificates found.");
     const online = options.enableOnlineChecks ?? true;
