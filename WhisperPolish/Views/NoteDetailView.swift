@@ -6,7 +6,9 @@ struct NoteDetailView: View {
     @Bindable var note: Note
 
     @Environment(TranscriptionService.self) private var transcription
-    @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
+    @Environment(OpenRouterKeyStore.self) private var openRouterKey
+    @Environment(SubscriptionStore.self) private var subscription
+    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.personalKey.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
@@ -103,7 +105,11 @@ struct NoteDetailView: View {
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPolishSheet) {
-            PolishSheetView(hasAPIKey: !apiKey.isEmpty) { style, model in
+            PolishSheetView(
+                accessMode: cloudAccessMode,
+                hasAPIKey: !openRouterKey.value.isEmpty,
+                hasSubscription: subscription.isSubscribed
+            ) { style, model in
                 showPolishSheet = false
                 runPolish(style: style, model: model)
             }
@@ -273,28 +279,53 @@ struct NoteDetailView: View {
 
     private func runPolish(style: PolishStyle, model: PolishModel) {
         defaultStyleRaw = style.id
-        modelRaw = model.rawValue
+        if cloudAccessMode == .personalKey {
+            modelRaw = model.rawValue
+        }
         run("Polishing…", errorTitle: "Polish failed") {
-            let result = try await polishService.polish(
-                text: note.originalText,
-                style: style,
-                model: model,
-                apiKey: apiKey
-            )
-            note.applyPolish(result)
+            switch cloudAccessMode {
+            case .personalKey:
+                let result = try await polishService.polish(
+                    text: note.originalText,
+                    style: style,
+                    model: model,
+                    apiKey: openRouterKey.value
+                )
+                note.applyPolish(result)
+            case .subscription:
+                guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
+                    throw CloudConfigurationError.missingEndpoint
+                }
+                let cloud = try await CloudPolishService(endpoint: endpoint).polish(
+                    text: note.originalText,
+                    style: style,
+                    transactionJWS: subscription.entitlementJWS ?? ""
+                )
+                subscription.record(cloud.usage)
+                note.applyPolish(cloud.polishResult(style: style))
+            }
             showingPolished = true
         }
     }
 
     private func runFactCheck() {
+        guard !openRouterKey.value.isEmpty else {
+            errorTitle = "Personal Key required"
+            errorMessage = "Fact checking is not included in the cloud plan yet. Add an OpenRouter key in Settings to use it."
+            return
+        }
         // Checks whichever version you're reading, so the report always matches
         // the text on screen.
         let text = visibleText
         // Web search across several claims takes a while; the cancel button in
         // the overlay is the escape hatch.
         run("Checking facts…", errorTitle: "Fact check failed") {
-            factCheckReport = try await factCheckService.check(text: text, apiKey: apiKey)
+            factCheckReport = try await factCheckService.check(text: text, apiKey: openRouterKey.value)
         }
+    }
+
+    private var cloudAccessMode: CloudAccessMode {
+        CloudAccessMode(rawValue: cloudAccessRaw) ?? .personalKey
     }
 
     /// Runs one cancellable model call behind the progress overlay.

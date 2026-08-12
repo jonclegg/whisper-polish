@@ -1,0 +1,53 @@
+{
+  "identifier" : "B68B6EA1-CA47-4EC4-8FE5-F2F722311D13",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "F15CE346-45CB-42A8-A2C5-22E969A68FDF",
+      "localizations" : [
+
+      ],
+      "name" : "Whisper Polish Cloud",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6654907441",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Includes up to 300 cloud polishes each month.",
+              "displayName" : "Whisper Polish Cloud",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.jonclegg.WhisperPolish.cloud.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Whisper Polish Cloud Monthly",
+          "subscriptionGroupID" : "F15CE346-45CB-42A8-A2C5-22E969A68FDF"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

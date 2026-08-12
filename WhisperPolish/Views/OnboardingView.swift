@@ -4,12 +4,16 @@ import SwiftUI
 /// enter the OpenRouter key, choose a default polish style.
 struct OnboardingView: View {
     @Environment(TranscriptionService.self) private var transcription
+    @Environment(OpenRouterKeyStore.self) private var openRouterKey
+    @Environment(SubscriptionStore.self) private var subscription
     @AppStorage(SettingsKeys.hasCompletedSetup) private var hasCompletedSetup = false
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
-    @AppStorage(SettingsKeys.openRouterKey) private var apiKey = ""
+    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.personalKey.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var step = 0
+    @State private var apiKey = ""
+    @State private var cloudError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,6 +35,7 @@ struct OnboardingView: View {
         }
         .background(Color(.systemGroupedBackground))
         .interactiveDismissDisabled()
+        .onAppear { apiKey = openRouterKey.value }
     }
 
     // MARK: - Step 1: engine
@@ -140,39 +145,83 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 2: API key
+    // MARK: - Step 2: cloud access
 
     private var keyStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             header(
-                title: "Connect OpenRouter",
-                subtitle: "Polish sends your text to a language model through OpenRouter. Transcription never leaves your phone — only polishing uses the network."
+                title: "Choose how to polish",
+                subtitle: "Use your own OpenRouter account, or subscribe for a simple monthly allowance. Transcription always stays on your phone."
             )
 
-            SecureField("sk-or-…", text: $apiKey)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.body.monospaced())
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
+            Picker("Cloud access", selection: $cloudAccessRaw) {
+                ForEach(CloudAccessMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
 
-            Link(destination: URL(string: "https://openrouter.ai/keys")!) {
-                Label("Get a key at openrouter.ai/keys", systemImage: "arrow.up.right.square")
-                    .font(.footnote)
+            if cloudAccessMode == .personalKey {
+                SecureField("sk-or-…", text: $apiKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
+                    .onChange(of: apiKey) { _, value in
+                        do { try openRouterKey.update(value); cloudError = nil }
+                        catch { cloudError = error.localizedDescription }
+                    }
+
+                Link(destination: URL(string: "https://openrouter.ai/keys")!) {
+                    Label("Get a key at openrouter.ai/keys", systemImage: "arrow.up.right.square")
+                        .font(.footnote)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes per month")
+                        .font(.headline)
+                    Text("\(subscription.priceText)/month · cancel anytime")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if subscription.isSubscribed {
+                        Label("Subscription active", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Color.polishTeal)
+                    } else {
+                        Button("Subscribe") {
+                            Task {
+                                do { try await subscription.purchase() }
+                                catch { cloudError = error.localizedDescription }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.polishTeal)
+                        .disabled(subscription.product == nil)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
+            }
+
+            if let cloudError {
+                Text(cloudError).font(.caption).foregroundStyle(.red)
             }
 
             Spacer()
 
             primaryButton("Continue") { step = 2 }
-                .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
-                .opacity(apiKey.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1)
 
-            Button("Skip for now — add it later in Settings") { step = 2 }
+            Button("Set this up later in Settings") { step = 2 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
         }
         .padding(24)
+    }
+
+    private var cloudAccessMode: CloudAccessMode {
+        CloudAccessMode(rawValue: cloudAccessRaw) ?? .personalKey
     }
 
     // MARK: - Step 3: style

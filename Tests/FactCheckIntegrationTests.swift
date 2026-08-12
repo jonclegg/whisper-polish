@@ -9,16 +9,11 @@ import XCTest
 /// about the feature is unit-tested; this proves the combination routes,
 /// searches, and comes back as parseable JSON.
 ///
-/// To run it, put a key where the app itself keeps one:
-///   xcrun simctl spawn booted defaults write com.jonclegg.WhisperPolish \
-///     openRouterKey -string sk-or-v1-...
-/// or set OPENROUTER_API_KEY in the scheme's test-action environment.
+/// To run it, set OPENROUTER_API_KEY in the scheme's test-action environment.
 final class FactCheckIntegrationTests: XCTestCase {
 
     private func apiKey() throws -> String {
-        let fromDefaults = UserDefaults.standard.string(forKey: SettingsKeys.openRouterKey) ?? ""
-        let fromEnv = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? ""
-        let key = fromDefaults.isEmpty ? fromEnv : fromDefaults
+        let key = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? ""
         try XCTSkipIf(key.isEmpty, "No OpenRouter key available; skipping live fact-check test.")
         return key
     }
