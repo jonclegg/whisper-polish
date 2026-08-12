@@ -80,12 +80,19 @@ export class OpenRouterIncidentReporter implements OpenRouterIncidentSink {
   }
 
   async reportAllowance(remainingDollars: number, thresholdDollars: number): Promise<void> {
+    if (this.allowanceTransition) {
+      try {
+        await this.allowanceTransition;
+      } catch {
+        return;
+      }
+      return this.reportAllowance(remainingDollars, thresholdDollars);
+    }
     if (remainingDollars >= thresholdDollars) {
       this.lowAllowanceActive = false;
       return;
     }
     if (this.lowAllowanceActive) return;
-    if (this.allowanceTransition) return this.allowanceTransition;
     this.allowanceTransition = this.sender.send({
         subject: "[Whisper Polish] OpenRouter key allowance is low",
         text: [

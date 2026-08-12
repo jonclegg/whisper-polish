@@ -34,6 +34,23 @@ describe("OpenRouterIncidentReporter", () => {
     expect(send.mock.calls[1]![0].subject).toBe("[Whisper Polish] OpenRouter key allowance is low");
   });
 
+  it("allows a new warning after allowance recovers during email delivery", async () => {
+    let releaseWarning!: () => void;
+    const pendingWarning = new Promise<void>((resolve) => { releaseWarning = resolve; });
+    const send = vi.fn()
+      .mockReturnValueOnce(pendingWarning)
+      .mockResolvedValueOnce(undefined);
+    const reporter = new OpenRouterIncidentReporter({ send });
+
+    const warning = reporter.reportAllowance(20, 25);
+    const recovery = reporter.reportAllowance(30, 25);
+    releaseWarning();
+    await Promise.all([warning, recovery]);
+    await reporter.reportAllowance(20, 25);
+
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   it("retries an alert later if email delivery fails", async () => {
     const send = vi.fn()
       .mockRejectedValueOnce(new Error("SES unavailable"))
