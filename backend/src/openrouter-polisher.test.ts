@@ -104,6 +104,27 @@ describe("OpenRouterPolisher", () => {
       expect.stringContaining("private provider detail"),
     );
   });
+
+  it("returns a successful polish even when recovery email delivery fails", async () => {
+    const incidents = incidentSink();
+    incidents.reportRecovery.mockRejectedValue(new Error("SES unavailable"));
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({
+        data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.0000004", completion: "0.0000012" } }],
+      }))
+      .mockResolvedValueOnce(json({
+        choices: [{ message: { content: "Finished" } }],
+        usage: { cost: 0.0042 },
+      }));
+
+    await expect(new OpenRouterPolisher(
+      "secret",
+      "z-ai/glm-5.2",
+      fetcher,
+      undefined,
+      incidents,
+    ).polish(input)).resolves.toMatchObject({ text: "Finished" });
+  });
 });
 
 function incidentSink(): OpenRouterIncidentSink & {

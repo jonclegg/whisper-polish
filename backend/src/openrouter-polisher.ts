@@ -62,7 +62,7 @@ export class OpenRouterPolisher implements CloudPolisher {
       ) {
         throw new Error("OpenRouter did not return a valid usage cost; refusing an unmetered response.");
       }
-      await this.incidents?.reportRecovery("chat completions");
+      void this.incidents?.reportRecovery("chat completions").catch(() => undefined);
       return {
         text,
         model: this.model,
@@ -80,22 +80,27 @@ export class OpenRouterPolisher implements CloudPolisher {
   }
 
   async checkHealth(lowBalanceThresholdDollars: number): Promise<void> {
+    let remaining: number | null | undefined;
     try {
       const response = await this.fetcher("https://openrouter.ai/api/v1/key", {
         headers: { Authorization: `Bearer ${this.apiKey}` },
       });
       if (!response.ok) throw new Error(`OpenRouter key check failed with HTTP ${response.status}.`);
       const body = await response.json() as { data?: { limit_remaining?: number | null } };
-      const remaining = body.data?.limit_remaining;
-      if (typeof remaining === "number" && Number.isFinite(remaining)) {
-        await this.incidents?.reportBalance(remaining, lowBalanceThresholdDollars);
-      }
-      await this.incidents?.reportRecovery("key health check");
+      remaining = body.data?.limit_remaining;
     } catch (error) {
       const detail = incidentDetail(error);
-      await this.incidents?.reportFailure("key health check", detail);
+      try {
+        await this.incidents?.reportFailure("key health check", detail);
+      } catch {
+        // Monitoring delivery is independent of provider health.
+      }
       throw error;
     }
+    if (typeof remaining === "number" && Number.isFinite(remaining)) {
+      void this.incidents?.reportBalance(remaining, lowBalanceThresholdDollars).catch(() => undefined);
+    }
+    void this.incidents?.reportRecovery("key health check").catch(() => undefined);
   }
 
   private async assertPriceWithinCap(): Promise<void> {

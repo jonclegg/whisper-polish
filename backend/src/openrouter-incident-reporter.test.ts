@@ -58,4 +58,18 @@ describe("OpenRouterIncidentReporter", () => {
     expect(send).toHaveBeenCalledTimes(3);
     expect(send.mock.calls[2]![0].text).toContain("key health check");
   });
+
+  it("coalesces concurrent outage alerts", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const send = vi.fn().mockReturnValue(pending);
+    const reporter = new OpenRouterIncidentReporter({ send });
+
+    const first = reporter.reportFailure("chat completions", "HTTP 502");
+    const second = reporter.reportFailure("chat completions", "HTTP 502");
+    expect(send).toHaveBeenCalledTimes(1);
+
+    release();
+    await Promise.all([first, second]);
+  });
 });
