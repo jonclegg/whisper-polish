@@ -16,9 +16,9 @@ final class FactCheckServiceTests: XCTestCase {
 
     // MARK: - Request shape
 
-    func testRequestUsesFixedFrontierModelNotThePolishModel() {
+    func testRequestUsesFixedFactCheckModelNotThePolishModel() {
         let body = FactCheckService.requestBody(text: "anything")
-        XCTAssertEqual(body["model"] as? String, "anthropic/claude-opus-4.8")
+        XCTAssertEqual(body["model"] as? String, "anthropic/claude-sonnet-4.6")
     }
 
     func testRequestEnablesTheWebSearchServerTool() throws {
@@ -36,10 +36,17 @@ final class FactCheckServiceTests: XCTestCase {
         let body = FactCheckService.requestBody(text: "anything")
         let tools = try XCTUnwrap(body["tools"] as? [[String: Any]])
         let params = try XCTUnwrap(tools[0]["parameters"] as? [String: Any])
-        XCTAssertEqual(params["max_uses"] as? Int, 6)
+        XCTAssertEqual(params["max_uses"] as? Int, 3)
+        XCTAssertEqual(params["max_results"] as? Int, 3)
         // Default is 30 searches per request, which is a runaway bill.
         let maxToolCalls = try XCTUnwrap(body["max_tool_calls"] as? Int)
-        XCTAssertLessThanOrEqual(maxToolCalls, 8)
+        XCTAssertLessThanOrEqual(maxToolCalls, 4)
+    }
+
+    func testRequestDisablesReasoningTokens() throws {
+        let body = FactCheckService.requestBody(text: "anything")
+        let reasoning = try XCTUnwrap(body["reasoning"] as? [String: Any])
+        XCTAssertEqual(reasoning["enabled"] as? Bool, false)
     }
 
     func testRequestAsksForStrictStructuredOutput() throws {
