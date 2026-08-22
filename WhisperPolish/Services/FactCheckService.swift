@@ -26,11 +26,12 @@ enum FactCheckError: LocalizedError, Equatable {
 /// from rewriting, and letting the cheap models do it would produce bad checks
 /// that look exactly like good ones.
 final class FactCheckService {
-    /// Frontier model with native web search and structured-output support.
-    static let model = "anthropic/claude-opus-4.8"
+    /// Sonnet-class model with native web search and structured-output support.
+    /// Opus is more thorough but noticeably slower on multi-claim notes.
+    static let model = "anthropic/claude-sonnet-4.6"
 
     static func displayName(for id: String) -> String {
-        id == model ? "Claude Opus 4.8" : id
+        id == model ? "Claude Sonnet 4.6" : id
     }
 
     private let session: URLSession
@@ -106,11 +107,13 @@ final class FactCheckService {
             "tools": [
                 [
                     "type": "openrouter:web_search",
-                    "parameters": ["max_results": 5, "max_uses": 6],
+                    "parameters": ["max_results": 3, "max_uses": 3],
                 ]
             ],
             // Bounds the agent loop. Default is 30, which is a runaway bill.
-            "max_tool_calls": 8,
+            "max_tool_calls": 4,
+            // Fact-checking doesn't need thinking tokens; they just add latency.
+            "reasoning": ["enabled": false],
             "response_format": [
                 "type": "json_schema",
                 "json_schema": ["name": "fact_check", "strict": true, "schema": responseSchema],
