@@ -1,0 +1,9 @@
+{
+  "name": "whisper-polish",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "install": "npm ci --prefix backend",
+  "start": "bash .cursor/scripts/tailscale-start.sh"
+}
