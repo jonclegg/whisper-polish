@@ -1,0 +1,17 @@
+ios_dir: .
+scheme: WhisperPolish
+project: WhisperPolish.xcodeproj
+configuration: Release
+codegen: true
+build_mode: archive
+archive_path: build/ios/WhisperPolish.xcarchive
+device: Jiphone
+team_id: 22CTWHGWQQ
+bundle_id: com.jonclegg.WhisperPolish
+ota:
+  app_display_name: Whisper Polish
+  s3_prefix: whisper-polish/dev
+  base_url: https://yallware.com/whisper-polish/dev
+  cloudfront_distribution_id: E5DW9A600TBJR
+  configuration: Release
+  derived_data: build/ios/DerivedData-ota
