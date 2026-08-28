@@ -1,15 +1,17 @@
-Turn rough voice notes into clear text you can actually send.
+Turn rough voice notes into text you can actually use.
 
-Whisper Polish records and transcribes on your iPhone. When you want a cleaner version, choose a style—email, text message, Slack update, bullet summary, and more.
+Whisper Polish records and transcribes on your iPhone for free. That part stays on-device. No account required.
 
-• On-device voice transcription
-• Keep original and polished versions together
-• Optional Whisper Polish Cloud subscription
-• Create custom polish styles
+Want AI to clean up the text into an email, Slack message, or summary? That’s optional.
+
+• Free on-device voice transcription
 • Record voice notes or type directly
+• Keep the original next to a polished version
+• Optional Cloud polish, up to 300 a month
+• Custom polish styles
 • No account required
 
-The app is free. Recording and transcription stay on your iPhone. Subscribe to Whisper Polish Cloud for up to 300 cloud polishes each month.
+The app is free. Recording and transcription are always free. Subscribe only if you want AI cleanup.
 
 Whisper Polish Cloud is $4.99 per month in the United States. Pricing may vary by region. Payment is charged to your Apple Account, and the subscription renews automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel your subscription in App Store settings.
 
