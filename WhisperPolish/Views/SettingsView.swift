@@ -3,19 +3,16 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(TranscriptionService.self) private var transcription
-    @Environment(OpenRouterKeyStore.self) private var openRouterKey
     @Environment(SubscriptionStore.self) private var subscription
 
     @AppStorage(SettingsKeys.recordOnLaunch) private var recordOnLaunch = false
     @AppStorage(SettingsKeys.autoCopyTranscript) private var autoCopy = false
-    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.personalKey.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var editingStyle: PolishStyle?
     @State private var showingNewStyle = false
-    @State private var apiKey = ""
     @State private var purchaseInFlight = false
     @State private var cloudError: String?
 
@@ -64,25 +61,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Cloud access", selection: $cloudAccessRaw) {
-                        ForEach(CloudAccessMode.allCases) { mode in
-                            Text(mode.title).tag(mode.rawValue)
-                        }
-                    }
-
-                    if cloudAccessMode == .personalKey {
-                        SecureField("OpenRouter API key (sk-or-…)", text: $apiKey)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .onChange(of: apiKey) { _, value in
-                                do {
-                                    try openRouterKey.update(value)
-                                    cloudError = nil
-                                } catch {
-                                    cloudError = error.localizedDescription
-                                }
-                            }
-                    } else if subscription.isSubscribed {
+                    if subscription.isSubscribed {
                         LabeledContent("Plan", value: "Active")
                         if let usage = subscription.usage {
                             LabeledContent("This month", value: "\(usage.remaining) of \(usage.limit) left")
@@ -125,10 +104,8 @@ struct SettingsView: View {
                 } footer: {
                     if let cloudError {
                         Text(cloudError).foregroundStyle(.red)
-                    } else if cloudAccessMode == .personalKey {
-                        Text("Your key stays in this device's Keychain. Polishing goes directly to OpenRouter.")
                     } else {
-                        Text("Cloud requests use the plan's cost-controlled model. Personal Key mode keeps the full model picker.")
+                        Text("Cloud requests use the plan's cost-controlled model.")
                     }
                 }
 
@@ -179,12 +156,7 @@ struct SettingsView: View {
             .sheet(item: $editingStyle) { style in
                 StyleEditorView(editing: style)
             }
-            .onAppear { apiKey = openRouterKey.value }
         }
-    }
-
-    private var cloudAccessMode: CloudAccessMode {
-        CloudAccessMode(rawValue: cloudAccessRaw) ?? .personalKey
     }
 
     @ViewBuilder

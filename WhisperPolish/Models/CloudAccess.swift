@@ -1,21 +1,7 @@
 import Foundation
 
-enum CloudAccessMode: String, CaseIterable, Identifiable {
-    case personalKey
-    case subscription
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .personalKey: return "Personal Key"
-        case .subscription: return "Whisper Polish Cloud"
-        }
-    }
-}
-
 enum CloudPlan {
-    static let productID = "com.jonclegg.WhisperPolish.cloud.monthly"
+    static let productID = "com.[REDACTED].WhisperPolish.cloud.monthly"
     static let monthlyPolishLimit = 300
 }
 

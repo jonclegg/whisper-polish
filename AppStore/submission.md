@@ -36,9 +36,9 @@ Use `Screenshots/iphone-65/04-cloud-plan.png` as the subscription review screens
 ## App review notes
 
 Whisper Polish does not require an account. Recording and transcription work on-device.
-The optional Personal Key mode requires a user-provided OpenRouter API key. The optional
-Whisper Polish Cloud mode is unlocked by the auto-renewable subscription and includes up to 300
-cloud polishes per month. No reviewer credentials are required.
+Cloud polish is unlocked only by the Whisper Polish Cloud auto-renewable subscription and
+includes up to 300 cloud polishes per month. No reviewer credentials are required. There is
+no personal API-key path.
 
 ## App privacy answers
 
@@ -49,8 +49,8 @@ declare:
 - Other User Content: collected for App Functionality, linked to the user, not used for tracking.
 - Purchase History: collected for App Functionality, linked to the user, not used for tracking.
 
-Audio recordings and transcription remain on-device. Personal-key requests go directly
-to OpenRouter and are governed by the user's OpenRouter account settings.
+Audio recordings and transcription remain on-device. Cloud polish requests go to the
+Whisper Polish API and are authorized by the App Store subscription transaction.
 
 Privacy policy URL: https://yallware.com/whisper-polish/privacy/
 
