@@ -1,19 +1,14 @@
 import SwiftUI
 
 struct PolishSheetView: View {
-    let accessMode: CloudAccessMode
-    let hasAPIKey: Bool
     let hasSubscription: Bool
-    let onPolish: (PolishStyle, PolishModel) -> Void
+    let onPolish: (PolishStyle) -> Void
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
-    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
     @State private var style: PolishStyle = .email
-    @State private var model: PolishModel = .default
     @State private var showingNewStyle = false
-    @State private var showingModelPicker = false
 
     var body: some View {
         ScrollView {
@@ -32,33 +27,14 @@ struct PolishSheetView: View {
                           selection: $style,
                           onNewStyle: { showingNewStyle = true })
 
-                if accessMode == .personalKey {
-                    sectionLabel("Model")
-                    Button {
-                        showingModelPicker = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(model.displayName)
-                                .font(.footnote.weight(.semibold))
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Color(.systemGroupedBackground)))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    sectionLabel("Cloud plan")
-                    Label("Cost-controlled cloud model", systemImage: "cloud.fill")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color.polishTeal)
-                }
+                sectionLabel("Cloud plan")
+                Label("Cost-controlled cloud model", systemImage: "cloud.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.polishTeal)
 
-                if canPolish {
+                if hasSubscription {
                     Button {
-                        onPolish(style, model)
+                        onPolish(style)
                     } label: {
                         Text("Polish as \(style.name)")
                             .font(.subheadline.weight(.semibold))
@@ -70,7 +46,7 @@ struct PolishSheetView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 2)
                 } else {
-                    Text(unavailableMessage)
+                    Text("Subscribe to Whisper Polish Cloud in Settings first.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -85,11 +61,6 @@ struct PolishSheetView: View {
         }
         .onAppear {
             style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
-            model = PolishModel(rawValue: modelRaw) ?? .default
-        }
-        .sheet(isPresented: $showingModelPicker) {
-            ModelPickerView(selection: $model)
-                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showingNewStyle) {
             // Seed with the selected style's instruction so "duplicate and
@@ -97,17 +68,6 @@ struct PolishSheetView: View {
             StyleEditorView(seedInstruction: style.instruction) { saved in
                 style = saved
             }
-        }
-    }
-
-    private var canPolish: Bool {
-        accessMode == .personalKey ? hasAPIKey : hasSubscription
-    }
-
-    private var unavailableMessage: String {
-        switch accessMode {
-        case .personalKey: return "Add your OpenRouter API key in Settings first."
-        case .subscription: return "Subscribe to Whisper Polish Cloud in Settings first."
         }
     }
 

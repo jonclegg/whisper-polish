@@ -11,7 +11,6 @@ enum SettingsKeys {
     static let recordOnLaunch = "recordOnLaunch"
     static let autoCopyTranscript = "autoCopyTranscript"
     static let openRouterKey = "openRouterKey"
-    static let cloudAccessMode = "cloudAccessMode"
     static let defaultStyle = "defaultStyle"
     /// Raw value of the last-used `PolishModel`.
     static let polishModel = "polishModel"

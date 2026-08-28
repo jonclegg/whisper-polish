@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="#why-whisper-polish">Why Whisper Polish</a> ·
-  <a href="#choose-how-you-polish">Personal Key or Cloud</a> ·
+  <a href="#whisper-polish-cloud">Whisper Polish Cloud</a> ·
   <a href="#build-it">Build it</a> ·
   <a href="https://yallware.com/whisper-polish/">Website</a> ·
   <a href="SECURITY.md">Security</a>
@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <img src="AppStore/Screenshots/iphone-65-marketing/04-simple-cloud-plan.png" width="31%" alt="Choose a personal OpenRouter key or the optional cloud plan">
+  <img src="AppStore/Screenshots/iphone-65-marketing/04-simple-cloud-plan.png" width="31%" alt="Subscribe to Whisper Polish Cloud for a monthly polish allowance">
   <img src="AppStore/Screenshots/iphone-65-marketing/05-actionable-summaries.png" width="31%" alt="Create concise and actionable summaries">
 </p>
 
@@ -39,27 +39,17 @@ Most transcription apps stop at a wall of spoken text. Whisper Polish keeps the 
 - **Private by default.** Recording and transcription happen on your iPhone.
 - **Your voice, cleaned up.** Built-in styles cover email, text, Slack, summaries, and more; custom styles let you describe exactly how you want to sound.
 - **Originals stay intact.** The transcript and polished version live together in the same local note.
-- **No account required.** Use your own OpenRouter key or opt into the hosted Cloud plan.
-- **Useful beyond rewriting.** Personal Key mode can fact-check notes with live web search.
+- **No account required.** Recording and transcription work without a subscription. Cloud polish uses Whisper Polish Cloud through Apple.
 
-## Choose how you polish
+## Whisper Polish Cloud
 
-Whisper Polish is free. AI rewriting is deliberately offered in two straightforward modes:
+Whisper Polish is free to record and transcribe. Cloud polish is unlocked only by the Whisper Polish Cloud subscription: up to 300 cloud polishes per billing period, billed through Apple, with no provider API key.
 
-| | Personal Key | Whisper Polish Cloud |
-|---|---|---|
-| Setup | Add your OpenRouter API key | Subscribe in the app |
-| Billing | Pay OpenRouter directly | $4.99/month through Apple |
-| Included use | Based on your OpenRouter balance | Up to 300 cloud polishes per billing period |
-| Request path | iPhone → OpenRouter | iPhone → Whisper Polish API → OpenRouter |
-| Key storage | iOS Keychain | No provider key required |
-| Account | No Whisper Polish account | No Whisper Polish account |
-
-Cloud is optional. Recording, on-device transcription, note storage, and Personal Key mode do not require a subscription.
+Recording, on-device transcription, and note storage do not require a subscription.
 
 ## Under the hood
 
-The iOS app is written in SwiftUI and stores notes locally with SwiftData. It supports Parakeet and Whisper transcription models, keeps OpenRouter credentials in Keychain, and uses StoreKit 2 for the optional subscription.
+The iOS app is written in SwiftUI and stores notes locally with SwiftData. It supports Parakeet and Whisper transcription models and uses StoreKit 2 for the optional subscription.
 
 The Cloud service is a small TypeScript/Fastify API. Each request carries an App Store-signed transaction; the server verifies the entitlement and enforces the plan allowance without introducing a separate Whisper Polish account or login.
 
@@ -67,8 +57,6 @@ The Cloud service is a small TypeScript/Fastify API. Each request carries an App
 Voice or typed note
         │
         ├── on-device transcription ── local SwiftData note
-        │
-        ├── Personal Key ───────────── OpenRouter
         │
         └── Cloud subscription ─────── entitlement check ── OpenRouter
 ```
@@ -99,7 +87,7 @@ com.jonclegg.WhisperPolish.cloud.monthly
 
 ### Configure the Cloud API
 
-Personal Key mode talks directly to OpenRouter and does not need this service. For subscription builds, supply the production HTTPS base URL when archiving:
+Distribution builds need the production HTTPS Cloud API base URL:
 
 ```sh
 xcodebuild \

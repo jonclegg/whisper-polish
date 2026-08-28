@@ -1,18 +1,15 @@
 import SwiftUI
 
 /// One-time first-launch setup: pick a transcription engine and download it,
-/// enter the OpenRouter key, choose a default polish style.
+/// introduce Whisper Polish Cloud, choose a default polish style.
 struct OnboardingView: View {
     @Environment(TranscriptionService.self) private var transcription
-    @Environment(OpenRouterKeyStore.self) private var openRouterKey
     @Environment(SubscriptionStore.self) private var subscription
     @AppStorage(SettingsKeys.hasCompletedSetup) private var hasCompletedSetup = false
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
-    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.personalKey.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var step = 0
-    @State private var apiKey = ""
     @State private var cloudError: String?
 
     var body: some View {
@@ -29,13 +26,12 @@ struct OnboardingView: View {
 
             switch step {
             case 0: engineStep
-            case 1: keyStep
+            case 1: cloudStep
             default: styleStep
             }
         }
         .background(Color(.systemGroupedBackground))
         .interactiveDismissDisabled()
-        .onAppear { apiKey = openRouterKey.value }
     }
 
     // MARK: - Step 1: engine
@@ -145,64 +141,39 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 2: cloud access
+    // MARK: - Step 2: cloud plan
 
-    private var keyStep: some View {
+    private var cloudStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             header(
-                title: "Choose how to polish",
-                subtitle: "Use your own OpenRouter account, or subscribe for a simple monthly allowance. Transcription always stays on your phone."
+                title: "Polish with Whisper Polish Cloud",
+                subtitle: "Subscribe for a simple monthly allowance. Transcription always stays on your phone."
             )
 
-            Picker("Cloud access", selection: $cloudAccessRaw) {
-                ForEach(CloudAccessMode.allCases) { mode in
-                    Text(mode.title).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if cloudAccessMode == .personalKey {
-                SecureField("sk-or-…", text: $apiKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.body.monospaced())
-                    .padding(14)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
-                    .onChange(of: apiKey) { _, value in
-                        do { try openRouterKey.update(value); cloudError = nil }
-                        catch { cloudError = error.localizedDescription }
-                    }
-
-                Link(destination: URL(string: "https://openrouter.ai/keys")!) {
-                    Label("Get a key at openrouter.ai/keys", systemImage: "arrow.up.right.square")
-                        .font(.footnote)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes per month")
-                        .font(.headline)
-                    Text("\(subscription.priceText)/month · cancel anytime")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    if subscription.isSubscribed {
-                        Label("Subscription active", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color.polishTeal)
-                    } else {
-                        Button("Subscribe") {
-                            Task {
-                                do { try await subscription.purchase() }
-                                catch { cloudError = error.localizedDescription }
-                            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes per month")
+                    .font(.headline)
+                Text("\(subscription.priceText)/month · cancel anytime")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if subscription.isSubscribed {
+                    Label("Subscription active", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Color.polishTeal)
+                } else {
+                    Button("Subscribe") {
+                        Task {
+                            do { try await subscription.purchase() }
+                            catch { cloudError = error.localizedDescription }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.polishTeal)
-                        .disabled(subscription.product == nil)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.polishTeal)
+                    .disabled(subscription.product == nil)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
 
             if let cloudError {
                 Text(cloudError).font(.caption).foregroundStyle(.red)
@@ -218,10 +189,6 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
         }
         .padding(24)
-    }
-
-    private var cloudAccessMode: CloudAccessMode {
-        CloudAccessMode(rawValue: cloudAccessRaw) ?? .personalKey
     }
 
     // MARK: - Step 3: style
