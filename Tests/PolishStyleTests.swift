@@ -6,8 +6,11 @@ final class PolishStyleTests: XCTestCase {
     // Old notes and the default-style setting persist these ids as raw strings.
     func testBuiltInIdsAreStable() {
         XCTAssertEqual(Set(PolishStyle.builtIns.map(\.id)),
-                       ["email", "reddit", "marketing", "message", "cleanup",
+                       ["native", "proofread", "professional",
+                        "email", "reddit", "marketing", "message", "cleanup",
                         "slack", "bullets", "blog", "social", "formal"])
+        XCTAssertEqual(PolishStyle.builtIns.prefix(3).map(\.id),
+                       ["native", "proofread", "professional"])
     }
 
     func testCustomStylesRoundTripThroughJSON() {
@@ -40,6 +43,28 @@ final class PolishStyleTests: XCTestCase {
 
     func testBuiltInFlag() {
         XCTAssertTrue(PolishStyle.email.isBuiltIn)
+        XCTAssertTrue(PolishStyle.native.isBuiltIn)
         XCTAssertFalse(PolishStyle(id: "custom-1", name: "X", instruction: "y").isBuiltIn)
+    }
+
+    func testFixitStylesUseCompleteEditorPrompts() {
+        XCTAssertTrue(PolishStyle.native.usesCompleteEditorPrompt)
+        XCTAssertTrue(PolishStyle.proofread.usesCompleteEditorPrompt)
+        XCTAssertTrue(PolishStyle.professional.usesCompleteEditorPrompt)
+        XCTAssertFalse(PolishStyle.email.usesCompleteEditorPrompt)
+        XCTAssertFalse(PolishStyle(id: "custom-1", name: "X", instruction: "y").usesCompleteEditorPrompt)
+    }
+
+    func testFixitStyleInstructionsMatchFixitPrompts() {
+        XCTAssertTrue(PolishStyle.native.instruction.contains("You are a native English editor."))
+        XCTAssertTrue(PolishStyle.native.instruction.contains("Return only the edited text."))
+        XCTAssertTrue(PolishStyle.native.instruction.contains("<<double angle brackets>>"))
+        XCTAssertTrue(PolishStyle.proofread.instruction.contains("smallest possible edit"))
+        XCTAssertTrue(PolishStyle.proofread.instruction.contains("Return only the edited text."))
+        XCTAssertTrue(PolishStyle.professional.instruction.contains("workplace-appropriate"))
+        XCTAssertTrue(PolishStyle.professional.instruction.contains("Return only the edited text."))
+        XCTAssertEqual(PolishStyle.native.name, "Sound native")
+        XCTAssertEqual(PolishStyle.proofread.name, "Proofread")
+        XCTAssertEqual(PolishStyle.professional.name, "Make professional")
     }
 }

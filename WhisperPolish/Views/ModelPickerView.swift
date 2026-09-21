@@ -1,18 +1,26 @@
 import SwiftUI
 
-/// Dialog for choosing which OpenRouter model runs the polish.
+/// Dialog for choosing which model runs a personal-key polish.
 struct ModelPickerView: View {
     @Binding var selection: PolishModel
+    var provider: PolishProvider = .openRouter
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Frontier") {
-                    ForEach(PolishModel.frontier) { row($0) }
-                }
-                Section("Fast & cheap") {
-                    ForEach(PolishModel.fast) { row($0) }
+                switch provider {
+                case .openRouter:
+                    Section("Frontier") {
+                        ForEach(PolishModel.frontier) { row($0) }
+                    }
+                    Section("Fast & cheap") {
+                        ForEach(PolishModel.fast) { row($0) }
+                    }
+                case .groq:
+                    Section("Groq") {
+                        ForEach(PolishModel.groq) { row($0) }
+                    }
                 }
             }
             .navigationTitle("Model")

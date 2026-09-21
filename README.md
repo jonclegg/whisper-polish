@@ -37,19 +37,21 @@
 Most transcription apps stop at a wall of spoken text. Whisper Polish keeps the speed and personality of a voice note, then removes the filler, false starts, and repetition that make it hard to send.
 
 - **Private by default.** Recording and transcription happen on your iPhone.
-- **Your voice, cleaned up.** Built-in styles cover email, text, Slack, summaries, and more; custom styles let you describe exactly how you want to sound.
+- **Your voice, cleaned up.** Built-in styles cover email, text, Slack, summaries, plus Fixit-style Sound native / Proofread / Make professional; custom styles let you describe exactly how you want to sound.
 - **Originals stay intact.** The transcript and polished version live together in the same local note.
 - **No account required.** Recording and transcription work without a subscription. Cloud polish uses Whisper Polish Cloud through Apple.
 
 ## Whisper Polish Cloud
 
-Whisper Polish is free to record and transcribe. Cloud polish is unlocked only by the Whisper Polish Cloud subscription: up to 300 cloud polishes per billing period, billed through Apple, with no provider API key.
+Whisper Polish is free to record and transcribe. Cloud polish is unlocked by the Whisper Polish Cloud subscription: up to 300 cloud polishes per billing period, billed through Apple, with no provider API key.
 
-Recording, on-device transcription, and note storage do not require a subscription.
+Recording, on-device transcription, and note storage do not require a subscription. Personal-key polish is optional in Settings if you bring your own OpenRouter or Groq key.
 
 ## Under the hood
 
 The iOS app is written in SwiftUI and stores notes locally with SwiftData. It supports Parakeet and Whisper transcription models and uses StoreKit 2 for the optional subscription.
+
+Personal-key polish (Settings → Polish → Personal Key) can call OpenRouter or Groq with a key stored on-device. Groq defaults to `openai/gpt-oss-120b`. Cloud subscribers stay on Whisper Polish Cloud / OpenRouter and do not need a Groq key. Sound native, Proofread, and Make professional use the same rewrite instructions as [Fixit](https://github.com/ivanrvpereira/fixit).
 
 The Cloud service is a small TypeScript/Fastify API. Each request carries an App Store-signed transaction; the server verifies the entitlement and enforces the plan allowance without introducing a separate Whisper Polish account or login.
 
@@ -58,6 +60,7 @@ Voice or typed note
         │
         ├── on-device transcription ── local SwiftData note
         │
+        ├── Personal Key ──────────── OpenRouter or Groq (BYOK)
         └── Cloud subscription ─────── entitlement check ── OpenRouter
 ```
 
