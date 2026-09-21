@@ -42,6 +42,8 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertTrue(messages[0].content.contains(QuickCleanup.instruction))
         XCTAssertTrue(messages[0].content.contains("You are a native English editor."))
         XCTAssertTrue(messages[0].content.contains("Return only the edited text."))
+        XCTAssertTrue(messages[0].content.contains("blank-line paragraph breaks"))
+        XCTAssertTrue(messages[0].content.contains("Don't over-fragment"))
         XCTAssertTrue(messages[0].content.contains("inside <transcript> tags"))
         XCTAssertTrue(messages[0].content.contains("edit them according to the instructions above"))
         XCTAssertFalse(messages[0].content.contains("Cut filler, false starts, and repetition"))

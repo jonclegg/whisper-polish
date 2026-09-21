@@ -23,6 +23,9 @@ enum QuickCleanup {
         - Choose natural collocations and verbs over literal translations
         - Match the register: casual stays casual, professional stays professional, intimate stays intimate
         - Improve rhythm so the result reads cleanly out loud
+        - Add blank-line paragraph breaks where the speaker shifts topic, scene, or rhetorical beat. Voice transcripts often arrive as one block.
+        - Prefer a few clear paragraphs over one long block for multi-point notes
+        - Don't over-fragment: short notes can stay one paragraph; don't make every sentence its own paragraph
 
         Portuguese (PT-PT) fragments:
         - Text inside <<double angle brackets>> is Portuguese the user could not express in English. Translate it into natural English that fits the surrounding sentence, then remove the brackets.
@@ -39,7 +42,7 @@ enum QuickCleanup {
         - AI-sounding polish: "delve," "leverage," "landscape," "pivotal," "crucial," "seamless," "robust," "showcase," "testament," "underscore," "foster"
         - Em dashes, dramatic fragments, rhetorical setups, generic positive conclusions, or "not just X, but Y" constructions unless the original meaning truly needs them
 
-        If the text is already natural, return it unchanged.
+        If the phrasing is already natural, keep the words. Still add paragraph breaks when a spoken run is one long block.
         """
 
     static let style = PolishStyle(id: id, name: name, instruction: instruction)

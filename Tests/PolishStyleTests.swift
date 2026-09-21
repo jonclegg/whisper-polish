@@ -53,5 +53,8 @@ final class PolishStyleTests: XCTestCase {
         XCTAssertTrue(QuickCleanup.instruction.contains("You are a native English editor."))
         XCTAssertTrue(QuickCleanup.instruction.contains("Return only the edited text."))
         XCTAssertTrue(QuickCleanup.instruction.contains("<<double angle brackets>>"))
+        XCTAssertTrue(QuickCleanup.instruction.contains("blank-line paragraph breaks"))
+        XCTAssertTrue(QuickCleanup.instruction.contains("Don't over-fragment"))
+        XCTAssertTrue(QuickCleanup.instruction.contains("Still add paragraph breaks"))
     }
 }
