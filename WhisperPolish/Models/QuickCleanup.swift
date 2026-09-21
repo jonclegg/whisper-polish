@@ -6,7 +6,7 @@ enum QuickCleanup {
     static let id = "quick-cleanup"
     static let name = "Quick cleanup"
     static let subtitle = "Fix grammar and phrasing, keep your words"
-    static let model = PolishModel.gptOss120b
+    static let model = PolishModel.llama3370bVersatile
     static let provider = PolishProvider.groq
 
     static let instruction = """
