@@ -26,7 +26,7 @@ const polishBodySchema = z.object({
   text: z.string().min(1).max(8_000),
   style: z.object({
     name: z.string().min(1).max(80),
-    instruction: z.string().min(1).max(1_000),
+    instruction: z.string().min(1).max(4_000),
   }),
 });
 

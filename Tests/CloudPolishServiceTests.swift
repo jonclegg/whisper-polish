@@ -47,6 +47,27 @@ final class CloudPolishServiceTests: XCTestCase {
         )
     }
 
+    func testPolishSendsFixitStyleInstruction() async throws {
+        MockURLProtocol.responses = [.init(
+            status: 200,
+            body: #"{"text":"Finished text","model":"z-ai/glm-5.2","usage":{"used":12,"limit":300,"remaining":288,"resetsAt":"2026-09-01T00:00:00Z"}}"#
+        )]
+
+        _ = try await makeService().polish(
+            text: "rough words",
+            style: .native,
+            transactionJWS: "signed-transaction"
+        )
+
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual((body["style"] as? [String: Any])?["name"] as? String, "Sound native")
+        XCTAssertEqual(
+            (body["style"] as? [String: Any])?["instruction"] as? String,
+            PolishStyle.native.instruction
+        )
+        XCTAssertGreaterThan(PolishStyle.native.instruction.count, 1_000)
+    }
+
     func testMissingEntitlementFailsWithoutNetworkCall() async {
         do {
             _ = try await makeService().polish(

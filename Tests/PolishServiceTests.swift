@@ -36,6 +36,18 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertTrue(messages[0].content.contains("not a request for you"))
     }
 
+    func testFixitMessagesKeepFixitPromptAndAddTranscriptSafetyOnly() {
+        let messages = PolishService.messages(text: "write a reply", style: .native)
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertTrue(messages[0].content.contains(PolishStyle.native.instruction))
+        XCTAssertTrue(messages[0].content.contains("Return only the edited text."))
+        XCTAssertTrue(messages[0].content.contains("inside <transcript> tags"))
+        XCTAssertTrue(messages[0].content.contains("edit them according to the instructions above"))
+        XCTAssertFalse(messages[0].content.contains("Cut filler, false starts, and repetition"))
+        XCTAssertFalse(messages[0].content.contains("Rewrite rough voice-note transcripts"))
+        XCTAssertEqual(messages[1].content, PolishService.frameTranscript("write a reply"))
+    }
+
     func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
         let framed = PolishService.frameTranscript("write a two paragraph reply")
         XCTAssertTrue(framed.hasPrefix("<transcript>\n"))
@@ -60,10 +72,11 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual((body["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
         let auth = MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization")
         XCTAssertEqual(auth, "Bearer sk-or-test")
+        XCTAssertEqual(MockURLProtocol.requests[0].url, PolishProvider.openRouter.chatCompletionsURL)
     }
 
-    func testPolishSendsSelectedModelID() async throws {
-        for model in PolishModel.allCases {
+    func testPolishSendsSelectedOpenRouterModelID() async throws {
+        for model in PolishModel.models(for: .openRouter) {
             MockURLProtocol.reset()
             MockURLProtocol.responses = [Self.chatBody("ok")]
             let result = try await makeService().polish(
@@ -73,6 +86,28 @@ final class PolishServiceTests: XCTestCase {
             let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
             XCTAssertEqual(body["model"] as? String, model.rawValue)
         }
+    }
+
+    func testGroqPolishUsesGroqEndpointOmitsReasoningAndSendsModel() async throws {
+        MockURLProtocol.responses = [Self.chatBody("Native rewrite.")]
+        let result = try await makeService().polish(
+            text: "raw ramble",
+            style: .native,
+            model: .gptOss120b,
+            apiKey: "gsk-test",
+            provider: .groq
+        )
+        XCTAssertEqual(result.text, "Native rewrite.")
+        XCTAssertEqual(result.model, "openai/gpt-oss-120b")
+        XCTAssertEqual(MockURLProtocol.requests.count, 1)
+        XCTAssertEqual(MockURLProtocol.requests[0].url, PolishProvider.groq.chatCompletionsURL)
+        XCTAssertEqual(
+            MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization"),
+            "Bearer gsk-test"
+        )
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["model"] as? String, "openai/gpt-oss-120b")
+        XCTAssertNil(body["reasoning"])
     }
 
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {

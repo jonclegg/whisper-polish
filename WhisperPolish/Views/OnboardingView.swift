@@ -11,6 +11,7 @@ struct OnboardingView: View {
 
     @State private var step = 0
     @State private var cloudError: String?
+    @State private var didSeedFirstRunStyle = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -199,6 +200,13 @@ struct OnboardingView: View {
                 title: "Pick your usual style",
                 subtitle: "Polish will preselect this style. You can always pick a different one per note."
             )
+            .onAppear {
+                guard !didSeedFirstRunStyle else { return }
+                didSeedFirstRunStyle = true
+                if defaultStyleRaw == PolishStyle.email.id {
+                    defaultStyleRaw = PolishStyle.native.id
+                }
+            }
 
             FlowLayout(spacing: 8) {
                 ForEach(PolishStyle.builtIns) { style in

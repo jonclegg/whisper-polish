@@ -6,8 +6,13 @@ struct NoteDetailView: View {
     @Bindable var note: Note
 
     @Environment(TranscriptionService.self) private var transcription
+    @Environment(OpenRouterKeyStore.self) private var openRouterKey
+    @Environment(GroqKeyStore.self) private var groqKey
     @Environment(SubscriptionStore.self) private var subscription
+    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.subscription.rawValue
+    @AppStorage(SettingsKeys.polishProvider) private var polishProviderRaw = PolishProvider.openRouter.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false
@@ -19,6 +24,8 @@ struct NoteDetailView: View {
     @State private var retrying = false
     @State private var player: AVAudioPlayer?
     @State private var isPlaying = false
+
+    private let polishService = PolishService()
 
     private var visibleText: String {
         showingPolished ? (note.polishedText ?? "") : note.originalText
@@ -97,9 +104,14 @@ struct NoteDetailView: View {
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPolishSheet) {
-            PolishSheetView(hasSubscription: subscription.isSubscribed) { style in
+            PolishSheetView(
+                accessMode: cloudAccessMode,
+                provider: polishProvider,
+                hasAPIKey: !personalAPIKey.isEmpty,
+                hasSubscription: subscription.isSubscribed
+            ) { style, model in
                 showPolishSheet = false
-                runPolish(style: style)
+                runPolish(style: style, model: model)
             }
             .presentationDetents([.height(400), .large])
             .presentationDragIndicator(.visible)
@@ -248,20 +260,50 @@ struct NoteDetailView: View {
         }
     }
 
-    private func runPolish(style: PolishStyle) {
+    private func runPolish(style: PolishStyle, model: PolishModel) {
         defaultStyleRaw = style.id
+        if cloudAccessMode == .personalKey {
+            modelRaw = model.rawValue
+        }
         run("Polishing…", errorTitle: "Polish failed") {
-            guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
-                throw CloudConfigurationError.missingEndpoint
+            switch cloudAccessMode {
+            case .personalKey:
+                let result = try await polishService.polish(
+                    text: note.originalText,
+                    style: style,
+                    model: model,
+                    apiKey: personalAPIKey,
+                    provider: polishProvider
+                )
+                note.applyPolish(result)
+            case .subscription:
+                guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
+                    throw CloudConfigurationError.missingEndpoint
+                }
+                let cloud = try await CloudPolishService(endpoint: endpoint).polish(
+                    text: note.originalText,
+                    style: style,
+                    transactionJWS: subscription.entitlementJWS ?? ""
+                )
+                subscription.record(cloud.usage)
+                note.applyPolish(cloud.polishResult(style: style))
             }
-            let cloud = try await CloudPolishService(endpoint: endpoint).polish(
-                text: note.originalText,
-                style: style,
-                transactionJWS: subscription.entitlementJWS ?? ""
-            )
-            subscription.record(cloud.usage)
-            note.applyPolish(cloud.polishResult(style: style))
             showingPolished = true
+        }
+    }
+
+    private var cloudAccessMode: CloudAccessMode {
+        CloudAccessMode(rawValue: cloudAccessRaw) ?? .subscription
+    }
+
+    private var polishProvider: PolishProvider {
+        PolishProvider(rawValue: polishProviderRaw) ?? .openRouter
+    }
+
+    private var personalAPIKey: String {
+        switch polishProvider {
+        case .openRouter: return openRouterKey.value
+        case .groq: return groqKey.value
         }
     }
 

@@ -3,16 +3,22 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(TranscriptionService.self) private var transcription
+    @Environment(OpenRouterKeyStore.self) private var openRouterKey
+    @Environment(GroqKeyStore.self) private var groqKey
     @Environment(SubscriptionStore.self) private var subscription
 
     @AppStorage(SettingsKeys.recordOnLaunch) private var recordOnLaunch = false
     @AppStorage(SettingsKeys.autoCopyTranscript) private var autoCopy = false
+    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.subscription.rawValue
+    @AppStorage(SettingsKeys.polishProvider) private var polishProviderRaw = PolishProvider.openRouter.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var editingStyle: PolishStyle?
     @State private var showingNewStyle = false
+    @State private var apiKey = ""
     @State private var purchaseInFlight = false
     @State private var cloudError: String?
 
@@ -61,7 +67,30 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if subscription.isSubscribed {
+                    Picker("Cloud access", selection: $cloudAccessRaw) {
+                        ForEach(CloudAccessMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+
+                    if cloudAccessMode == .personalKey {
+                        Picker("Provider", selection: $polishProviderRaw) {
+                            ForEach(PolishProvider.allCases) { provider in
+                                Text(provider.title).tag(provider.rawValue)
+                            }
+                        }
+
+                        SecureField(polishProvider.keyPlaceholder, text: $apiKey)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .onChange(of: apiKey) { _, value in
+                                saveAPIKey(value)
+                            }
+
+                        Link(destination: polishProvider.keysURL) {
+                            Label(polishProvider.keysLinkTitle, systemImage: "arrow.up.right.square")
+                        }
+                    } else if subscription.isSubscribed {
                         LabeledContent("Plan", value: "Active")
                         if let usage = subscription.usage {
                             LabeledContent("This month", value: "\(usage.remaining) of \(usage.limit) left")
@@ -104,6 +133,8 @@ struct SettingsView: View {
                 } footer: {
                     if let cloudError {
                         Text(cloudError).foregroundStyle(.red)
+                    } else if cloudAccessMode == .personalKey {
+                        Text("Your key stays in this device's Keychain. Personal polish can use OpenRouter or Groq. Cloud subscribers stay on Whisper Polish Cloud.")
                     } else {
                         Text("Cloud requests use the plan's cost-controlled model.")
                     }
@@ -156,6 +187,39 @@ struct SettingsView: View {
             .sheet(item: $editingStyle) { style in
                 StyleEditorView(editing: style)
             }
+            .onAppear { apiKey = currentKeyStoreValue }
+            .onChange(of: polishProviderRaw) { _, newValue in
+                let provider = PolishProvider(rawValue: newValue) ?? .openRouter
+                modelRaw = PolishModel.resolved(rawValue: modelRaw, provider: provider).rawValue
+                apiKey = currentKeyStoreValue
+            }
+        }
+    }
+
+    private var cloudAccessMode: CloudAccessMode {
+        CloudAccessMode(rawValue: cloudAccessRaw) ?? .subscription
+    }
+
+    private var polishProvider: PolishProvider {
+        PolishProvider(rawValue: polishProviderRaw) ?? .openRouter
+    }
+
+    private var currentKeyStoreValue: String {
+        switch polishProvider {
+        case .openRouter: return openRouterKey.value
+        case .groq: return groqKey.value
+        }
+    }
+
+    private func saveAPIKey(_ value: String) {
+        do {
+            switch polishProvider {
+            case .openRouter: try openRouterKey.update(value)
+            case .groq: try groqKey.update(value)
+            }
+            cloudError = nil
+        } catch {
+            cloudError = error.localizedDescription
         }
     }
 

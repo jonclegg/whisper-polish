@@ -11,6 +11,11 @@ enum SettingsKeys {
     static let recordOnLaunch = "recordOnLaunch"
     static let autoCopyTranscript = "autoCopyTranscript"
     static let openRouterKey = "openRouterKey"
+    /// Personal Key vs Whisper Polish Cloud. Existing Cloud-only installs
+    /// have no value here; default to subscription so we don't surprise them.
+    static let cloudAccessMode = "cloudAccessMode"
+    /// OpenRouter vs Groq for Personal Key polish.
+    static let polishProvider = "polishProvider"
     static let defaultStyle = "defaultStyle"
     /// Raw value of the last-used `PolishModel`.
     static let polishModel = "polishModel"
