@@ -1,14 +1,21 @@
 import SwiftUI
 
 struct PolishSheetView: View {
+    let accessMode: CloudAccessMode
+    let hasGroqKey: Bool
+    let hasOpenRouterKey: Bool
     let hasSubscription: Bool
-    let onPolish: (PolishStyle) -> Void
+    let onPolish: (PolishSheetChoice, PolishModel) -> Void
 
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
+    @State private var choice: PolishSheetChoice = .style(.email)
     @State private var style: PolishStyle = .email
+    @State private var model: PolishModel = .default
     @State private var showingNewStyle = false
+    @State private var showingModelPicker = false
 
     var body: some View {
         ScrollView {
@@ -22,21 +29,83 @@ struct PolishSheetView: View {
                 }
                 .padding(.top, 18)
 
+                Button {
+                    choice = .quickCleanup
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "text.badge.checkmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(choice == .quickCleanup ? Color.polishTeal : .secondary)
+                            .frame(width: 22)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(QuickCleanup.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Text(QuickCleanup.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        if choice == .quickCleanup {
+                            Image(systemName: "checkmark")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.polishTeal)
+                        }
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.systemGroupedBackground))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(choice == .quickCleanup ? Color.polishTeal : .clear, lineWidth: 1.5)
+                    )
+                }
+                .buttonStyle(.plain)
+
                 sectionLabel("Style")
-                FlowChips(styles: PolishStyle.all(customJSON: customStylesJSON),
-                          selection: $style,
-                          onNewStyle: { showingNewStyle = true })
+                FlowChips(
+                    styles: PolishStyle.all(customJSON: customStylesJSON),
+                    selection: selectedStyle,
+                    onSelect: { picked in
+                        style = picked
+                        choice = .style(picked)
+                    },
+                    onNewStyle: { showingNewStyle = true }
+                )
 
-                sectionLabel("Cloud plan")
-                Label("Cost-controlled cloud model", systemImage: "cloud.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.polishTeal)
+                if choice != .quickCleanup {
+                    if accessMode == .personalKey {
+                        sectionLabel("Model")
+                        Button {
+                            showingModelPicker = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(model.displayName)
+                                    .font(.footnote.weight(.semibold))
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(Color(.systemGroupedBackground)))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        sectionLabel("Cloud plan")
+                        Label("Cost-controlled cloud model", systemImage: "cloud.fill")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Color.polishTeal)
+                    }
+                }
 
-                if hasSubscription {
+                if availability == .ready {
                     Button {
-                        onPolish(style)
+                        onPolish(choice, model)
                     } label: {
-                        Text("Polish as \(style.name)")
+                        Text(choice.confirmTitle)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -45,8 +114,8 @@ struct PolishSheetView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 2)
-                } else {
-                    Text("Subscribe to Whisper Polish Cloud in Settings first.")
+                } else if let message = availability.message {
+                    Text(message)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -61,14 +130,38 @@ struct PolishSheetView: View {
         }
         .onAppear {
             style = PolishStyle.find(id: defaultStyleRaw, customJSON: customStylesJSON) ?? .email
+            choice = .style(style)
+            model = PolishModel.resolved(rawValue: modelRaw)
+            modelRaw = model.rawValue
+        }
+        .sheet(isPresented: $showingModelPicker) {
+            ModelPickerView(selection: $model)
+                .presentationDetents([.medium, .large])
+        }
+        .onChange(of: model) { _, newValue in
+            modelRaw = newValue.rawValue
         }
         .sheet(isPresented: $showingNewStyle) {
-            // Seed with the selected style's instruction so "duplicate and
-            // tweak" is the natural way to make a new style.
             StyleEditorView(seedInstruction: style.instruction) { saved in
                 style = saved
+                choice = .style(saved)
             }
         }
+    }
+
+    private var selectedStyle: PolishStyle? {
+        if case .style(let style) = choice { return style }
+        return nil
+    }
+
+    private var availability: PolishAvailability {
+        .of(
+            choice: choice,
+            accessMode: accessMode,
+            hasGroqKey: hasGroqKey,
+            hasOpenRouterKey: hasOpenRouterKey,
+            hasSubscription: hasSubscription
+        )
     }
 
     private func sectionLabel(_ text: String) -> some View {
@@ -83,21 +176,23 @@ struct PolishSheetView: View {
 /// Wrapping row of style chips, with a trailing chip to create a new style.
 private struct FlowChips: View {
     let styles: [PolishStyle]
-    @Binding var selection: PolishStyle
+    let selection: PolishStyle?
+    var onSelect: (PolishStyle) -> Void
     var onNewStyle: () -> Void
 
     var body: some View {
         FlowLayout(spacing: 8) {
             ForEach(styles) { style in
+                let selected = selection == style
                 Button {
-                    selection = style
+                    onSelect(style)
                 } label: {
                     Text(style.name)
-                        .font(.footnote.weight(selection == style ? .semibold : .regular))
-                        .foregroundStyle(selection == style ? .white : .primary)
+                        .font(.footnote.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? .white : .primary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Capsule().fill(selection == style ? Color.polishTeal : Color(.systemGroupedBackground)))
+                        .background(Capsule().fill(selected ? Color.polishTeal : Color(.systemGroupedBackground)))
                 }
                 .buttonStyle(.plain)
             }

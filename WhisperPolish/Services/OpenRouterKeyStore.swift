@@ -18,7 +18,7 @@ enum KeychainStoreError: LocalizedError {
             return SecCopyErrorMessageString(status, nil) as String?
                 ?? "Keychain operation failed (\(status))."
         case .invalidData:
-            return "The saved OpenRouter key could not be read."
+            return "The saved API key could not be read."
         }
     }
 }
@@ -78,6 +78,43 @@ struct KeychainSecretStore: SecretStoring {
     }
 }
 
+enum APIKeyPersistence {
+    static func load(
+        account: String,
+        secrets: any SecretStoring,
+        defaults: UserDefaults,
+        legacyDefaultsKey: String? = nil
+    ) throws -> String {
+        if let saved = try secrets.read(account: account), !saved.isEmpty {
+            if let legacyDefaultsKey {
+                defaults.removeObject(forKey: legacyDefaultsKey)
+            }
+            return saved
+        }
+        if let legacyDefaultsKey,
+           let legacy = defaults.string(forKey: legacyDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !legacy.isEmpty {
+            try secrets.write(legacy, account: account)
+            defaults.removeObject(forKey: legacyDefaultsKey)
+            return legacy
+        }
+        if let legacyDefaultsKey {
+            defaults.removeObject(forKey: legacyDefaultsKey)
+        }
+        return ""
+    }
+
+    static func update(_ newValue: String, account: String, secrets: any SecretStoring) throws -> String {
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            try secrets.delete(account: account)
+        } else {
+            try secrets.write(trimmed, account: account)
+        }
+        return trimmed
+    }
+}
+
 /// Owns the user's OpenRouter API key without placing it in UserDefaults.
 /// Existing installs are migrated once from the legacy AppStorage value.
 @Observable
@@ -93,32 +130,20 @@ final class OpenRouterKeyStore {
         defaults: UserDefaults = .standard
     ) {
         self.secrets = secrets
-
         do {
-            if let saved = try secrets.read(account: Self.account), !saved.isEmpty {
-                value = saved
-                defaults.removeObject(forKey: SettingsKeys.openRouterKey)
-            } else if let legacy = defaults.string(forKey: SettingsKeys.openRouterKey)?
-                .trimmingCharacters(in: .whitespacesAndNewlines), !legacy.isEmpty {
-                try secrets.write(legacy, account: Self.account)
-                value = legacy
-                defaults.removeObject(forKey: SettingsKeys.openRouterKey)
-            } else {
-                defaults.removeObject(forKey: SettingsKeys.openRouterKey)
-            }
+            value = try APIKeyPersistence.load(
+                account: Self.account,
+                secrets: secrets,
+                defaults: defaults,
+                legacyDefaultsKey: SettingsKeys.openRouterKey
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func update(_ newValue: String) throws {
-        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            try secrets.delete(account: Self.account)
-        } else {
-            try secrets.write(trimmed, account: Self.account)
-        }
-        value = trimmed
+        value = try APIKeyPersistence.update(newValue, account: Self.account, secrets: secrets)
         errorMessage = nil
     }
 }

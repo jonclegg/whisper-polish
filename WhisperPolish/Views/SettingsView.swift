@@ -3,16 +3,21 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(TranscriptionService.self) private var transcription
+    @Environment(OpenRouterKeyStore.self) private var openRouterKey
+    @Environment(GroqKeyStore.self) private var groqKey
     @Environment(SubscriptionStore.self) private var subscription
 
     @AppStorage(SettingsKeys.recordOnLaunch) private var recordOnLaunch = false
     @AppStorage(SettingsKeys.autoCopyTranscript) private var autoCopy = false
+    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.subscription.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
     @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var editingStyle: PolishStyle?
     @State private var showingNewStyle = false
+    @State private var openRouterAPIKey = ""
+    @State private var groqAPIKey = ""
     @State private var purchaseInFlight = false
     @State private var cloudError: String?
 
@@ -61,7 +66,24 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if subscription.isSubscribed {
+                    Picker("Cloud access", selection: $cloudAccessRaw) {
+                        ForEach(CloudAccessMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+
+                    if cloudAccessMode == .personalKey {
+                        SecureField(PolishProvider.openRouter.keyPlaceholder, text: $openRouterAPIKey)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .onChange(of: openRouterAPIKey) { _, value in
+                                saveOpenRouterKey(value)
+                            }
+
+                        Link(destination: PolishProvider.openRouter.keysURL) {
+                            Label(PolishProvider.openRouter.keysLinkTitle, systemImage: "arrow.up.right.square")
+                        }
+                    } else if subscription.isSubscribed {
                         LabeledContent("Plan", value: "Active")
                         if let usage = subscription.usage {
                             LabeledContent("This month", value: "\(usage.remaining) of \(usage.limit) left")
@@ -104,9 +126,28 @@ struct SettingsView: View {
                 } footer: {
                     if let cloudError {
                         Text(cloudError).foregroundStyle(.red)
+                    } else if cloudAccessMode == .personalKey {
+                        Text("Your OpenRouter key stays in this device's Keychain. Style polish uses OpenRouter. Quick cleanup always uses Groq.")
                     } else {
                         Text("Cloud requests use the plan's cost-controlled model.")
                     }
+                }
+
+                Section {
+                    SecureField(PolishProvider.groq.keyPlaceholder, text: $groqAPIKey)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onChange(of: groqAPIKey) { _, value in
+                            saveGroqKey(value)
+                        }
+
+                    Link(destination: PolishProvider.groq.keysURL) {
+                        Label(PolishProvider.groq.keysLinkTitle, systemImage: "arrow.up.right.square")
+                    }
+                } header: {
+                    Text("Quick cleanup (Groq)")
+                } footer: {
+                    Text("Quick cleanup always uses Groq to fix grammar and phrasing. Style polish still uses Whisper Polish Cloud or your OpenRouter key.")
                 }
 
                 Section {
@@ -156,6 +197,32 @@ struct SettingsView: View {
             .sheet(item: $editingStyle) { style in
                 StyleEditorView(editing: style)
             }
+            .onAppear {
+                openRouterAPIKey = openRouterKey.value
+                groqAPIKey = groqKey.value
+            }
+        }
+    }
+
+    private var cloudAccessMode: CloudAccessMode {
+        CloudAccessMode(rawValue: cloudAccessRaw) ?? .subscription
+    }
+
+    private func saveOpenRouterKey(_ value: String) {
+        do {
+            try openRouterKey.update(value)
+            cloudError = nil
+        } catch {
+            cloudError = error.localizedDescription
+        }
+    }
+
+    private func saveGroqKey(_ value: String) {
+        do {
+            try groqKey.update(value)
+            cloudError = nil
+        } catch {
+            cloudError = error.localizedDescription
         }
     }
 
