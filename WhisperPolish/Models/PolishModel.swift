@@ -14,13 +14,15 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
     case gpt41 = "openai/gpt-4.1"
     case gemini35Flash = "google/gemini-3.5-flash"
     case glm5Turbo = "z-ai/glm-5-turbo"
-    // Groq · Quick cleanup (same id as Fixit.app)
-    case llama3370bVersatile = "llama-3.3-70b-versatile"
+    // Groq · Quick cleanup. llama-3.3-70b-versatile was shut down for
+    // free/developer tiers on 2026-08-16 (enterprise-only now). Fixit's
+    // Groq default is openai/gpt-oss-120b.
+    case gptOss120b = "openai/gpt-oss-120b"
 
     var id: String { rawValue }
 
     var polishProvider: PolishProvider {
-        self == .llama3370bVersatile ? .groq : .openRouter
+        self == .gptOss120b ? .groq : .openRouter
     }
 
     var displayName: String {
@@ -34,7 +36,7 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
         case .gpt41: return "GPT-4.1"
         case .gemini35Flash: return "Gemini 3.5 Flash"
         case .glm5Turbo: return "GLM 5 Turbo"
-        case .llama3370bVersatile: return "Llama 3.3 70B"
+        case .gptOss120b: return "GPT-OSS 120B"
         }
     }
 
@@ -49,7 +51,7 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
         case .gpt41: return "OpenAI classic"
         case .gemini35Flash: return "Google"
         case .glm5Turbo: return "Z.AI"
-        case .llama3370bVersatile: return "Groq"
+        case .gptOss120b: return "Groq"
         }
     }
 

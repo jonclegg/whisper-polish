@@ -90,11 +90,11 @@ final class PolishServiceTests: XCTestCase {
         }
     }
 
-    func testQuickCleanupUsesGroqEndpointNativePromptAndLlama3370B() async throws {
+    func testQuickCleanupUsesGroqEndpointNativePromptAndOSS120B() async throws {
         MockURLProtocol.responses = [Self.chatBody("Native rewrite.")]
         let result = try await makeService().quickCleanup(text: "raw ramble", apiKey: "gsk-test")
         XCTAssertEqual(result.text, "Native rewrite.")
-        XCTAssertEqual(result.model, "llama-3.3-70b-versatile")
+        XCTAssertEqual(result.model, "openai/gpt-oss-120b")
         XCTAssertEqual(result.style.id, QuickCleanup.id)
         XCTAssertEqual(result.style.name, "Quick cleanup")
         XCTAssertEqual(MockURLProtocol.requests.count, 1)
@@ -104,7 +104,7 @@ final class PolishServiceTests: XCTestCase {
             "Bearer gsk-test"
         )
         let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
-        XCTAssertEqual(body["model"] as? String, "llama-3.3-70b-versatile")
+        XCTAssertEqual(body["model"] as? String, "openai/gpt-oss-120b")
         XCTAssertNil(body["reasoning"])
         let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
         XCTAssertTrue((messages[0]["content"] as? String)?.contains(QuickCleanup.instruction) == true)

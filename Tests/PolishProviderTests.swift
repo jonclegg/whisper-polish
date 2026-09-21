@@ -2,17 +2,17 @@ import XCTest
 @testable import WhisperPolish
 
 final class PolishProviderTests: XCTestCase {
-    func testQuickCleanupUsesLlama3370BVersatile() {
-        XCTAssertEqual(QuickCleanup.model, .llama3370bVersatile)
-        XCTAssertEqual(QuickCleanup.model.rawValue, "llama-3.3-70b-versatile")
+    func testQuickCleanupUsesGroqOSS120B() {
+        XCTAssertEqual(QuickCleanup.model, .gptOss120b)
+        XCTAssertEqual(QuickCleanup.model.rawValue, "openai/gpt-oss-120b")
         XCTAssertEqual(QuickCleanup.provider, .groq)
-        XCTAssertEqual(PolishModel.llama3370bVersatile.polishProvider, .groq)
-        XCTAssertFalse(PolishModel.openRouter.contains(.llama3370bVersatile))
+        XCTAssertEqual(PolishModel.gptOss120b.polishProvider, .groq)
+        XCTAssertFalse(PolishModel.openRouter.contains(.gptOss120b))
     }
 
     func testOpenRouterDefaultStaysGLM52() {
         XCTAssertEqual(PolishModel.default, .glm52)
-        XCTAssertEqual(PolishModel.resolved(rawValue: PolishModel.llama3370bVersatile.rawValue), .glm52)
+        XCTAssertEqual(PolishModel.resolved(rawValue: PolishModel.gptOss120b.rawValue), .glm52)
         XCTAssertEqual(PolishModel.resolved(rawValue: PolishModel.haiku45.rawValue), .haiku45)
     }
 
