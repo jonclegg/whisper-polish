@@ -42,4 +42,19 @@ final class PolishStyleTests: XCTestCase {
         XCTAssertTrue(PolishStyle.email.isBuiltIn)
         XCTAssertFalse(PolishStyle(id: "custom-1", name: "X", instruction: "y").isBuiltIn)
     }
+
+    func testBuiltInsDoNotIncludeFixitStylesOrQuickCleanup() {
+        let ids = Set(PolishStyle.builtIns.map(\.id))
+        XCTAssertFalse(ids.contains("native"))
+        XCTAssertFalse(ids.contains("proofread"))
+        XCTAssertFalse(ids.contains("professional"))
+        XCTAssertFalse(ids.contains(QuickCleanup.id))
+        XCTAssertEqual(QuickCleanup.style.name, "Quick cleanup")
+        XCTAssertTrue(QuickCleanup.instruction.contains("You are a native English editor."))
+        XCTAssertTrue(QuickCleanup.instruction.contains("Return only the edited text."))
+        XCTAssertTrue(QuickCleanup.instruction.contains("<<double angle brackets>>"))
+        XCTAssertTrue(QuickCleanup.instruction.contains("blank-line paragraph breaks"))
+        XCTAssertTrue(QuickCleanup.instruction.contains("Don't over-fragment"))
+        XCTAssertTrue(QuickCleanup.instruction.contains("Still add paragraph breaks"))
+    }
 }

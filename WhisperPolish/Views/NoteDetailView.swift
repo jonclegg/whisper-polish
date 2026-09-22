@@ -6,8 +6,12 @@ struct NoteDetailView: View {
     @Bindable var note: Note
 
     @Environment(TranscriptionService.self) private var transcription
+    @Environment(OpenRouterKeyStore.self) private var openRouterKey
+    @Environment(GroqKeyStore.self) private var groqKey
     @Environment(SubscriptionStore.self) private var subscription
+    @AppStorage(SettingsKeys.cloudAccessMode) private var cloudAccessRaw = CloudAccessMode.subscription.rawValue
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.polishModel) private var modelRaw = PolishModel.default.rawValue
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false
@@ -19,6 +23,8 @@ struct NoteDetailView: View {
     @State private var retrying = false
     @State private var player: AVAudioPlayer?
     @State private var isPlaying = false
+
+    private let polishService = PolishService()
 
     private var visibleText: String {
         showingPolished ? (note.polishedText ?? "") : note.originalText
@@ -97,11 +103,16 @@ struct NoteDetailView: View {
         .navigationTitle(note.createdAt.formatted(date: .numeric, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPolishSheet) {
-            PolishSheetView(hasSubscription: subscription.isSubscribed) { style in
+            PolishSheetView(
+                accessMode: cloudAccessMode,
+                hasGroqKey: !groqKey.value.isEmpty,
+                hasOpenRouterKey: !openRouterKey.value.isEmpty,
+                hasSubscription: subscription.isSubscribed
+            ) { choice, model in
                 showPolishSheet = false
-                runPolish(style: style)
+                runPolish(choice: choice, model: model)
             }
-            .presentationDetents([.height(400), .large])
+            .presentationDetents([.height(480), .large])
             .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -248,21 +259,51 @@ struct NoteDetailView: View {
         }
     }
 
-    private func runPolish(style: PolishStyle) {
-        defaultStyleRaw = style.id
-        run("Polishing…", errorTitle: "Polish failed") {
-            guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
-                throw CloudConfigurationError.missingEndpoint
+    private func runPolish(choice: PolishSheetChoice, model: PolishModel) {
+        switch PolishRun.resolve(choice: choice, model: model, accessMode: cloudAccessMode) {
+        case .quickCleanup:
+            run("Cleaning up…", errorTitle: "Quick cleanup failed") {
+                let result = try await polishService.quickCleanup(
+                    text: note.originalText,
+                    apiKey: groqKey.value
+                )
+                note.applyPolish(result)
+                showingPolished = true
             }
-            let cloud = try await CloudPolishService(endpoint: endpoint).polish(
-                text: note.originalText,
-                style: style,
-                transactionJWS: subscription.entitlementJWS ?? ""
-            )
-            subscription.record(cloud.usage)
-            note.applyPolish(cloud.polishResult(style: style))
-            showingPolished = true
+        case .personalKeyStyle(let style, let model):
+            defaultStyleRaw = style.id
+            modelRaw = model.rawValue
+            run("Polishing…", errorTitle: "Polish failed") {
+                let result = try await polishService.polish(
+                    text: note.originalText,
+                    style: style,
+                    model: model,
+                    apiKey: openRouterKey.value,
+                    provider: .openRouter
+                )
+                note.applyPolish(result)
+                showingPolished = true
+            }
+        case .cloudStyle(let style):
+            defaultStyleRaw = style.id
+            run("Polishing…", errorTitle: "Polish failed") {
+                guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
+                    throw CloudConfigurationError.missingEndpoint
+                }
+                let cloud = try await CloudPolishService(endpoint: endpoint).polish(
+                    text: note.originalText,
+                    style: style,
+                    transactionJWS: subscription.entitlementJWS ?? ""
+                )
+                subscription.record(cloud.usage)
+                note.applyPolish(cloud.polishResult(style: style))
+                showingPolished = true
+            }
         }
+    }
+
+    private var cloudAccessMode: CloudAccessMode {
+        CloudAccessMode(rawValue: cloudAccessRaw) ?? .subscription
     }
 
     /// Runs one cancellable model call behind the progress overlay.

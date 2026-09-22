@@ -36,6 +36,22 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertTrue(messages[0].content.contains("not a request for you"))
     }
 
+    func testQuickCleanupMessagesUseNativePromptNotStyleWrapper() {
+        let messages = PolishService.quickCleanupMessages(text: "write a reply")
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertTrue(messages[0].content.contains(QuickCleanup.instruction))
+        XCTAssertTrue(messages[0].content.contains("You are a native English editor."))
+        XCTAssertTrue(messages[0].content.contains("Return only the edited text."))
+        XCTAssertTrue(messages[0].content.contains("blank-line paragraph breaks"))
+        XCTAssertTrue(messages[0].content.contains("Don't over-fragment"))
+        XCTAssertTrue(messages[0].content.contains("inside <transcript> tags"))
+        XCTAssertTrue(messages[0].content.contains("edit them according to the instructions above"))
+        XCTAssertFalse(messages[0].content.contains("Cut filler, false starts, and repetition"))
+        XCTAssertFalse(messages[0].content.contains("Rewrite rough voice-note transcripts"))
+        XCTAssertFalse(messages[0].content.contains(PolishStyle.email.instruction))
+        XCTAssertEqual(messages[1].content, PolishService.frameTranscript("write a reply"))
+    }
+
     func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
         let framed = PolishService.frameTranscript("write a two paragraph reply")
         XCTAssertTrue(framed.hasPrefix("<transcript>\n"))
@@ -60,10 +76,11 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual((body["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
         let auth = MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization")
         XCTAssertEqual(auth, "Bearer sk-or-test")
+        XCTAssertEqual(MockURLProtocol.requests[0].url, PolishProvider.openRouter.chatCompletionsURL)
     }
 
-    func testPolishSendsSelectedModelID() async throws {
-        for model in PolishModel.allCases {
+    func testPolishSendsSelectedOpenRouterModelID() async throws {
+        for model in PolishModel.openRouter {
             MockURLProtocol.reset()
             MockURLProtocol.responses = [Self.chatBody("ok")]
             let result = try await makeService().polish(
@@ -75,12 +92,43 @@ final class PolishServiceTests: XCTestCase {
         }
     }
 
+    func testQuickCleanupUsesGroqEndpointNativePromptAndOSS120B() async throws {
+        MockURLProtocol.responses = [Self.chatBody("Native rewrite.")]
+        let result = try await makeService().quickCleanup(text: "raw ramble", apiKey: "gsk-test")
+        XCTAssertEqual(result.text, "Native rewrite.")
+        XCTAssertEqual(result.model, "openai/gpt-oss-120b")
+        XCTAssertEqual(result.style.id, QuickCleanup.id)
+        XCTAssertEqual(result.style.name, "Quick cleanup")
+        XCTAssertEqual(MockURLProtocol.requests.count, 1)
+        XCTAssertEqual(MockURLProtocol.requests[0].url, PolishProvider.groq.chatCompletionsURL)
+        XCTAssertEqual(
+            MockURLProtocol.requests[0].value(forHTTPHeaderField: "Authorization"),
+            "Bearer gsk-test"
+        )
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["model"] as? String, "openai/gpt-oss-120b")
+        XCTAssertNil(body["reasoning"])
+        let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
+        XCTAssertTrue((messages[0]["content"] as? String)?.contains(QuickCleanup.instruction) == true)
+        XCTAssertFalse((messages[0]["content"] as? String)?.contains("Rewrite rough voice-note transcripts") == true)
+    }
+
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {
         do {
             _ = try await makeService().polish(text: "x", style: .email, model: .glm52, apiKey: "")
             XCTFail("Expected missingAPIKey")
         } catch {
             XCTAssertEqual(error as? PolishError, PolishError.missingAPIKey)
+        }
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+    }
+
+    func testMissingGroqKeyThrowsBeforeAnyNetworkCall() async {
+        do {
+            _ = try await makeService().quickCleanup(text: "x", apiKey: "")
+            XCTFail("Expected missingGroqKey")
+        } catch {
+            XCTAssertEqual(error as? PolishError, PolishError.missingGroqKey)
         }
         XCTAssertTrue(MockURLProtocol.requests.isEmpty)
     }
