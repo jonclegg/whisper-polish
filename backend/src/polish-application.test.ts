@@ -15,7 +15,7 @@ const entitlement: Entitlement = {
   originalTransactionId: "original-1",
   transactionId: "renewal-1",
   productId: "com.jonclegg.WhisperPolish.cloud.monthly",
-  expiresAt: new Date("2026-09-01T00:00:00Z"),
+  expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
 };
 
 class StubVerifier implements EntitlementVerifier {
@@ -27,9 +27,19 @@ class StubVerifier implements EntitlementVerifier {
 class StubPolisher implements CloudPolisher {
   calls = 0;
   shouldFail = false;
+  lastInput: {
+    text: string;
+    style: { name: string; instruction: string };
+    revisionNotes?: string[];
+  } | undefined;
 
-  async polish() {
+  async polish(input: {
+    text: string;
+    style: { name: string; instruction: string };
+    revisionNotes?: string[];
+  }) {
     this.calls += 1;
+    this.lastInput = input;
     if (this.shouldFail) throw new Error("provider failed");
     return { text: "Finished", model: "z-ai/glm-5.2", providerCostMicros: 3_000 };
   }
@@ -99,6 +109,40 @@ describe("PolishApplication", () => {
 
     await expect(app.polish({ ...request, text: "12345678901" }))
       .rejects.toBeInstanceOf(InputTooLongError);
+    expect(polisher.calls).toBe(0);
+  });
+
+  it("sends the polished draft and revision notes to the polisher", async () => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(new StubVerifier(), new InMemoryUsageLedger(300), polisher);
+
+    await app.polish({
+      ...request,
+      text: "Thanks for the update. Let's ship Friday.",
+      revisionNotes: ["Drop the thanks"],
+    });
+
+    expect(polisher.lastInput).toEqual({
+      text: "Thanks for the update. Let's ship Friday.",
+      style: request.style,
+      revisionNotes: ["Drop the thanks"],
+    });
+  });
+
+  it("counts revision notes toward the input size limit", async () => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(
+      new StubVerifier(),
+      new InMemoryUsageLedger(300),
+      polisher,
+      { maxInputBytes: 10 },
+    );
+
+    await expect(app.polish({
+      ...request,
+      text: "12345",
+      revisionNotes: ["123456"],
+    })).rejects.toBeInstanceOf(InputTooLongError);
     expect(polisher.calls).toBe(0);
   });
 });
