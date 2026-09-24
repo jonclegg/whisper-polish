@@ -74,14 +74,13 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
 
     static let `default`: PolishModel = .glm52
 
-    /// OpenRouter returns 400 if `reasoning.enabled` is false on a model whose
-    /// catalog entry has `reasoning.mandatory: true`. Those models take an
-    /// effort instead. `low` is the smallest effort Opus 5.5 and Fable 5 accept;
-    /// Gemini 3.5 Flash accepts it too. `exclude` keeps the trace out of the
-    /// polish response.
+    /// OpenRouter rejects `enabled: false` when reasoning is mandatory.
+    /// Opus 5.5 uses the same payload as Astra: medium effort, trace excluded.
     var reasoning: PolishReasoning {
         switch self {
-        case .opus55, .fable5, .gemini35Flash:
+        case .opus55:
+            return PolishReasoning(effort: "medium", exclude: true)
+        case .fable5, .gemini35Flash:
             return PolishReasoning(effort: "low", exclude: true)
         case .glm52, .kimiK3, .gpt56, .haiku45, .gpt56Luna, .gpt41, .glm5Turbo:
             return PolishReasoning(enabled: false)
