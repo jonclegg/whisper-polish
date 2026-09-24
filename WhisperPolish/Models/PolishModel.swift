@@ -1,5 +1,26 @@
 import Foundation
 
+/// OpenRouter `reasoning` object. Nil fields are omitted so a mandatory-reasoning
+/// model is not sent `enabled: false`.
+struct PolishReasoning: Encodable, Equatable {
+    var enabled: Bool? = nil
+    var effort: String? = nil
+    var exclude: Bool? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case effort
+        case exclude
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(enabled, forKey: .enabled)
+        try container.encodeIfPresent(effort, forKey: .effort)
+        try container.encodeIfPresent(exclude, forKey: .exclude)
+    }
+}
+
 /// The OpenRouter models a polish can run on. The raw value is the OpenRouter
 /// model id sent in the request and stored on the note.
 enum PolishModel: String, CaseIterable, Identifiable, Codable {
@@ -52,6 +73,19 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
     static let fast: [PolishModel] = [.haiku45, .gpt56Luna, .gpt41, .gemini35Flash, .glm5Turbo]
 
     static let `default`: PolishModel = .glm52
+
+    /// OpenRouter rejects `enabled: false` when reasoning is mandatory.
+    /// Opus 5.5 uses the same payload as Astra: medium effort, trace excluded.
+    var reasoning: PolishReasoning {
+        switch self {
+        case .opus55:
+            return PolishReasoning(effort: "medium", exclude: true)
+        case .fable5, .gemini35Flash:
+            return PolishReasoning(effort: "low", exclude: true)
+        case .glm52, .kimiK3, .gpt56, .haiku45, .gpt56Luna, .gpt41, .glm5Turbo:
+            return PolishReasoning(enabled: false)
+        }
+    }
 
     /// Display name for a stored model id, falling back to the raw id for
     /// models that are no longer in the list.

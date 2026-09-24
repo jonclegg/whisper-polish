@@ -72,6 +72,21 @@ final class PolishServiceTests: XCTestCase {
             XCTAssertEqual(result.model, model.rawValue)
             let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
             XCTAssertEqual(body["model"] as? String, model.rawValue)
+            let reasoning = try XCTUnwrap(body["reasoning"] as? [String: Any])
+            switch model {
+            case .opus55:
+                XCTAssertNil(reasoning["enabled"])
+                XCTAssertEqual(reasoning["effort"] as? String, "medium")
+                XCTAssertEqual(reasoning["exclude"] as? Bool, true)
+            case .fable5, .gemini35Flash:
+                XCTAssertNil(reasoning["enabled"])
+                XCTAssertEqual(reasoning["effort"] as? String, "low")
+                XCTAssertEqual(reasoning["exclude"] as? Bool, true)
+            default:
+                XCTAssertEqual(reasoning["enabled"] as? Bool, false)
+                XCTAssertNil(reasoning["effort"])
+                XCTAssertNil(reasoning["exclude"])
+            }
         }
     }
 
