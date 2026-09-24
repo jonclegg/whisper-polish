@@ -45,6 +45,32 @@ final class CloudPolishServiceTests: XCTestCase {
             (body["style"] as? [String: Any])?["instruction"] as? String,
             PolishStyle.email.instruction
         )
+        XCTAssertNil(body["revisionNotes"])
+    }
+
+    func testRepolishSendsTheDraftAndRevisionNotes() async throws {
+        MockURLProtocol.responses = [.init(
+            status: 200,
+            body: #"{"text":"Ship Friday.","model":"z-ai/glm-5.2","usage":{"used":13,"limit":300,"remaining":287,"resetsAt":"2026-09-01T00:00:00Z"}}"#
+        )]
+
+        let result = try await makeService().polish(
+            text: "Thanks for the update. Let's ship Friday.",
+            style: .slack,
+            revisionNotes: ["Drop the thanks", "Make it one line"],
+            transactionJWS: "signed-transaction",
+            idempotencyKey: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        )
+
+        XCTAssertEqual(result.text, "Ship Friday.")
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["text"] as? String, "Thanks for the update. Let's ship Friday.")
+        XCTAssertEqual(body["revisionNotes"] as? [String], ["Drop the thanks", "Make it one line"])
+        XCTAssertEqual((body["style"] as? [String: Any])?["name"] as? String, "Slack update")
+        XCTAssertEqual(
+            (body["style"] as? [String: Any])?["instruction"] as? String,
+            PolishStyle.slack.instruction
+        )
     }
 
     func testMissingEntitlementFailsWithoutNetworkCall() async {
