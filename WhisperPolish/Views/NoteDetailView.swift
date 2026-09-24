@@ -8,6 +8,7 @@ struct NoteDetailView: View {
     @Environment(TranscriptionService.self) private var transcription
     @Environment(SubscriptionStore.self) private var subscription
     @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false
@@ -19,6 +20,11 @@ struct NoteDetailView: View {
     @State private var retrying = false
     @State private var player: AVAudioPlayer?
     @State private var isPlaying = false
+    @State private var revisionNotes: [String] = []
+    @State private var revisionDraft = ""
+    @State private var noteRecorder = AudioRecorder()
+    @State private var transcribingRevision = false
+    @State private var revisionTask: Task<Void, Never>?
 
     private var visibleText: String {
         showingPolished ? (note.polishedText ?? "") : note.originalText
@@ -37,56 +43,78 @@ struct NoteDetailView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if showingPolished, let styleLabel = note.polishStyleLabel {
-                        HStack(spacing: 6) {
-                            Label(styleLabel, systemImage: "sparkle")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.polishTeal)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.polishTealSoft))
-                            if let model = note.polishModel {
-                                Text(PolishModel.label(for: model))
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                VStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if showingPolished, let styleLabel = note.polishStyleLabel {
+                            HStack(spacing: 6) {
+                                Label(styleLabel, systemImage: "sparkle")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.polishTeal)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(Color.polishTealSoft))
+                                if let model = note.polishModel {
+                                    Text(PolishModel.label(for: model))
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
                         }
-                    }
 
-                    if note.isTranscribing {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(transcription.state.transcribingStatusMessage)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else if note.originalText.isEmpty && !showingPolished {
-                        emptyTranscript
-                    } else {
-                        Text(visibleText)
-                            .font(.body)
-                            .textSelection(.enabled)
-                    }
-
-                    if note.source == .voice, !showingPolished, note.audioURL != nil {
-                        Button(action: togglePlayback) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "waveform")
-                                    .foregroundStyle(Color.waveGreen)
-                                Text("\(note.durationLabel ?? "") · \(isPlaying ? "Stop" : "Play")")
-                                    .font(.caption.monospaced())
+                        if note.isTranscribing {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text(transcription.state.transcribingStatusMessage)
                                     .foregroundStyle(.secondary)
                             }
+                        } else if note.originalText.isEmpty && !showingPolished {
+                            emptyTranscript
+                        } else {
+                            Text(visibleText)
+                                .font(.body)
+                                .textSelection(.enabled)
                         }
-                        .padding(.top, 6)
+
+                        if note.source == .voice, !showingPolished, note.audioURL != nil {
+                            Button(action: togglePlayback) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "waveform")
+                                        .foregroundStyle(Color.waveGreen)
+                                    Text("\(note.durationLabel ?? "") · \(isPlaying ? "Stop" : "Play")")
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.top, 6)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
+                    .padding(14)
+
+                    if showingPolished, note.isPolished {
+                        RevisionNotesSection(
+                            notes: $revisionNotes,
+                            draft: $revisionDraft,
+                            isRecording: noteRecorder.isRecording,
+                            elapsed: noteRecorder.elapsed,
+                            levels: noteRecorder.levels,
+                            isTranscribing: transcribingRevision,
+                            transcribingMessage: transcription.state.transcribingStatusMessage,
+                            canRepolish: canRepolish,
+                            onDelete: { revisionNotes.remove(at: $0) },
+                            onAddTyped: addTypedRevisionNote,
+                            onToggleRecord: toggleRevisionRecording,
+                            onRepolish: runRepolish
+                        )
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 14)
                     }
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
-                .padding(14)
             }
+            .scrollDismissesKeyboard(.interactively)
 
             actionBar
         }
@@ -129,8 +157,16 @@ struct NoteDetailView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .onChange(of: showingPolished) { _, showing in
+            guard !showing, noteRecorder.isRecording else { return }
+            noteRecorder.cancel()
+        }
         .onDisappear {
             player?.stop()
+            revisionTask?.cancel()
+            if noteRecorder.isRecording {
+                noteRecorder.cancel()
+            }
         }
     }
 
@@ -248,21 +284,105 @@ struct NoteDetailView: View {
         }
     }
 
+    private var canRepolish: Bool {
+        !revisionNotes.isEmpty && !noteRecorder.isRecording && !transcribingRevision && progressMessage == nil
+    }
+
+    private func addTypedRevisionNote() {
+        let text = revisionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        revisionNotes.append(text)
+        revisionDraft = ""
+    }
+
+    private func toggleRevisionRecording() {
+        if noteRecorder.isRecording {
+            finishRevisionRecording()
+            return
+        }
+        Task { await startRevisionRecording() }
+    }
+
+    private func startRevisionRecording() async {
+        guard await AudioRecorder.requestPermission() else {
+            errorTitle = "Couldn't add note"
+            errorMessage = "Microphone access is off. Enable it in Settings → Privacy → Microphone."
+            return
+        }
+        do {
+            try await noteRecorder.start()
+        } catch {
+            errorTitle = "Couldn't add note"
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func finishRevisionRecording() {
+        guard let recorded = noteRecorder.stop() else { return }
+        transcribingRevision = true
+        revisionTask = Task {
+            defer {
+                transcribingRevision = false
+                try? FileManager.default.removeItem(at: recorded.url)
+            }
+            do {
+                let text = try await transcription.transcribe(url: recorded.url)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !Task.isCancelled else { return }
+                guard !text.isEmpty else {
+                    errorTitle = "Couldn't add note"
+                    errorMessage = "No text detected."
+                    return
+                }
+                revisionNotes.append(text)
+            } catch is CancellationError {
+            } catch let error as URLError where error.code == .cancelled {
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorTitle = "Couldn't add note"
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     private func runPolish(style: PolishStyle) {
         defaultStyleRaw = style.id
         run("Polishing…", errorTitle: "Polish failed") {
-            guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
-                throw CloudConfigurationError.missingEndpoint
-            }
-            let cloud = try await CloudPolishService(endpoint: endpoint).polish(
-                text: note.originalText,
-                style: style,
-                transactionJWS: subscription.entitlementJWS ?? ""
-            )
-            subscription.record(cloud.usage)
-            note.applyPolish(cloud.polishResult(style: style))
-            showingPolished = true
+            try await polishWithCloud(text: note.originalText, style: style)
+            revisionNotes = []
+            revisionDraft = ""
         }
+    }
+
+    private func runRepolish() {
+        guard let draft = note.polishedText, !revisionNotes.isEmpty else { return }
+        guard let styleID = note.polishStyleRaw,
+              let style = PolishStyle.find(id: styleID, customJSON: customStylesJSON) else {
+            errorTitle = "Repolish failed"
+            errorMessage = "The style used for this note is no longer available."
+            return
+        }
+        let notes = revisionNotes
+        run("Repolishing…", errorTitle: "Repolish failed") {
+            try await polishWithCloud(text: draft, style: style, revisionNotes: notes)
+            revisionNotes = []
+            revisionDraft = ""
+        }
+    }
+
+    private func polishWithCloud(text: String, style: PolishStyle, revisionNotes: [String]? = nil) async throws {
+        guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
+            throw CloudConfigurationError.missingEndpoint
+        }
+        let cloud = try await CloudPolishService(endpoint: endpoint).polish(
+            text: text,
+            style: style,
+            revisionNotes: revisionNotes,
+            transactionJWS: subscription.entitlementJWS ?? ""
+        )
+        subscription.record(cloud.usage)
+        note.applyPolish(cloud.polishResult(style: style))
+        showingPolished = true
     }
 
     /// Runs one cancellable model call behind the progress overlay.

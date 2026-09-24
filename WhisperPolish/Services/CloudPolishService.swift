@@ -43,6 +43,7 @@ final class CloudPolishService {
 
         let text: String
         let style: Style
+        let revisionNotes: [String]?
     }
 
     private struct ErrorEnvelope: Decodable {
@@ -64,6 +65,7 @@ final class CloudPolishService {
     func polish(
         text: String,
         style: PolishStyle,
+        revisionNotes: [String]? = nil,
         transactionJWS: String,
         idempotencyKey: UUID = UUID()
     ) async throws -> CloudPolishResult {
@@ -74,9 +76,11 @@ final class CloudPolishService {
         request.setValue("Bearer \(transactionJWS)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(idempotencyKey.uuidString, forHTTPHeaderField: "Idempotency-Key")
+        let notes = revisionNotes.flatMap { $0.isEmpty ? nil : $0 }
         request.httpBody = try JSONEncoder().encode(PolishRequest(
             text: text,
-            style: .init(name: style.name, instruction: style.instruction)
+            style: .init(name: style.name, instruction: style.instruction),
+            revisionNotes: notes
         ))
 
         let (data, response) = try await session.data(for: request)
