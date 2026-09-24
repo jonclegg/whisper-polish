@@ -8,6 +8,7 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
     case kimiK3 = "moonshotai/kimi-k3"
     case gpt56 = "openai/gpt-5.6-sol"
     case fable5 = "anthropic/claude-fable-5"
+    case opus55 = "anthropic/claude-opus-5.5"
     // Fast & cheap
     case haiku45 = "anthropic/claude-haiku-4.5"
     case gpt56Luna = "openai/gpt-5.6-luna"
@@ -23,6 +24,7 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
         case .kimiK3: return "Kimi K3"
         case .gpt56: return "GPT-5.6"
         case .fable5: return "Fable 5"
+        case .opus55: return "Opus 5.5"
         case .haiku45: return "Haiku 4.5"
         case .gpt56Luna: return "GPT-5.6 Luna"
         case .gpt41: return "GPT-4.1"
@@ -37,6 +39,7 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
         case .kimiK3: return "Moonshot"
         case .gpt56: return "OpenAI flagship"
         case .fable5: return "Anthropic flagship"
+        case .opus55: return "Anthropic"
         case .haiku45: return "Anthropic"
         case .gpt56Luna: return "OpenAI"
         case .gpt41: return "OpenAI classic"
@@ -45,7 +48,7 @@ enum PolishModel: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    static let frontier: [PolishModel] = [.glm52, .kimiK3, .gpt56, .fable5]
+    static let frontier: [PolishModel] = [.glm52, .kimiK3, .gpt56, .fable5, .opus55]
     static let fast: [PolishModel] = [.haiku45, .gpt56Luna, .gpt41, .gemini35Flash, .glm5Turbo]
 
     static let `default`: PolishModel = .glm52
