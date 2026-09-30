@@ -4,6 +4,14 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "3"
+    DEVELOPMENT_TEAM: 22CTWHGWQQ
+    WHISPER_POLISH_API_BASE_URL: "https://api.whisper-polish.yallware.com"
+    APP_BUNDLE_ID: com.jonclegg.WhisperPolish # pragma: allowlist secret
+    APP_GROUP_ID: group.$(APP_BUNDLE_ID)
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
@@ -23,26 +31,73 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: "Whisper Polish records audio to transcribe your voice notes on-device."
         WhisperPolishCloudAPIBaseURL: "$(WHISPER_POLISH_API_BASE_URL)"
+        WhisperPolishAppGroup: "$(APP_GROUP_ID)"
+        CFBundleURLTypes:
+          - CFBundleURLName: "$(PRODUCT_BUNDLE_IDENTIFIER)"
+            CFBundleURLSchemes:
+              - whisperpolish
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
     sources:
       - WhisperPolish
+    entitlements:
+      path: WhisperPolish/WhisperPolish.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - "$(APP_GROUP_ID)"
     dependencies:
       - package: FluidAudio
       - package: WhisperKit
+      - target: WhisperPolishKeyboard
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.jonclegg.WhisperPolish
-        MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: "3"
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.10"
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 22CTWHGWQQ
-        WHISPER_POLISH_API_BASE_URL: "https://api.whisper-polish.yallware.com"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  WhisperPolishKeyboard:
+    type: app-extension
+    platform: iOS
+    info:
+      path: build/WhisperPolishKeyboard-Info.plist
+      properties:
+        CFBundleDisplayName: Whisper Polish
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        WhisperPolishCloudAPIBaseURL: "$(WHISPER_POLISH_API_BASE_URL)"
+        WhisperPolishAppGroup: "$(APP_GROUP_ID)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).KeyboardViewController"
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            RequestsOpenAccess: true
+    entitlements:
+      path: WhisperPolishKeyboard/WhisperPolishKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - "$(APP_GROUP_ID)"
+    sources:
+      - WhisperPolishKeyboard
+      - WhisperPolish/AppGroup.swift
+      - WhisperPolish/Theme.swift
+      - WhisperPolish/Models/CloudAccess.swift
+      - WhisperPolish/Models/PolishModel.swift
+      - WhisperPolish/Models/PolishStyle.swift
+      - WhisperPolish/Services/CloudPolishService.swift
+      - WhisperPolish/Services/PolishService.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).Keyboard
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.10"
+        CODE_SIGN_STYLE: Automatic
   WhisperPolishTests:
     type: bundle.unit-test
     platform: iOS

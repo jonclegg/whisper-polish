@@ -7,7 +7,7 @@ struct NoteDetailView: View {
 
     @Environment(TranscriptionService.self) private var transcription
     @Environment(SubscriptionStore.self) private var subscription
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.defaultStyle, store: AppGroup.defaults) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false

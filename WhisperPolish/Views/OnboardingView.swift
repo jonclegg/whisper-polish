@@ -7,7 +7,7 @@ struct OnboardingView: View {
     @Environment(SubscriptionStore.self) private var subscription
     @AppStorage(SettingsKeys.hasCompletedSetup) private var hasCompletedSetup = false
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.defaultStyle, store: AppGroup.defaults) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var step = 0
     @State private var cloudError: String?

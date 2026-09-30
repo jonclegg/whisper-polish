@@ -133,6 +133,7 @@ final class SubscriptionStore {
 
         entitlementJWS = currentJWS
         expirationDate = currentExpiration
+        AppGroup.defaults.set(currentJWS, forKey: SettingsKeys.cloudEntitlementJWS)
     }
 
     private func observeTransactions() -> Task<Void, Never> {

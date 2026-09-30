@@ -4,8 +4,8 @@ struct PolishSheetView: View {
     let hasSubscription: Bool
     let onPolish: (PolishStyle) -> Void
 
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
-    @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.defaultStyle, store: AppGroup.defaults) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.customStyles, store: AppGroup.defaults) private var customStylesJSON = ""
 
     @State private var style: PolishStyle = .email
     @State private var showingNewStyle = false

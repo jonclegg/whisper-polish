@@ -15,14 +15,17 @@ final class RecordingController {
 
     private(set) var phase: Phase = .idle
     var errorMessage: String?
+    /// The recording was started from the keyboard, so its transcript goes back there.
+    private(set) var isKeyboardDictation = false
 
     let recorder = AudioRecorder()
 
     var isActive: Bool { phase != .idle }
 
-    func begin() async {
+    func begin(forKeyboard: Bool = false) async {
         guard phase == .idle else { return }
         phase = .starting
+        isKeyboardDictation = forKeyboard
         guard await AudioRecorder.requestPermission() else {
             phase = .idle
             errorMessage = "Microphone access is off. Enable it in Settings → Privacy → Microphone."
