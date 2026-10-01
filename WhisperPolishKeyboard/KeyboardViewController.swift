@@ -1,12 +1,24 @@
 import SwiftUI
 import UIKit
 
+/// Adopting `UIInputViewAudioFeedback` lets `playInputClick()` follow the system keyboard-click setting.
+final class ClickingInputView: UIInputView, UIInputViewAudioFeedback {
+    var enableInputClicksWhenVisible: Bool { true }
+}
+
 final class KeyboardViewController: UIInputViewController {
     private lazy var model = KeyboardModel(controller: self)
     private var dictationTimer: Timer?
 
+    override func loadView() {
+        view = ClickingInputView(frame: .zero, inputViewStyle: .keyboard)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
+        requestSupplementaryLexicon { [weak self] lexicon in
+            Task { @MainActor in self?.model.predictor.setSupplementaryLexicon(lexicon) }
+        }
         let host = UIHostingController(rootView: KeyboardView(model: model))
         host.view.backgroundColor = .clear
         host.view.translatesAutoresizingMaskIntoConstraints = false
@@ -35,6 +47,11 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        model.textDidChange()
+    }
+
+    override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
         model.textDidChange()
     }
 

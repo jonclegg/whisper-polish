@@ -14,7 +14,7 @@ struct KeyboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            KeyboardToolbar(model: model)
+            SuggestionBar(model: model)
                 .frame(height: Self.toolbarHeight)
             if model.isPickingStyle {
                 StylePickerView(model: model)
@@ -30,82 +30,114 @@ struct KeyboardView: View {
     }
 }
 
-private struct KeyboardToolbar: View {
+/// The system keyboard's predictive bar, flanked by Polish (tap; hold for styles) and Record.
+private struct SuggestionBar: View {
     let model: KeyboardModel
 
+    @State private var isPolishPressed = false
+
     var body: some View {
-        HStack(spacing: 8) {
-            if model.hasFullAccess {
-                content
-                pill(color: .red, action: model.record) {
-                    Image(systemName: "mic.fill")
-                        .foregroundStyle(.white)
-                        .frame(width: 14)
+        HStack(spacing: 4) {
+            polishButton
+            Group {
+                if let notice = model.notice {
+                    noticeContent(notice)
+                } else {
+                    suggestionSlots
                 }
-                .accessibilityLabel("Record in Whisper Polish")
-            } else {
-                Text("Turn on Allow Full Access in Settings › General › Keyboard › Keyboards › Whisper Polish to polish and dictate.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity)
+            circleButton(systemImage: "mic.fill", color: .red, action: model.record)
+                .accessibilityLabel("Record in Whisper Polish")
         }
         .padding(.horizontal, 6)
     }
 
-    @ViewBuilder
-    private var content: some View {
-        switch model.notice {
-        case nil:
-            polishButton(showsStyle: true)
-                .frame(maxWidth: .infinity)
-            pill(color: .keyFill, action: { model.isPickingStyle.toggle() }) {
-                Label("Style", systemImage: model.isPickingStyle ? "chevron.up" : "chevron.down")
-                    .labelStyle(TrailingIconLabelStyle())
+    private var polishButton: some View {
+        Image(systemName: model.isPickingStyle ? "chevron.down" : "sparkle")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 34, height: 34)
+            .background(Circle().fill(Color.polishTeal))
+            .scaleEffect(isPolishPressed ? 0.9 : 1)
+            .animation(.snappy(duration: 0.15), value: isPolishPressed)
+            .contentShape(Circle())
+            .onTapGesture {
+                if model.isPickingStyle { model.togglePicker() } else { model.polish() }
             }
-        case .polishing:
-            pill(color: .polishTeal, action: {}) {
-                HStack(spacing: 8) {
-                    ProgressView().tint(.white)
-                    Text("Polishing as \(model.selectedStyle.name)…")
-                        .lineLimit(1)
-                        .foregroundStyle(.white)
+            .onLongPressGesture(minimumDuration: 0.4, perform: model.togglePicker) { isPolishPressed = $0 }
+            .accessibilityLabel("Polish as \(model.selectedStyle.name)")
+            .accessibilityHint("Hold to choose a style")
+    }
+
+    private var suggestionSlots: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { index in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.35))
+                        .frame(width: 0.5, height: 22)
                 }
-                .frame(maxWidth: .infinity)
+                slot(index < model.suggestions.count ? model.suggestions[index] : nil)
             }
-        case .polished:
-            noticeLabel("Polished as \(model.selectedStyle.name)", systemImage: "checkmark")
-            pill(color: .keyFill, action: model.undoPolish) {
-                Label("Undo", systemImage: "arrow.uturn.backward")
-            }
-        case .dictated:
-            noticeLabel("Dictation inserted", systemImage: "mic.fill")
-            polishButton(showsStyle: false)
-        case .message(let message):
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 6)
         }
     }
 
-    private func polishButton(showsStyle: Bool) -> some View {
-        pill(color: .polishTeal, action: model.polish) {
-            HStack(spacing: 5) {
-                Image(systemName: "sparkle")
-                Text("Polish")
-                if showsStyle {
-                    Text("· \(model.selectedStyle.name)")
-                        .fontWeight(.medium)
-                        .opacity(0.85)
-                }
+    private func slot(_ suggestion: Suggestion?) -> some View {
+        Button {
+            if let suggestion { model.apply(suggestion) }
+        } label: {
+            Text(suggestion?.title ?? "")
+                .font(.system(size: 16))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, maxHeight: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(suggestion?.isAutocorrection == true ? Color.keyFill : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(SuggestionButtonStyle())
+        .disabled(suggestion == nil)
+    }
+
+    @ViewBuilder
+    private func noticeContent(_ notice: KeyboardModel.Notice) -> some View {
+        switch notice {
+        case .polishing:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Polishing as \(model.selectedStyle.name)…")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.polishTeal)
+                    .lineLimit(1)
             }
-            .lineLimit(1)
-            .foregroundStyle(.white)
-            .frame(maxWidth: showsStyle ? .infinity : nil)
+        case .polished:
+            HStack {
+                noticeLabel("Polished as \(model.selectedStyle.name)", systemImage: "checkmark")
+                Button(action: model.undoPolish) {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(Capsule().fill(Color.keyFill))
+                }
+                .buttonStyle(PressableButtonStyle())
+            }
+        case .dictated:
+            noticeLabel("Dictation inserted", systemImage: "mic.fill")
+        case .message(let message):
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 4)
         }
     }
 
@@ -114,20 +146,28 @@ private struct KeyboardToolbar: View {
             .font(.footnote.weight(.semibold))
             .foregroundStyle(Color.polishTeal)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 6)
+            .frame(maxWidth: .infinity)
     }
 
-    private func pill<Content: View>(color: Color, action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+    private func circleButton(systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            content()
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .frame(height: 36)
-                .background(Capsule().fill(color))
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(color))
         }
         .buttonStyle(PressableButtonStyle())
+    }
+}
+
+private struct SuggestionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.keyFill.opacity(configuration.isPressed ? 0.7 : 0))
+            )
     }
 }
 
@@ -137,15 +177,6 @@ private struct PressableButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .opacity(configuration.isPressed ? 0.8 : 1)
             .animation(.snappy(duration: 0.15), value: configuration.isPressed)
-    }
-}
-
-private struct TrailingIconLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
-            configuration.title
-            configuration.icon.font(.caption.weight(.bold))
-        }
     }
 }
 
