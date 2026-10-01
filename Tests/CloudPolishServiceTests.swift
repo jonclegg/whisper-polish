@@ -46,6 +46,34 @@ final class CloudPolishServiceTests: XCTestCase {
             PolishStyle.email.instruction
         )
         XCTAssertNil(body["revisionNotes"])
+        XCTAssertNil(body["uncertainWords"])
+        XCTAssertNil(body["vocabulary"])
+    }
+
+    func testReferenceListsStayWithinServerLimits() {
+        let long = String(repeating: "x", count: 81)
+        XCTAssertEqual(CloudPolishService.referenceList(["ok", "", long], limit: 50), ["ok"])
+        XCTAssertNil(CloudPolishService.referenceList([long], limit: 50))
+        XCTAssertEqual(CloudPolishService.referenceList(["a", "b", "c"], limit: 2), ["a", "b"])
+    }
+
+    func testPolishSendsUncertainWordsAndVocabulary() async throws {
+        MockURLProtocol.responses = [.init(
+            status: 200,
+            body: #"{"text":"Ask Jonn.","model":"z-ai/glm-5.2","usage":{"used":1,"limit":300,"remaining":299,"resetsAt":"2026-09-01T00:00:00Z"}}"#
+        )]
+
+        _ = try await makeService().polish(
+            text: "ask jon",
+            style: .cleanup,
+            uncertainWords: ["jon"],
+            vocabulary: ["Jonn"],
+            transactionJWS: "signed-transaction"
+        )
+
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["uncertainWords"] as? [String], ["jon"])
+        XCTAssertEqual(body["vocabulary"] as? [String], ["Jonn"])
     }
 
     func testRepolishSendsTheDraftAndRevisionNotes() async throws {

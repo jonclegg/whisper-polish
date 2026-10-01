@@ -44,6 +44,8 @@ final class CloudPolishService {
         let text: String
         let style: Style
         let revisionNotes: [String]?
+        let uncertainWords: [String]?
+        let vocabulary: [String]?
     }
 
     private struct ErrorEnvelope: Decodable {
@@ -57,6 +59,13 @@ final class CloudPolishService {
     private let endpoint: URL
     private let session: URLSession
 
+    /// The server rejects the whole request over an oversized list, so trim
+    /// to its limits here: at most `limit` items of 1...80 UTF-16 units.
+    static func referenceList(_ items: [String], limit: Int) -> [String]? {
+        let kept = items.filter { (1...80).contains($0.utf16.count) }.prefix(limit)
+        return kept.isEmpty ? nil : Array(kept)
+    }
+
     init(endpoint: URL, session: URLSession = .shared) {
         self.endpoint = endpoint
         self.session = session
@@ -66,6 +75,8 @@ final class CloudPolishService {
         text: String,
         style: PolishStyle,
         revisionNotes: [String]? = nil,
+        uncertainWords: [String] = [],
+        vocabulary: [String] = [],
         transactionJWS: String,
         idempotencyKey: UUID = UUID()
     ) async throws -> CloudPolishResult {
@@ -80,7 +91,9 @@ final class CloudPolishService {
         request.httpBody = try JSONEncoder().encode(PolishRequest(
             text: text,
             style: .init(name: style.name, instruction: style.instruction),
-            revisionNotes: notes
+            revisionNotes: notes,
+            uncertainWords: Self.referenceList(uncertainWords, limit: 100),
+            vocabulary: Self.referenceList(vocabulary, limit: 50)
         ))
 
         let (data, response) = try await session.data(for: request)
