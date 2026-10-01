@@ -14,12 +14,18 @@ export type PolishInput = {
   text: string;
   style: { name: string; instruction: string };
   revisionNotes?: string[];
+  uncertainWords?: string[];
+  vocabulary?: string[];
 };
 
 export type CloudPolishRequest = {
   text: string;
   style: { name: string; instruction: string };
   revisionNotes?: string[];
+  /** Words the on-device recognizer was unsure about. */
+  uncertainWords?: string[];
+  /** Spellings the speaker taught the app by fixing misheard words. */
+  vocabulary?: string[];
 };
 
 export type PolishOutput = {
@@ -101,8 +107,12 @@ export class PolishApplication {
   }
 
   async polish(input: PolishInput): Promise<PolishOutput> {
-    const notes = input.revisionNotes?.join("\n") ?? "";
-    const payload = notes ? `${input.text}\n${notes}` : input.text;
+    const payload = [
+      input.text,
+      ...(input.revisionNotes ?? []),
+      ...(input.uncertainWords ?? []),
+      ...(input.vocabulary ?? []),
+    ].join("\n");
     if (Buffer.byteLength(payload, "utf8") > this.maxInputBytes) {
       throw new InputTooLongError(this.maxInputBytes);
     }
@@ -121,6 +131,8 @@ export class PolishApplication {
         text: input.text,
         style: input.style,
         revisionNotes: input.revisionNotes,
+        uncertainWords: input.uncertainWords,
+        vocabulary: input.vocabulary,
       });
     } catch (error) {
       await this.ledger.release(entitlement, input.idempotencyKey);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AllowanceExhaustedError,
   type CloudPolisher,
+  type CloudPolishRequest,
   type Entitlement,
   type EntitlementVerifier,
   InMemoryUsageLedger,
@@ -27,17 +28,9 @@ class StubVerifier implements EntitlementVerifier {
 class StubPolisher implements CloudPolisher {
   calls = 0;
   shouldFail = false;
-  lastInput: {
-    text: string;
-    style: { name: string; instruction: string };
-    revisionNotes?: string[];
-  } | undefined;
+  lastInput: CloudPolishRequest | undefined;
 
-  async polish(input: {
-    text: string;
-    style: { name: string; instruction: string };
-    revisionNotes?: string[];
-  }) {
+  async polish(input: CloudPolishRequest) {
     this.calls += 1;
     this.lastInput = input;
     if (this.shouldFail) throw new Error("provider failed");
@@ -127,6 +120,29 @@ describe("PolishApplication", () => {
       style: request.style,
       revisionNotes: ["Drop the thanks"],
     });
+  });
+
+  it("forwards uncertain words and vocabulary to the polisher", async () => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(new StubVerifier(), new InMemoryUsageLedger(300), polisher);
+
+    await app.polish({ ...request, uncertainWords: ["jon"], vocabulary: ["Jonn"] });
+
+    expect(polisher.lastInput).toMatchObject({ uncertainWords: ["jon"], vocabulary: ["Jonn"] });
+  });
+
+  it("counts reference lists toward the input size limit", async () => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(
+      new StubVerifier(),
+      new InMemoryUsageLedger(300),
+      polisher,
+      { maxInputBytes: 10 },
+    );
+
+    await expect(app.polish({ ...request, text: "12345", vocabulary: ["123456"] }))
+      .rejects.toBeInstanceOf(InputTooLongError);
+    expect(polisher.calls).toBe(0);
   });
 
   it("counts revision notes toward the input size limit", async () => {

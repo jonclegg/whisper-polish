@@ -29,6 +29,8 @@ const polishBodySchema = z.object({
     instruction: z.string().min(1).max(1_000),
   }),
   revisionNotes: z.array(z.string().min(1).max(4_000)).min(1).max(20).optional(),
+  uncertainWords: z.array(z.string().min(1).max(80)).max(100).optional(),
+  vocabulary: z.array(z.string().min(1).max(80)).max(50).optional(),
 });
 
 const env = environmentSchema.parse(process.env);
