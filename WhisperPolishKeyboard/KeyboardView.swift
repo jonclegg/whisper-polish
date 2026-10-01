@@ -7,7 +7,7 @@ extension Color {
 }
 
 struct KeyboardView: View {
-    static let toolbarHeight: CGFloat = 46
+    static let toolbarHeight: CGFloat = 40
     static let keysHeight: CGFloat = 54 * 4
 
     let model: KeyboardModel
@@ -56,7 +56,7 @@ private struct SuggestionBar: View {
         Image(systemName: model.isPickingStyle ? "chevron.down" : "sparkle")
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: 34, height: 34)
+            .frame(width: 32, height: 32)
             .background(Circle().fill(Color.polishTeal))
             .scaleEffect(isPolishPressed ? 0.9 : 1)
             .animation(.snappy(duration: 0.15), value: isPolishPressed)
@@ -92,7 +92,7 @@ private struct SuggestionBar: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity, maxHeight: 36)
+                .frame(maxWidth: .infinity, maxHeight: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(suggestion?.isAutocorrection == true ? Color.keyFill : .clear)
@@ -152,7 +152,7 @@ private struct SuggestionBar: View {
             Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
+                .frame(width: 32, height: 32)
                 .background(Circle().fill(color))
         }
         .buttonStyle(PressableButtonStyle())
