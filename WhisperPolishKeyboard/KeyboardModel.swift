@@ -33,7 +33,6 @@ final class KeyboardModel {
     @ObservationIgnored private var deleteRepeatTask: Task<Void, Never>?
     @ObservationIgnored private var undo: (original: String, polished: String)?
     @ObservationIgnored private var lastShiftTap = Date.distantPast
-    @ObservationIgnored private let haptics = UIImpactFeedbackGenerator(style: .light)
 
     init(controller: KeyboardViewController) {
         self.controller = controller
@@ -57,7 +56,6 @@ final class KeyboardModel {
     // MARK: - Keys
 
     func keyDown(_ key: Key) {
-        if hasFullAccess { haptics.impactOccurred() }
         guard key == .delete else { return }
         deleteBackward()
         deleteRepeatTask = Task {
@@ -111,8 +109,10 @@ final class KeyboardModel {
     private func textChangedByTyping() {
         polishTask?.cancel()
         undo = nil
-        noticeTask?.cancel()
-        notice = nil
+        if notice != nil {
+            noticeTask?.cancel()
+            notice = nil
+        }
         if shift == .once { shift = .off }
         updateAutoCapitalization()
     }
@@ -159,7 +159,8 @@ final class KeyboardModel {
         let startsSentence = trimmed.isEmpty
             || before.hasSuffix("\n")
             || (before.hasSuffix(" ") && ".!?".contains(trimmed.last!))
-        shift = startsSentence ? .once : .off
+        let newShift: Shift = startsSentence ? .once : .off
+        if shift != newShift { shift = newShift }
     }
 
     // MARK: - Polish
