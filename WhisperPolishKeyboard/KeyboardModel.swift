@@ -172,14 +172,6 @@ final class KeyboardModel {
 
     func polish() {
         guard hasFullAccess, notice != .polishing else { return }
-        let selected = proxy.selectedText ?? ""
-        let before = proxy.documentContextBeforeInput ?? ""
-        let after = proxy.documentContextAfterInput ?? ""
-        let text = selected.isEmpty ? before + after : selected
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            show(.message("Type or select some text to polish."))
-            return
-        }
         guard let jws = AppGroup.defaults.string(forKey: SettingsKeys.cloudEntitlementJWS) else {
             show(.message(CloudPolishError.missingEntitlement.localizedDescription))
             return
@@ -193,6 +185,12 @@ final class KeyboardModel {
         AppGroup.defaults.set(style.id, forKey: SettingsKeys.defaultStyle)
         show(.polishing)
         polishTask = Task {
+            let selected = proxy.selectedText ?? ""
+            let text = if selected.isEmpty { await DocumentReader(proxy: proxy).readWholeDocument() } else { selected }
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                show(.message("Type or select some text to polish."))
+                return
+            }
             do {
                 let result = try await CloudPolishService(endpoint: endpoint).polish(
                     text: text,
@@ -200,11 +198,11 @@ final class KeyboardModel {
                     transactionJWS: jws
                 )
                 try Task.checkCancellation()
+                // Without a selection the reader left the cursor at the end of the field.
                 if selected.isEmpty {
-                    await replaceContext(beforeCount: before.count, afterCount: after.count, with: result.text)
-                } else {
-                    proxy.insertText(result.text)
+                    for _ in 0..<text.count { proxy.deleteBackward() }
                 }
+                proxy.insertText(result.text)
                 undo = (text, result.text)
                 show(.polished)
             } catch is CancellationError {
@@ -224,18 +222,6 @@ final class KeyboardModel {
         self.undo = nil
         notice = nil
         updateAutoCapitalization()
-    }
-
-    /// The proxy only edits at the cursor: jump to the end of the text we
-    /// read, delete all of it, then insert the rewrite.
-    private func replaceContext(beforeCount: Int, afterCount: Int, with text: String) async {
-        proxy.adjustTextPosition(byCharacterOffset: afterCount)
-        // The host applies the cursor move asynchronously.
-        try? await Task.sleep(for: .milliseconds(100))
-        for _ in 0..<(beforeCount + afterCount) {
-            proxy.deleteBackward()
-        }
-        proxy.insertText(text)
     }
 
     // MARK: - App handoff
