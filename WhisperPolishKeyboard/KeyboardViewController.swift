@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 import UIKit
 
@@ -8,7 +9,9 @@ final class ClickingInputView: UIInputView, UIInputViewAudioFeedback {
 
 final class KeyboardViewController: UIInputViewController {
     private lazy var model = KeyboardModel(controller: self)
+    private lazy var keyGrid = KeyGridView(model: model)
     private var dictationTimer: Timer?
+    private var isSyncScheduled = false
 
     override func loadView() {
         view = ClickingInputView(frame: .zero, inputViewStyle: .keyboard)
@@ -24,14 +27,49 @@ final class KeyboardViewController: UIInputViewController {
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
         view.addSubview(host.view)
+        // The keys live outside the SwiftUI hierarchy so SwiftUI's gesture
+        // recognizers can never delay or cancel their touches.
+        keyGrid.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(keyGrid)
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
             host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            host.view.heightAnchor.constraint(equalToConstant: 262),
+            host.view.heightAnchor.constraint(equalToConstant: KeyboardView.toolbarHeight + KeyboardView.keysHeight),
+            keyGrid.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keyGrid.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            keyGrid.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            keyGrid.heightAnchor.constraint(equalToConstant: KeyboardView.keysHeight),
         ])
         host.didMove(toParent: self)
+        observeModel()
+    }
+
+    private func observeModel() {
+        withObservationTracking {
+            keyGrid.apply(KeyGridView.Configuration(
+                layout: model.layout,
+                bottomRow: model.bottomRow,
+                shift: model.shift,
+                returnKey: model.returnKey,
+                showsNextKeyboard: model.needsInputModeSwitchKey
+            ))
+            let isPicking = model.isPickingStyle
+            if keyGrid.isUserInteractionEnabled == isPicking {
+                keyGrid.isUserInteractionEnabled = !isPicking
+                UIView.animate(withDuration: 0.2) { self.keyGrid.alpha = isPicking ? 0 : 1 }
+            }
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { self?.observeModel() }
+        }
+    }
+
+    /// The system gate recognizer otherwise holds back touches near the
+    /// screen edges, so taps on the outer and bottom keys arrive late or not at all.
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -47,12 +85,23 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
-        model.textDidChange()
+        scheduleSync()
     }
 
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
-        model.textDidChange()
+        scheduleSync()
+    }
+
+    /// The host reports each keystroke several times; one refresh per run loop pass is enough.
+    private func scheduleSync() {
+        guard !isSyncScheduled else { return }
+        isSyncScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            isSyncScheduled = false
+            model.textDidChange()
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {

@@ -8,10 +8,11 @@ extension Color {
 
 struct KeyboardView: View {
     static let toolbarHeight: CGFloat = 46
-    static let rowHeight: CGFloat = 54
+    static let keysHeight: CGFloat = 54 * 4
 
     let model: KeyboardModel
 
+    /// The keys are a UIKit sibling laid over the bottom; this view supplies the bar and the style picker.
     var body: some View {
         VStack(spacing: 0) {
             SuggestionBar(model: model)
@@ -19,12 +20,9 @@ struct KeyboardView: View {
             if model.isPickingStyle {
                 StylePickerView(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                KeysView(model: model)
-                    .transition(.opacity)
             }
         }
-        .frame(height: Self.toolbarHeight + Self.rowHeight * 4, alignment: .top)
+        .frame(height: Self.toolbarHeight + Self.keysHeight, alignment: .top)
         .animation(.snappy(duration: 0.25), value: model.isPickingStyle)
         .animation(.snappy(duration: 0.25), value: model.notice)
     }

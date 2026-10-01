@@ -10,24 +10,6 @@ extension UIColor {
     }
 }
 
-struct KeysView: UIViewRepresentable {
-    let model: KeyboardModel
-
-    func makeUIView(context: Context) -> KeyGridView {
-        KeyGridView(model: model)
-    }
-
-    func updateUIView(_ view: KeyGridView, context: Context) {
-        view.apply(KeyGridView.Configuration(
-            layout: model.layout,
-            bottomRow: model.bottomRow,
-            shift: model.shift,
-            returnKey: model.returnKey,
-            showsNextKeyboard: model.needsInputModeSwitchKey
-        ))
-    }
-}
-
 /// Plain UIKit touch handling: SwiftUI gestures drop overlapping taps and
 /// add latency, which makes fast typing feel broken.
 final class KeyGridView: UIView {
@@ -62,7 +44,6 @@ final class KeyGridView: UIView {
     private static let capInsets = UIEdgeInsets(top: 6, left: 3, bottom: 6, right: 3)
     private static let accentHoldDelay: TimeInterval = 0.4
     private static let trackpadHoldDelay: TimeInterval = 0.5
-    private static let trackpadDragDistance: CGFloat = 14
     private static let pointsPerCharacter: CGFloat = 9
 
     private unowned let model: KeyboardModel
@@ -167,12 +148,8 @@ final class KeyGridView: UIView {
                 tracker.cap = next
                 if let next { press(next) }
             case .key:
-                guard let current = tracker.cap else { continue }
-                if current.spec.key == .space, abs(point.x - tracker.origin.x) > Self.trackpadDragDistance {
-                    startTrackpad(tracker, at: point)
-                    continue
-                }
-                guard current.spec.key.slides, let next = cap(at: point), next !== current, next.spec.key.slides else { continue }
+                guard let current = tracker.cap, current.spec.key.slides,
+                      let next = cap(at: point), next !== current, next.spec.key.slides else { continue }
                 release(current)
                 tracker.cap = next
                 press(next)
@@ -269,7 +246,7 @@ final class KeyGridView: UIView {
 
     // MARK: - Trackpad
 
-    /// Holding or dragging the space bar turns the keys into a trackpad that moves the cursor.
+    /// Holding the space bar turns the keys into a trackpad that moves the cursor.
     private func startTrackpad(_ tracker: Tracker, at point: CGPoint) {
         tracker.holdTimer?.invalidate()
         tracker.mode = .trackpad
