@@ -17,7 +17,7 @@ final class KeyboardViewController: UIInputViewController {
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
             host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            host.view.heightAnchor.constraint(equalToConstant: 250),
+            host.view.heightAnchor.constraint(equalToConstant: 262),
         ])
         host.didMove(toParent: self)
     }
@@ -31,6 +31,11 @@ final class KeyboardViewController: UIInputViewController {
             MainActor.assumeIsolated { self?.model.insertPendingDictation() }
         }
         model.insertPendingDictation()
+    }
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        model.textDidChange()
     }
 
     override func viewWillDisappear(_ animated: Bool) {

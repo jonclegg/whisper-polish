@@ -15,6 +15,7 @@ struct NotesListView: View {
     @State private var recording = RecordingController()
     @State private var showComposer = false
     @State private var showSettings = false
+    @State private var showNewStyle = false
     @State private var didRunStartupWork = false
     @State private var launchRecordingGate = LaunchRecordingGate()
     @State private var showModelBanner = false
@@ -111,6 +112,9 @@ struct NotesListView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showNewStyle) {
+            StyleEditorView()
+        }
         .fullScreenCover(isPresented: .init(
             get: { !hasCompletedSetup },
             set: { _ in }
@@ -145,11 +149,18 @@ struct NotesListView: View {
             }
         }
         .onOpenURL { url in
-            guard url == AppGroup.dictationURL, hasCompletedSetup else { return }
-            path.removeAll()
+            guard hasCompletedSetup else { return }
             showComposer = false
             showSettings = false
-            Task { await recording.begin(forKeyboard: true) }
+            switch url {
+            case AppGroup.dictationURL:
+                path.removeAll()
+                Task { await recording.begin(forKeyboard: true) }
+            case AppGroup.newStyleURL:
+                showNewStyle = true
+            default:
+                break
+            }
         }
     }
 

@@ -7,6 +7,8 @@ enum AppGroup {
 
     /// Opened by the keyboard's record button to dictate in the app.
     static let dictationURL = URL(string: "whisperpolish://dictate")!
+    /// Opened by the keyboard's style picker to create a custom style.
+    static let newStyleURL = URL(string: "whisperpolish://new-style")!
 
     /// Style settings lived in standard defaults before the keyboard existed.
     static func migrateStandardDefaults() {
