@@ -12,6 +12,9 @@ enum AppConfiguration {
     static var devOpenRouterKey: String {
         Bundle.main.object(forInfoDictionaryKey: "WhisperPolishDevOpenRouterKey") as! String
     }
+    static var devGroqKey: String {
+        Bundle.main.object(forInfoDictionaryKey: "WhisperPolishDevGroqKey") as! String
+    }
 
     static var cloudPolishEndpoint: URL? {
         guard let base = Bundle.main.object(forInfoDictionaryKey: "WhisperPolishCloudAPIBaseURL") as? String,

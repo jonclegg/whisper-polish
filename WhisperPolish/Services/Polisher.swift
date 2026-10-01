@@ -5,6 +5,9 @@ enum Polisher {
     /// Returns the rewrite plus the plan usage for cloud polishes.
     static func polish(text: String, style: PolishStyle, transactionJWS: String?) async throws -> (result: PolishResult, usage: CloudUsage?) {
         if AppConfiguration.isDevMode {
+            if style.id == PolishStyle.cleanup.id {
+                return (try await PolishService().cleanUpWithGroq(text: text, apiKey: AppConfiguration.devGroqKey), nil)
+            }
             let result = try await PolishService().polish(text: text, style: style, model: .default, apiKey: AppConfiguration.devOpenRouterKey)
             return (result, nil)
         }
