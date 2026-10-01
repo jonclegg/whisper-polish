@@ -25,6 +25,10 @@ final class Note {
     var polishModel: String?
     var polishedAt: Date?
 
+    /// JSON `[FlaggedWord]` for words in `originalText` the recognizer was
+    /// unsure about. Stored as data so adding it is a lightweight migration.
+    var transcriptFlagsData: Data?
+
     init(source: NoteSource, originalText: String, audioFileName: String? = nil, duration: TimeInterval? = nil) {
         self.id = UUID()
         self.createdAt = Date()
@@ -55,6 +59,17 @@ final class Note {
         polishStyleName = result.style.name
         polishModel = result.model
         polishedAt = Date()
+    }
+
+    var transcript: Transcript {
+        get {
+            let flags = transcriptFlagsData.flatMap { try? JSONDecoder().decode([FlaggedWord].self, from: $0) } ?? []
+            return Transcript(text: originalText, flags: flags)
+        }
+        set {
+            originalText = newValue.text
+            transcriptFlagsData = newValue.flags.isEmpty ? nil : try? JSONEncoder().encode(newValue.flags)
+        }
     }
 
     var durationLabel: String? {

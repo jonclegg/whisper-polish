@@ -183,15 +183,47 @@ final class TranscriptionService {
     }
 
     func transcribe(url: URL) async throws -> String {
+        try await transcribeWithConfidence(url: url).text
+    }
+
+    /// Transcribes and flags the words the recognizer was unsure about,
+    /// filling in the user's learned corrections where it was.
+    func transcribeWithConfidence(url: URL) async throws -> Transcript {
         if !isReady { await prepare() }
+        let corrections = PersonalCorrections.load()
         switch (loadedEngine, parakeet, whisper) {
         case (.parakeet, let manager?, _):
             var decoderState = try TdtDecoderState()
             let result = try await manager.transcribe(url, decoderState: &decoderState)
-            return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let words = TranscriptWord.grouping(
+                tokens: (result.tokenTimings ?? []).map { (text: $0.token, confidence: $0.confidence) }
+            )
+            return Transcript.build(
+                text: result.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                words: words,
+                corrections: corrections
+            )
         case (.whisper, _, let pipe?):
-            let results = try await pipe.transcribe(audioPath: url.path)
-            return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let results: [TranscriptionResult]
+            do {
+                results = try await pipe.transcribe(
+                    audioPath: url.path,
+                    decodeOptions: DecodingOptions(wordTimestamps: true)
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Word alignment is optional; never lose a transcript to it.
+                results = try await pipe.transcribe(audioPath: url.path)
+            }
+            let words = results.flatMap(\.segments).flatMap { $0.words ?? [] }.map {
+                TranscriptWord(text: $0.word.trimmingCharacters(in: .whitespaces), confidence: $0.probability)
+            }
+            return Transcript.build(
+                text: results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines),
+                words: words,
+                corrections: corrections
+            )
         default:
             throw TranscriptionError.notReady
         }

@@ -189,8 +189,9 @@ struct NotesListView: View {
         modelContext.insert(note)
         path.append(note)
         Task { @MainActor in
-            let text = (try? await transcription.transcribe(url: url)) ?? ""
-            note.originalText = text
+            let transcript = (try? await transcription.transcribeWithConfidence(url: url)) ?? Transcript(text: "")
+            note.transcript = transcript
+            let text = transcript.text
             note.isTranscribing = false
             if autoCopy && !text.isEmpty {
                 UIPasteboard.general.string = text

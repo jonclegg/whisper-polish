@@ -16,6 +16,8 @@ enum SettingsKeys {
     static let polishModel = "polishModel"
     /// JSON-encoded [PolishStyle] of user-created styles.
     static let customStyles = "customStyles"
+    /// JSON-encoded `PersonalCorrections`: misheard words the user fixed.
+    static let personalCorrections = "personalCorrections"
     static let engine = "transcriptionEngine"
     static let hasCompletedSetup = "hasCompletedSetup"
 }
