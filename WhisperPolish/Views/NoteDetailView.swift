@@ -25,6 +25,8 @@ struct NoteDetailView: View {
     @State private var noteRecorder = AudioRecorder()
     @State private var transcribingRevision = false
     @State private var revisionTask: Task<Void, Never>?
+    @State private var fixingFlag: FlaggedWord?
+    @State private var fixText = ""
 
     private var visibleText: String {
         showingPolished ? (note.polishedText ?? "") : note.originalText
@@ -58,6 +60,15 @@ struct NoteDetailView: View {
                                         .font(.caption2)
                                         .foregroundStyle(.tertiary)
                                 }
+                                Spacer(minLength: 0)
+                                if note.hasPolishUndo {
+                                    Button(action: undoPolish) {
+                                        Label("Undo", systemImage: "arrow.uturn.backward")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .disabled(progressMessage != nil)
+                                    .accessibilityHint("Restores the text from before the last polish")
+                                }
                             }
                         }
 
@@ -70,6 +81,11 @@ struct NoteDetailView: View {
                             }
                         } else if note.originalText.isEmpty && !showingPolished {
                             emptyTranscript
+                        } else if !showingPolished, !note.transcript.flags.isEmpty {
+                            FlaggedTranscriptText(transcript: note.transcript, onTap: beginFix)
+                            Text("Dotted words may be misheard. Tap one to fix it.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         } else {
                             Text(visibleText)
                                 .font(.body)
@@ -147,6 +163,26 @@ struct NoteDetailView: View {
                     .background(Capsule().fill(Color(.label)))
                     .padding(.bottom, 90)
                     .transition(.opacity)
+            }
+        }
+        .alert("Fix word", isPresented: .init(
+            get: { fixingFlag != nil },
+            set: { if !$0 { fixingFlag = nil } }
+        ), presenting: fixingFlag) { flag in
+            let written = note.transcript.word(for: flag)
+            TextField("Word", text: $fixText)
+                .textInputAutocapitalization(.never)
+            Button("Save") { saveFix(flag) }
+            Button("Keep “\(written)”") { keepWord(flag) }
+            if let heard = flag.heard {
+                Button("Use “\(heard)”") { revertFix(flag, to: heard) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { flag in
+            if let heard = flag.heard {
+                Text("Changed from “\(heard)” using a fix you made before.")
+            } else {
+                Text("The recognizer wasn't sure about this word. Your fix is remembered for next time.")
             }
         }
         .alert(errorTitle, isPresented: .init(
@@ -277,10 +313,51 @@ struct NoteDetailView: View {
         Task {
             defer { retrying = false }
             do {
-                note.originalText = try await transcription.transcribe(url: url)
+                note.transcript = try await transcription.transcribeWithConfidence(url: url)
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func beginFix(_ flag: FlaggedWord) {
+        fixText = note.transcript.word(for: flag)
+        fixingFlag = flag
+    }
+
+    private func saveFix(_ flag: FlaggedWord) {
+        let transcript = note.transcript
+        let written = transcript.word(for: flag)
+        let replacement = fixText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !replacement.isEmpty, replacement != written else {
+            keepWord(flag)
+            return
+        }
+        note.transcript = transcript.correcting(flag, to: replacement)
+        var corrections = PersonalCorrections.load()
+        corrections.learn(heard: flag.heard ?? written, meant: replacement)
+        corrections.save()
+    }
+
+    private func keepWord(_ flag: FlaggedWord) {
+        note.transcript = note.transcript.accepting(flag)
+    }
+
+    /// Puts back what the recognizer heard and drops the learned fix that
+    /// replaced it, like backspacing over an autocorrection.
+    private func revertFix(_ flag: FlaggedWord, to heard: String) {
+        note.transcript = note.transcript.correcting(flag, to: heard)
+        var corrections = PersonalCorrections.load()
+        corrections.forget(heard: heard)
+        corrections.save()
+    }
+
+    private func undoPolish() {
+        note.undoPolish()
+        revisionNotes = []
+        revisionDraft = ""
+        if !note.isPolished {
+            showingPolished = false
         }
     }
 
@@ -348,7 +425,11 @@ struct NoteDetailView: View {
     private func runPolish(style: PolishStyle) {
         defaultStyleRaw = style.id
         run("Polishing…", errorTitle: "Polish failed") {
-            try await polishWithCloud(text: note.originalText, style: style)
+            try await polishWithCloud(
+                text: note.originalText,
+                style: style,
+                uncertainWords: note.transcript.uncertainWords
+            )
             revisionNotes = []
             revisionDraft = ""
         }
@@ -370,7 +451,12 @@ struct NoteDetailView: View {
         }
     }
 
-    private func polishWithCloud(text: String, style: PolishStyle, revisionNotes: [String]? = nil) async throws {
+    private func polishWithCloud(
+        text: String,
+        style: PolishStyle,
+        revisionNotes: [String]? = nil,
+        uncertainWords: [String] = []
+    ) async throws {
         guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
             throw CloudConfigurationError.missingEndpoint
         }
@@ -378,6 +464,8 @@ struct NoteDetailView: View {
             text: text,
             style: style,
             revisionNotes: revisionNotes,
+            uncertainWords: uncertainWords,
+            vocabulary: PersonalCorrections.load().vocabulary(),
             transactionJWS: subscription.entitlementJWS ?? ""
         )
         subscription.record(cloud.usage)

@@ -29,6 +29,16 @@ final class Note {
     /// unsure about. Stored as data so adding it is a lightweight migration.
     var transcriptFlagsData: Data?
 
+    /// The polish that the latest polish replaced, so it can be undone.
+    /// `hasPolishUndo` is separate because the replaced state may be "not
+    /// polished yet", where every field is nil.
+    var hasPolishUndo: Bool = false
+    var previousPolishedText: String?
+    var previousPolishStyleRaw: String?
+    var previousPolishStyleName: String?
+    var previousPolishModel: String?
+    var previousPolishedAt: Date?
+
     init(source: NoteSource, originalText: String, audioFileName: String? = nil, duration: TimeInterval? = nil) {
         self.id = UUID()
         self.createdAt = Date()
@@ -54,11 +64,38 @@ final class Note {
     }
 
     func applyPolish(_ result: PolishResult) {
+        hasPolishUndo = true
+        previousPolishedText = polishedText
+        previousPolishStyleRaw = polishStyleRaw
+        previousPolishStyleName = polishStyleName
+        previousPolishModel = polishModel
+        previousPolishedAt = polishedAt
+
         polishedText = result.text
         polishStyleRaw = result.style.id
         polishStyleName = result.style.name
         polishModel = result.model
         polishedAt = Date()
+    }
+
+    /// Restores the polish from before the latest one. One level only.
+    func undoPolish() {
+        guard hasPolishUndo else { return }
+        polishedText = previousPolishedText
+        polishStyleRaw = previousPolishStyleRaw
+        polishStyleName = previousPolishStyleName
+        polishModel = previousPolishModel
+        polishedAt = previousPolishedAt
+        clearPolishUndo()
+    }
+
+    private func clearPolishUndo() {
+        hasPolishUndo = false
+        previousPolishedText = nil
+        previousPolishStyleRaw = nil
+        previousPolishStyleName = nil
+        previousPolishModel = nil
+        previousPolishedAt = nil
     }
 
     var transcript: Transcript {
