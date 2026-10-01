@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.defaultStyle, store: AppGroup.defaults) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
     @AppStorage(SettingsKeys.customStyles, store: AppGroup.defaults) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.devOpenRouterKey, store: AppGroup.defaults) private var devOpenRouterKey = ""
 
     @State private var editingStyle: PolishStyle?
     @State private var showingNewStyle = false
@@ -57,6 +58,18 @@ struct SettingsView: View {
                         Text("Keep the app open while the model downloads.")
                     } else if case .loading = transcription.state {
                         Text("Loading the model into memory.")
+                    }
+                }
+
+                if AppConfiguration.isDevMode {
+                    Section {
+                        SecureField("OpenRouter API key", text: $devOpenRouterKey)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Developer")
+                    } footer: {
+                        Text("Dev build: polishing skips the subscription and calls OpenRouter directly with this key.")
                     }
                 }
 

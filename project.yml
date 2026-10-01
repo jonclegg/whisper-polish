@@ -12,6 +12,7 @@ settings:
     WHISPER_POLISH_API_BASE_URL: "https://api.whisper-polish.yallware.com"
     APP_BUNDLE_ID: com.jonclegg.WhisperPolish # pragma: allowlist secret
     APP_GROUP_ID: group.$(APP_BUNDLE_ID)
+    WHISPER_POLISH_DEV_MODE: "NO"
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
@@ -32,6 +33,7 @@ targets:
         NSMicrophoneUsageDescription: "Whisper Polish records audio to transcribe your voice notes on-device."
         WhisperPolishCloudAPIBaseURL: "$(WHISPER_POLISH_API_BASE_URL)"
         WhisperPolishAppGroup: "$(APP_GROUP_ID)"
+        WhisperPolishDevMode: "$(WHISPER_POLISH_DEV_MODE)"
         CFBundleURLTypes:
           - CFBundleURLName: "$(PRODUCT_BUNDLE_IDENTIFIER)"
             CFBundleURLSchemes:
@@ -69,6 +71,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         WhisperPolishCloudAPIBaseURL: "$(WHISPER_POLISH_API_BASE_URL)"
         WhisperPolishAppGroup: "$(APP_GROUP_ID)"
+        WhisperPolishDevMode: "$(WHISPER_POLISH_DEV_MODE)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.keyboard-service
           NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).KeyboardViewController"
@@ -91,6 +94,7 @@ targets:
       - WhisperPolish/Models/PolishStyle.swift
       - WhisperPolish/Services/CloudPolishService.swift
       - WhisperPolish/Services/PolishService.swift
+      - WhisperPolish/Services/Polisher.swift
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

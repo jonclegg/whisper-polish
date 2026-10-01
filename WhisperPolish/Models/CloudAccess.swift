@@ -6,6 +6,9 @@ enum CloudPlan {
 }
 
 enum AppConfiguration {
+    /// Dev builds skip the subscription and polish straight through OpenRouter.
+    static let isDevMode = Bundle.main.object(forInfoDictionaryKey: "WhisperPolishDevMode") as? String == "YES"
+
     static var cloudPolishEndpoint: URL? {
         guard let base = Bundle.main.object(forInfoDictionaryKey: "WhisperPolishCloudAPIBaseURL") as? String,
               !base.isEmpty,

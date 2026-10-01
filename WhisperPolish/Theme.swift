@@ -21,4 +21,5 @@ enum SettingsKeys {
     /// App-group keys shared with the keyboard extension.
     static let cloudEntitlementJWS = "cloudEntitlementJWS"
     static let pendingDictation = "pendingDictation"
+    static let devOpenRouterKey = "devOpenRouterKey"
 }

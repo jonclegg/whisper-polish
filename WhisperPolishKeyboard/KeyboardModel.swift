@@ -172,15 +172,7 @@ final class KeyboardModel {
 
     func polish() {
         guard hasFullAccess, notice != .polishing else { return }
-        guard let jws = AppGroup.defaults.string(forKey: SettingsKeys.cloudEntitlementJWS) else {
-            show(.message(CloudPolishError.missingEntitlement.localizedDescription))
-            return
-        }
-        guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
-            show(.message(CloudConfigurationError.missingEndpoint.localizedDescription))
-            return
-        }
-
+        let jws = AppGroup.defaults.string(forKey: SettingsKeys.cloudEntitlementJWS)
         let style = selectedStyle
         AppGroup.defaults.set(style.id, forKey: SettingsKeys.defaultStyle)
         show(.polishing)
@@ -192,11 +184,7 @@ final class KeyboardModel {
                 return
             }
             do {
-                let result = try await CloudPolishService(endpoint: endpoint).polish(
-                    text: text,
-                    style: style,
-                    transactionJWS: jws
-                )
+                let result = try await Polisher.polish(text: text, style: style, transactionJWS: jws).result
                 try Task.checkCancellation()
                 // Without a selection the reader left the cursor at the end of the field.
                 if selected.isEmpty {
