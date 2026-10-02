@@ -204,6 +204,9 @@ final class KeyGridView: UIView {
         }
     }
 
+    /// The system cancels touches near the screen edges when it suspects a
+    /// system swipe; a letter tap that gets cancelled was still a letter tap.
+    /// Space is left out because swiping up from the bottom row goes home.
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             guard let tracker = trackers.removeValue(forKey: touch) else { continue }
@@ -212,7 +215,11 @@ final class KeyGridView: UIView {
             if tracker.mode == .accents { accents.hide() }
             guard let cap = tracker.cap else { continue }
             release(cap)
-            model.keyCancelled(cap.spec.key)
+            if tracker.mode == .key, case .character = cap.spec.key {
+                model.keyUp(cap.spec.key, at: tracker.landing)
+            } else {
+                model.keyCancelled(cap.spec.key)
+            }
         }
     }
 

@@ -10,32 +10,6 @@ struct Suggestion: Hashable {
     var title: String { isQuoted ? "\u{201C}\(text)\u{201D}" : text }
 }
 
-/// The word being typed and the words before it in the current sentence.
-struct TypingContext {
-    let partialWord: String
-    let previousWords: [String]
-
-    init(before: String) {
-        let text = before.replacingOccurrences(of: "\u{2019}", with: "'")
-        let trailing = text.reversed().prefix { $0.isLetter || $0 == "'" }
-        partialWord = String(String(trailing.reversed()).drop { $0 == "'" })
-        let head = text.dropLast(partialWord.count)
-        let sentence = head.split(omittingEmptySubsequences: false) { ".!?\n".contains($0) }.last ?? ""
-        previousWords = sentence
-            .split { !($0.isLetter || $0 == "'") }
-            .map { $0.lowercased() }
-    }
-
-    var startsSentence: Bool { previousWords.isEmpty }
-
-    /// Most specific context first, matching the keys in `next-words.txt`.
-    var lookupKeys: [String] {
-        let tokens = [Lexicon.sentenceStart] + previousWords.suffix(2)
-        if tokens.count == 1 { return tokens }
-        return [tokens.suffix(2).joined(separator: " "), tokens.last!]
-    }
-}
-
 @MainActor
 final class Predictor {
     struct Result {
@@ -64,6 +38,8 @@ final class Predictor {
     private var learned: [String: String]
     private var names: Set<String> = []
     private var replacements: [String: String] = [:]
+    private var spellCheckedWords: [String: Bool] = [:]
+    private var cachedDecoder: WordDecoder?
 
     init() {
         let words = UserDefaults.standard.stringArray(forKey: Self.learnedKey) ?? []
@@ -72,6 +48,7 @@ final class Predictor {
 
     func setLexicon(_ lexicon: Lexicon) {
         self.lexicon = lexicon
+        cachedDecoder = nil
     }
 
     /// Contact names become known words; text replacements expand like autocorrections.
@@ -154,8 +131,12 @@ final class Predictor {
     private func isKnown(_ word: String) -> Bool {
         let lower = word.lowercased()
         if learned[lower] != nil || names.contains(lower) || lexicon?.contains(lower) == true { return true }
+        if let known = spellCheckedWords[lower] { return known }
         let range = NSRange(location: 0, length: (word as NSString).length)
-        return checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: Self.language).location == NSNotFound
+        let known = checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: Self.language).location == NSNotFound
+        if spellCheckedWords.count > 2000 { spellCheckedWords.removeAll() }
+        spellCheckedWords[lower] = known
+        return known
     }
 
     private func correction(for typed: String, isKnown: Bool, decoded: [WordDecoder.Candidate]) -> String? {
@@ -171,17 +152,18 @@ final class Predictor {
     }
 
     /// Words the touches most likely meant: keys near each touch, common words,
-    /// and words that fit the previous ones, plus the spell checker's guesses
-    /// for added or missing letters.
+    /// and words that fit the previous ones.
     private func decode(_ typed: String, touches: [CGPoint?], followers: [String], lexicon: Lexicon) -> [WordDecoder.Candidate] {
         guard typed.count >= 2 else { return [] }
-        let range = NSRange(location: 0, length: (typed as NSString).length)
-        let guesses = (checker.guesses(forWordRange: range, in: typed, language: Self.language) ?? [])
-            .filter { !$0.contains(" ") }
         let touches = touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)
-        let decoded = WordDecoder(lexicon: lexicon).candidates(typed: typed, touches: touches, likelyWords: followers, guesses: guesses)
-        // Words with apostrophes have no key positions to match against.
-        return decoded.isEmpty ? guesses.prefix(3).map { WordDecoder.Candidate(word: $0, score: 0) } : decoded
+        return decoder(lexicon).candidates(typed: typed, touches: touches, likelyWords: followers)
+    }
+
+    private func decoder(_ lexicon: Lexicon) -> WordDecoder {
+        if let cachedDecoder { return cachedDecoder }
+        let decoder = WordDecoder(lexicon: lexicon)
+        cachedDecoder = decoder
+        return decoder
     }
 
     private func unique(_ words: [String]) -> [String] {

@@ -65,10 +65,17 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    /// The system gate recognizer otherwise holds back touches near the
-    /// screen edges, so taps on the outer and bottom keys arrive late or not at all.
+    /// The system gate recognizers otherwise hold back touches near the
+    /// screen edges, so taps on the outer and bottom keys arrive late or not
+    /// at all. Depending on the iOS version they sit on the window or on the
+    /// views hosting the keyboard.
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        var ancestor: UIView? = view
+        while let current = ancestor {
+            current.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+            ancestor = current.superview
+        }
         view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
     }
 

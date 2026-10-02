@@ -10,8 +10,8 @@ struct Lexicon: Sendable {
     private let sortedRanks: [Int]
     /// Context ("word" or "word word", lowercased) to space-separated followers, split on demand to keep memory low.
     private let followers: [String: Substring]
-    /// Ranks of plain a–z words, grouped by length, for matching touches key by key.
-    private let ranksByLength: [Int: [Int]]
+    /// Plain a–z words as bytes with their ranks, grouped by length, for matching touches key by key.
+    private let wordsByLength: [Int: (words: [[UInt8]], ranks: [Int])]
     private let firstLetterOdds: [Character: Double]
 
     static func load() -> Lexicon {
@@ -26,18 +26,20 @@ struct Lexicon: Sendable {
     init(words: String, nextWords: String) {
         displayForms = words.split(separator: "\n").map(String.init)
         var ranks: [String: Int] = [:]
-        var ranksByLength: [Int: [Int]] = [:]
+        var wordsByLength: [Int: (words: [[UInt8]], ranks: [Int])] = [:]
         for (rank, word) in displayForms.enumerated() {
             let lower = word.lowercased()
             if ranks[lower] == nil {
                 ranks[lower] = rank
-                if lower.allSatisfy({ $0 >= "a" && $0 <= "z" }) {
-                    ranksByLength[lower.count, default: []].append(rank)
+                let bytes = Array(lower.utf8)
+                if bytes.allSatisfy({ $0 >= UInt8(ascii: "a") && $0 <= UInt8(ascii: "z") }) {
+                    wordsByLength[bytes.count, default: ([], [])].words.append(bytes)
+                    wordsByLength[bytes.count, default: ([], [])].ranks.append(rank)
                 }
             }
         }
         self.ranks = ranks
-        self.ranksByLength = ranksByLength
+        self.wordsByLength = wordsByLength
         let sorted = ranks.sorted { $0.key < $1.key }
         sortedWords = sorted.map(\.key)
         sortedRanks = sorted.map(\.value)
@@ -69,9 +71,13 @@ struct Lexicon: Sendable {
         matches(of: prefix).map { sortedRanks[$0] }.sorted().prefix(limit).map { displayForms[$0] }
     }
 
-    /// Plain a–z words of exactly `length` letters, lowercased, with their ranks.
-    func words(ofLength length: Int) -> [(word: String, rank: Int)] {
-        (ranksByLength[length] ?? []).map { (displayForms[$0].lowercased(), $0) }
+    func rank(ofLowercased bytes: [UInt8]) -> Int? {
+        ranks[String(decoding: bytes, as: UTF8.self)]
+    }
+
+    /// Plain a–z words of exactly `length` letters, as lowercase bytes, with their ranks.
+    func words(ofLength length: Int) -> (words: [[UInt8]], ranks: [Int]) {
+        wordsByLength[length] ?? ([], [])
     }
 
     /// How likely each letter is to come next after `prefix`, weighted by word

@@ -1,32 +1,16 @@
 import XCTest
 
 final class KeyboardTouchDecoderTests: XCTestCase {
-    private static let lexicon: Lexicon = {
-        let folder = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("WhisperPolishKeyboard/Lexicon")
-        return Lexicon(
-            words: try! String(contentsOf: folder.appendingPathComponent("words.txt"), encoding: .utf8),
-            nextWords: try! String(contentsOf: folder.appendingPathComponent("next-words.txt"), encoding: .utf8)
-        )
-    }()
-
-    private var lexicon: Lexicon { Self.lexicon }
+    private var lexicon: Lexicon { .repository }
     private var centers: [Character: CGPoint] { KeyGeometry.letters.centers }
 
     private func point(_ letter: Character, dx: CGFloat = 0, dy: CGFloat = 0) -> CGPoint {
         CGPoint(x: centers[letter]!.x + dx, y: centers[letter]!.y + dy)
     }
 
-    private func decode(_ typed: String, _ touches: [CGPoint?]? = nil, guesses: [String] = [], likely: [String] = []) -> [String] {
+    private func decode(_ typed: String, _ touches: [CGPoint?]? = nil, likely: [String] = []) -> [String] {
         WordDecoder(lexicon: lexicon)
-            .candidates(
-                typed: typed,
-                touches: touches ?? Array(repeating: nil, count: typed.count),
-                likelyWords: likely,
-                guesses: guesses
-            )
+            .candidates(typed: typed, touches: touches ?? Array(repeating: nil, count: typed.count), likelyWords: likely)
             .map(\.word)
     }
 
@@ -103,9 +87,34 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertEqual(decode("gor", towardT).first, "got")
     }
 
-    func testSpellCheckerGuessesCoverSwappedLetters() {
-        XCTAssertEqual(decode("teh", guesses: ["the", "tech"]).first, "the")
-        XCTAssertEqual(decode("liek", guesses: ["like"]).first, "like")
+    func testSwappedLettersAreCorrected() {
+        XCTAssertEqual(decode("teh").first, "the")
+        XCTAssertEqual(decode("liek").first, "like")
+    }
+
+    func testMissingAndExtraLettersAreCorrected() {
+        XCTAssertEqual(decode("somthing").first, "something")
+        XCTAssertTrue(decode("helo").contains("hello"))
+        XCTAssertEqual(decode("thhe").first, "the")
+    }
+
+    func testRunTogetherWordsAreSplit() {
+        XCTAssertEqual(decode("letme").first, "let me")
+        XCTAssertEqual(decode("ofthe").first, "of the")
+    }
+
+    func testNeverRewritesMostOfAWord() {
+        XCTAssertFalse(decode("letme").contains("perks"))
+        XCTAssertFalse(decode("letme").contains("merle"))
+    }
+
+    func testNeverCorrectsToAStrayLetter() {
+        XCTAssertFalse(decode("tr").contains("t"))
+        XCTAssertFalse(decode("tr").contains("r"))
+    }
+
+    func testWordsWithApostrophesDecodeNothing() {
+        XCTAssertTrue(decode("dont'").isEmpty)
     }
 
     func testLikelyNextWordsWinCloseCalls() {
@@ -124,6 +133,7 @@ final class KeyboardTouchDecoderTests: XCTestCase {
     }
 
     func testNeverSuggestsTheTypedWordItself() {
-        XCTAssertFalse(decode("thw", guesses: ["thw"]).contains("thw"))
+        XCTAssertFalse(decode("thw").contains("thw"))
+        XCTAssertFalse(decode("the").contains("the"))
     }
 }
