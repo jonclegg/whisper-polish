@@ -15,7 +15,7 @@ const entitlement: Entitlement = {
   originalTransactionId: "original-1",
   transactionId: "renewal-1",
   productId: "com.jonclegg.WhisperPolish.cloud.monthly",
-  expiresAt: new Date("2026-09-01T00:00:00Z"),
+  expiresAt: new Date("2099-09-01T00:00:00Z"),
 };
 
 class StubVerifier implements EntitlementVerifier {
