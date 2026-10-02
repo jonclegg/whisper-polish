@@ -16,6 +16,13 @@ struct SettingsView: View {
     @State private var purchaseInFlight = false
     @State private var cloudError: String?
 
+    private var versionLabel: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        return "Version \(version) (\(build))" + (AppConfiguration.isDevMode ? " · dev" : "")
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -136,10 +143,14 @@ struct SettingsView: View {
                     Text("A style is just an instruction telling the model how to shape your text. Built-in styles can't be edited — make your own version instead.")
                 }
 
-                Section("About") {
+                Section {
                     Link("Privacy Policy", destination: AppLinks.privacyPolicy)
                     Link("Terms of Use", destination: AppLinks.termsOfUse)
                     Link("Support", destination: AppLinks.support)
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text(versionLabel)
                 }
             }
             .navigationTitle("Settings")

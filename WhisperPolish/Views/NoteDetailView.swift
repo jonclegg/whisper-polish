@@ -19,6 +19,11 @@ struct NoteDetailView: View {
     @State private var retrying = false
     @State private var player: AVAudioPlayer?
     @State private var isPlaying = false
+    @State private var showingImage = false
+
+    private var noteImage: UIImage? {
+        note.imageURL.flatMap { UIImage(contentsOfFile: $0.path()) }
+    }
 
     private var visibleText: String {
         showingPolished ? (note.polishedText ?? "") : note.originalText
@@ -52,6 +57,25 @@ struct NoteDetailView: View {
                                     .foregroundStyle(.tertiary)
                             }
                         }
+                    }
+
+                    if !showingPolished, let image = noteImage {
+                        HStack(spacing: 12) {
+                            Button { showingImage = true } label: {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 72, height: 72)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Attached image")
+                            Text(note.imageText == nil ? "Text read from this image." : "Polish uses this image's text as context.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.bottom, 4)
                     }
 
                     if note.isTranscribing {
@@ -103,6 +127,24 @@ struct NoteDetailView: View {
             }
             .presentationDetents([.height(400), .large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingImage) {
+            NavigationStack {
+                Group {
+                    if let image = noteImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .padding()
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showingImage = false }
+                    }
+                }
+            }
         }
         .overlay {
             if let progressMessage {
@@ -254,6 +296,7 @@ struct NoteDetailView: View {
             let polished = try await Polisher.polish(
                 text: note.originalText,
                 style: style,
+                context: note.imageText,
                 transactionJWS: subscription.entitlementJWS
             )
             if let usage = polished.usage {

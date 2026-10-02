@@ -13,6 +13,8 @@ export type PolishInput = {
   idempotencyKey: string;
   text: string;
   style: { name: string; instruction: string };
+  /** Text read from an image the speaker attached. */
+  context?: string;
 };
 
 export type PolishOutput = {
@@ -31,7 +33,7 @@ export interface EntitlementVerifier {
 }
 
 export interface CloudPolisher {
-  polish(input: { text: string; style: { name: string; instruction: string } }): Promise<{
+  polish(input: { text: string; style: { name: string; instruction: string }; context?: string }): Promise<{
     text: string;
     model: string;
     providerCostMicros: number;
@@ -94,7 +96,7 @@ export class PolishApplication {
   }
 
   async polish(input: PolishInput): Promise<PolishOutput> {
-    if (Buffer.byteLength(input.text, "utf8") > this.maxInputBytes) {
+    if ([input.text, input.context ?? ""].some((field) => Buffer.byteLength(field, "utf8") > this.maxInputBytes)) {
       throw new InputTooLongError(this.maxInputBytes);
     }
 
@@ -108,7 +110,7 @@ export class PolishApplication {
 
     let polished: Awaited<ReturnType<CloudPolisher["polish"]>>;
     try {
-      polished = await this.polisher.polish({ text: input.text, style: input.style });
+      polished = await this.polisher.polish({ text: input.text, style: input.style, context: input.context });
     } catch (error) {
       await this.ledger.release(entitlement, input.idempotencyKey);
       throw error;

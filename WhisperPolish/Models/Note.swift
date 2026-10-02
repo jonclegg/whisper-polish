@@ -16,6 +16,11 @@ final class Note {
     var duration: TimeInterval?
     /// True while a voice note is still being transcribed in the background.
     var isTranscribing: Bool = false
+    /// An image pasted into a text note.
+    var imageFileName: String?
+    /// Text read from the image, sent as context when the note has text of its
+    /// own. Nil when the image's text is the note's text.
+    var imageText: String?
 
     var polishedText: String?
     var polishStyleRaw: String?
@@ -47,6 +52,11 @@ final class Note {
     var audioURL: URL? {
         guard let audioFileName else { return nil }
         return URL.documentsDirectory.appending(path: "Audio").appending(path: audioFileName)
+    }
+
+    var imageURL: URL? {
+        guard let imageFileName else { return nil }
+        return NoteImages.directory.appending(path: imageFileName)
     }
 
     func applyPolish(_ result: PolishResult) {

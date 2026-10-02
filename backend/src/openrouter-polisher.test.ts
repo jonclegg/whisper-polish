@@ -44,6 +44,27 @@ describe("OpenRouterPolisher", () => {
     expect(body.provider).toEqual({ data_collection: "deny" });
   });
 
+  it("frames image context apart from the transcript", async () => {
+    const fetcher = pricedFetcher();
+    await new OpenRouterPolisher("secret", "z-ai/glm-5.2", fetcher)
+      .polish({ ...input, context: "Are we still on for Friday?" });
+
+    const body = JSON.parse(fetcher.mock.calls[1]![1]!.body as string);
+    expect(body.messages[1].content).toBe(
+      "<transcript>\nrough words\n</transcript>\n\n<image_context>\nAre we still on for Friday?\n</image_context>",
+    );
+    expect(body.messages[0].content).toContain("Use it only to understand what they mean.");
+  });
+
+  it("leaves the prompt alone without image context", async () => {
+    const fetcher = pricedFetcher();
+    await new OpenRouterPolisher("secret", "z-ai/glm-5.2", fetcher).polish(input);
+
+    const body = JSON.parse(fetcher.mock.calls[1]![1]!.body as string);
+    expect(body.messages[1].content).toBe("<transcript>\nrough words\n</transcript>");
+    expect(body.messages[0].content).not.toContain("image_context");
+  });
+
   it("refuses to spend when model pricing exceeds the approved ceiling", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({
       data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.00000061", completion: "0.0000012" } }],
@@ -78,6 +99,17 @@ describe("OpenRouterPolisher", () => {
       .rejects.toThrow("valid usage cost");
   });
 });
+
+function pricedFetcher() {
+  return vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(json({
+      data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.0000004", completion: "0.0000012" } }],
+    }))
+    .mockResolvedValueOnce(json({
+      choices: [{ message: { content: "Finished" } }],
+      usage: { cost: 0.0042 },
+    }));
+}
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
