@@ -130,7 +130,7 @@ final class Predictor {
 
     private func isKnown(_ word: String) -> Bool {
         let lower = word.lowercased()
-        if learned[lower] != nil || names.contains(lower) || lexicon?.contains(lower) == true { return true }
+        if learned[lower] != nil || names.contains(lower) || lexicon?.isWord(lower) == true { return true }
         if let known = spellCheckedWords[lower] { return known }
         let range = NSRange(location: 0, length: (word as NSString).length)
         let known = checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: Self.language).location == NSNotFound
@@ -146,17 +146,20 @@ final class Predictor {
             let corrected = Self.matchingCase(of: typed, contraction)
             return corrected == typed ? nil : corrected
         }
-        // Leave known words, acronyms and deliberate mixed case alone.
-        guard !isKnown, typed.count >= 2, !typed.dropFirst().contains(where: \.isUppercase) else { return nil }
+        // Leave known words, acronyms, deliberate mixed case, and capital letters on their own ("plan B") alone.
+        guard !isKnown, typed.count >= 2 || typed.first?.isLowercase == true,
+              !typed.dropFirst().contains(where: \.isUppercase) else { return nil }
         return decoded.first.map { Self.matchingCase(of: typed, $0.word) }
     }
 
     /// Words the touches most likely meant: keys near each touch, common words,
     /// and words that fit the previous ones.
     private func decode(_ typed: String, touches: [CGPoint?], followers: [String], lexicon: Lexicon) -> [WordDecoder.Candidate] {
-        guard typed.count >= 2 else { return [] }
         let touches = touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)
-        return decoder(lexicon).candidates(typed: typed, touches: touches, likelyWords: followers)
+        return decoder(lexicon).candidates(typed: typed, touches: touches, likelyWords: followers).map { candidate in
+            let words = candidate.word.split(separator: " ").map { lexicon.displayForm(of: String($0)) ?? String($0) }
+            return WordDecoder.Candidate(word: words.joined(separator: " "), score: candidate.score)
+        }
     }
 
     private func decoder(_ lexicon: Lexicon) -> WordDecoder {

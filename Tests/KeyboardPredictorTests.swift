@@ -23,6 +23,19 @@ final class KeyboardPredictorTests: XCTestCase {
         XCTAssertEqual(result("Thw").correction, "The")
     }
 
+    func testCorrectsWordListFragments() {
+        XCTAssertEqual(result("Let's go to thr").correction, "the")
+        XCTAssertEqual(result("Thank tou").correction, "you")
+    }
+
+    func testCorrectsAStrayLowercaseLetter() {
+        XCTAssertEqual(result("Can o").correction, "I")
+    }
+
+    func testLeavesACapitalLetterOnItsOwnAlone() {
+        XCTAssertNil(result("Plan B").correction)
+    }
+
     func testSplitsRunTogetherWords() {
         XCTAssertEqual(result("letme").correction, "let me")
     }
