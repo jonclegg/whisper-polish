@@ -79,16 +79,19 @@ struct WordDecoder {
         let score: Double
     }
 
-    /// Cost of a guess that adds, drops, or swaps a letter instead of mistyping one.
+    /// Cost of a guess that adds or drops a letter instead of mistyping one.
     static let editPenalty = 6.0
-    /// How much less likely than the keys actually hit a word may be, about two
-    /// slips onto neighboring keys; beyond that the word is a rewrite, not a fix.
-    static let maxTouchLoss = 9.0
+    /// Cost of two letters typed in the wrong order, the usual slip when two thumbs roll.
+    static let swapPenalty = 4.0
+    /// Words further than this from the touches, about two slips plus some
+    /// stray touch, are rewrites rather than fixes.
+    static let maxEditLoss = 13.0
+    /// Two-letter words get one slip, or every word would be a fix for them.
+    static let maxShortWordLoss = 7.0
     /// Two words run together count only when both are this common.
     private static let maxSplitRank = 5_000
     /// Bonus for words that often follow the previous words.
     static let contextBonus = 2.0
-    private static let unknownRank = 60_000
 
     private static let a = UInt8(ascii: "a")
 
@@ -104,8 +107,8 @@ struct WordDecoder {
     }
 
     /// `touches[i]` is where the i-th letter of `typed` was touched, or nil to
-    /// assume the key's center. Words one added, dropped, or swapped letter
-    /// away are considered too, since key-by-key matching can't find those.
+    /// assume the key's center. Words up to two added, dropped, or swapped
+    /// letters away are considered too, since key-by-key matching can't find those.
     /// Runs on every keystroke, so it works on bytes rather than Strings.
     func candidates(typed: String, touches: [CGPoint?], likelyWords: [String], limit: Int = 3) -> [Candidate] {
         let letters = Array(typed.lowercased().utf8)
@@ -116,24 +119,24 @@ struct WordDecoder {
         let literal = spatialScore(letters, observed) ?? 0
 
         var best: [[UInt8]: Double] = [:]
-        let sameLength = lexicon.words(ofLength: letters.count)
-        for (word, rank) in zip(sameLength.words, sameLength.ranks) where word != letters {
-            guard let spatial = spatialScore(word, observed), spatial >= literal - Self.maxTouchLoss else { continue }
-            best[word] = spatial + prior(word, rank: rank, likely: likely)
+        var slips = Slips(letters: letters, observed: observed, centers: centers)
+        let maxLoss = letters.count >= 3 ? Self.maxEditLoss : Self.maxShortWordLoss
+        let maxEdits = Int(maxLoss / Self.editPenalty)
+        for length in max(1, letters.count - maxEdits)...(letters.count + maxEdits) {
+            let bucket = lexicon.words(ofLength: length)
+            for (word, rank) in zip(bucket.words, bucket.ranks) where word != letters && Lexicon.isWord(word, rank: rank) {
+                guard slips.mayStart(word), let loss = slips.loss(to: word, limit: maxLoss) else { continue }
+                best[word] = literal - loss + prior(word, rank: rank, likely: likely)
+            }
         }
         let shifted = literal - Self.editPenalty
-        for word in Self.edits(of: letters) where word != letters && Self.isWordLength(word) {
-            guard let rank = lexicon.rank(ofLowercased: word) else { continue }
-            let spatial = word.count == letters.count ? max(spatialScore(word, observed) ?? shifted, shifted) : shifted
-            best[word] = max(best[word] ?? -.infinity, spatial + prior(word, rank: rank, likely: likely))
-        }
         // A missed space bar: "letme" is "let me".
         for split in 1..<letters.count {
             let first = Array(letters[..<split])
             let second = Array(letters[split...])
-            guard Self.isWordLength(first), Self.isWordLength(second),
-                  let firstRank = lexicon.rank(ofLowercased: first), firstRank < Self.maxSplitRank,
-                  let secondRank = lexicon.rank(ofLowercased: second), secondRank < Self.maxSplitRank else { continue }
+            guard let firstRank = lexicon.rank(ofLowercased: first), firstRank < Self.maxSplitRank, Lexicon.isWord(first, rank: firstRank),
+                  let secondRank = lexicon.rank(ofLowercased: second), secondRank < Self.maxSplitRank, Lexicon.isWord(second, rank: secondRank)
+            else { continue }
             let phrase = first + [UInt8(ascii: " ")] + second
             best[phrase] = shifted + log(Lexicon.weight(rank: max(firstRank, secondRank)))
         }
@@ -142,35 +145,6 @@ struct WordDecoder {
             .sorted { $0.score != $1.score ? $0.score > $1.score : $0.word < $1.word }
             .prefix(limit)
             .map { $0 }
-    }
-
-    /// The word list has every letter as a "word"; only "a" and "i" really are.
-    private static func isWordLength(_ word: [UInt8]) -> Bool {
-        word.count > 1 || word == [UInt8(ascii: "a")] || word == [UInt8(ascii: "i")]
-    }
-
-    /// Words one inserted, deleted, or swapped neighboring letter away.
-    private static func edits(of letters: [UInt8]) -> [[UInt8]] {
-        var edits: [[UInt8]] = []
-        edits.reserveCapacity(27 * (letters.count + 1))
-        for index in letters.indices {
-            var deleted = letters
-            deleted.remove(at: index)
-            if !deleted.isEmpty { edits.append(deleted) }
-            if index + 1 < letters.count {
-                var swapped = letters
-                swapped.swapAt(index, index + 1)
-                edits.append(swapped)
-            }
-        }
-        for index in 0...letters.count {
-            for offset in 0..<26 {
-                var inserted = letters
-                inserted.insert(a + UInt8(offset), at: index)
-                edits.append(inserted)
-            }
-        }
-        return edits
     }
 
     private func spatialScore(_ word: [UInt8], _ points: [CGPoint]) -> Double? {
@@ -186,5 +160,80 @@ struct WordDecoder {
     private func prior(_ word: [UInt8], rank: Int, likely: Set<String>) -> Double {
         let bonus = likely.isEmpty || !likely.contains(String(decoding: word, as: UTF8.self)) ? 0 : Self.contextBonus
         return log(Lexicon.weight(rank: rank)) + bonus
+    }
+}
+
+/// How far a word is from what was typed: a touch read as a key other than the
+/// one typed costs what the touch model says that key loses, and each added,
+/// dropped, or swapped letter costs a penalty. It's an edit distance that knows
+/// a near miss on a neighboring key is cheap and a key across the keyboard isn't.
+private struct Slips {
+    private static let a = UInt8(ascii: "a")
+
+    let letters: [UInt8]
+    /// `costs[touch * 26 + letter]`, infinite for keys too far from the touch.
+    private let costs: [Double]
+    /// Distance rows, reused across words because this runs for thousands of words per keystroke.
+    private var earlier: [Double] = []
+    private var previous: [Double] = []
+    private var current: [Double] = []
+
+    init(letters: [UInt8], observed: [CGPoint], centers: [CGPoint]) {
+        self.letters = letters
+        var costs = [Double](repeating: .infinity, count: letters.count * 26)
+        for (touch, point) in observed.enumerated() {
+            let typed = TouchModel.logLikelihood(of: point, aimingAt: centers[Int(letters[touch] - Self.a)])
+            for letter in 0..<26 {
+                let likelihood = TouchModel.logLikelihood(of: point, aimingAt: centers[letter])
+                if likelihood >= TouchModel.farthest { costs[touch * 26 + letter] = typed - likelihood }
+            }
+            costs[touch * 26 + Int(letters[touch] - Self.a)] = 0
+        }
+        self.costs = costs
+    }
+
+    private func cost(_ touch: Int, _ letter: UInt8) -> Double {
+        costs[touch * 26 + Int(letter &- Self.a)]
+    }
+
+    /// Words must start near the first touch, unless its letter was doubled,
+    /// swapped, or missed; checking the rest of the word list would be too slow.
+    func mayStart(_ word: [UInt8]) -> Bool {
+        cost(0, word[0]).isFinite
+            || (letters.count > 1 && word[0] == letters[1])
+            || (word.count > 1 && word[1] == letters[0])
+    }
+
+    /// The cheapest way the touches could have been meant as `word`, or nil past `limit`.
+    mutating func loss(to word: [UInt8], limit: Double) -> Double? {
+        let edit = WordDecoder.editPenalty
+        let width = word.count + 1
+        if current.count < width {
+            earlier = Array(repeating: 0, count: width)
+            previous = earlier
+            current = earlier
+        }
+        for column in 0..<width { previous[column] = Double(column) * edit }
+        var previousBest = 0.0
+        for touch in 1...letters.count {
+            current[0] = Double(touch) * edit
+            var rowBest = current[0]
+            for column in 1..<width {
+                var value = min(previous[column], current[column - 1]) + edit
+                value = min(value, previous[column - 1] + cost(touch - 1, word[column - 1]))
+                if touch > 1, column > 1, letters[touch - 1] == word[column - 2], letters[touch - 2] == word[column - 1] {
+                    value = min(value, earlier[column - 2] + WordDecoder.swapPenalty)
+                }
+                current[column] = value
+                rowBest = min(rowBest, value)
+            }
+            // A swap reaches back two rows, so both have to be out of reach.
+            if rowBest > limit, previousBest > limit { return nil }
+            previousBest = rowBest
+            swap(&earlier, &previous)
+            swap(&previous, &current)
+        }
+        let loss = previous[width - 1]
+        return loss <= limit ? loss : nil
     }
 }

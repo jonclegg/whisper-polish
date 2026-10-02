@@ -127,6 +127,36 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertEqual(decode("thhe").first, "the")
     }
 
+    func testTwoSlipsInOneWordAreCorrected() {
+        XCTAssertEqual(decode("somthign").first, "something")
+        XCTAssertEqual(decode("probly").first, "probably")
+        XCTAssertEqual(decode("tomorow").first, "tomorrow")
+        XCTAssertEqual(decode("esl", likely: ["else"]).first, "else")
+    }
+
+    func testListFragmentsAreNeverFixes() {
+        XCTAssertFalse(decode("esl").contains("el"))
+        XCTAssertFalse(decode("tr").contains("rt"))
+        XCTAssertFalse(decode("c").contains("co"))
+    }
+
+    func testAStrayLetterBecomesAShortWord() {
+        XCTAssertEqual(decode("o").first, "i")
+        XCTAssertEqual(decode("t").first, "to")
+        XCTAssertTrue(decode("z").isEmpty)
+    }
+
+    func testOnlyRealWordsCount() {
+        XCTAssertTrue(lexicon.isWord("the"))
+        XCTAssertTrue(lexicon.isWord("ok"))
+        XCTAssertTrue(lexicon.isWord("A"))
+        XCTAssertTrue(lexicon.isWord("tome"))
+        XCTAssertFalse(lexicon.isWord("thr"))
+        XCTAssertFalse(lexicon.isWord("el"))
+        XCTAssertFalse(lexicon.isWord("s"))
+        XCTAssertTrue(lexicon.contains("thr"))
+    }
+
     func testRunTogetherWordsAreSplit() {
         XCTAssertEqual(decode("letme").first, "let me")
         XCTAssertEqual(decode("ofthe").first, "of the")
