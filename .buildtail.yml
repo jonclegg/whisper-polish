@@ -7,6 +7,14 @@ build_mode: archive
 archive_path: build/ios/WhisperPolish.xcarchive
 device: Jiphone
 team_id: 22CTWHGWQQ
+# Every buildtail build is a dev build: no subscription, polish on the
+# Mac's own keys. Xcode fills the $(...) values from the environment.
+xcodebuild_settings:
+  WHISPER_POLISH_DEV_MODE: "YES"
+  WHISPER_POLISH_DEV_OPENROUTER_KEY: "$(OPENROUTER_API_KEY)"
+  WHISPER_POLISH_DEV_GROQ_KEY: "$(GROQ_API_KEY)"
+env_required:
+  - OPENROUTER_API_KEY
 bundle_id: com.jonclegg.WhisperPolish
 ota:
   app_display_name: Whisper Polish
