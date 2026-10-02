@@ -1,100 +1,123 @@
 import XCTest
 
 final class CursorTrackpadTests: XCTestCase {
-    /// About 37 characters a row.
     private let phoneWidth: CGFloat = 390
 
-    private func pad(_ before: String, _ after: String = "", width: CGFloat = 390) -> CursorTrackpad {
-        CursorTrackpad(before: before, after: after, keyboardWidth: width)
+    private func pad(_ before: String, _ after: String = "") -> CursorTrackpad {
+        CursorTrackpad(before: before, after: after, keyboardWidth: phoneWidth)
     }
 
-    /// Moves vertically in small steps, like a drag.
-    private func drag(_ pad: inout CursorTrackpad, rows: Double, steps: Int = 20) -> (offsets: [Int], reachedEdge: Bool) {
-        var offsets: [Int] = []
-        var reachedEdge = false
-        for _ in 0..<steps {
-            let move = pad.moveVertically(by: rows / Double(steps))
-            offsets.append(move.offset)
-            reachedEdge = reachedEdge || move.reachedEdge
-        }
-        return (offsets, reachedEdge)
+    /// Moves in small steps, like a drag, and returns every update.
+    private func drag(_ pad: inout CursorTrackpad, rows: Double, steps: Int = 20) -> [CursorTrackpad.Update] {
+        (0..<steps).map { _ in pad.move(columns: 0, rows: rows / Double(steps)) }
     }
 
-    func testHorizontalMovesAreCharacters() {
+    func testSidewaysMovesByCharacters() {
         var trackpad = pad("hello world", " more")
-        XCTAssertEqual(trackpad.moveHorizontally(by: 4), .init(offset: 4, reachedEdge: false))
-        XCTAssertEqual(trackpad.moveHorizontally(by: -2), .init(offset: -2, reachedEdge: false))
+        XCTAssertEqual(trackpad.move(columns: 4, rows: 0), .init(offset: 4, edge: nil))
+        XCTAssertEqual(trackpad.move(columns: -2, rows: 0), .init(offset: -2, edge: nil))
     }
 
-    func testHorizontalMovesPastTheSharedTextAskForAFreshRead() {
-        var trackpad = pad("hi")
-        XCTAssertEqual(trackpad.moveHorizontally(by: -5), .init(offset: -5, reachedEdge: true))
-        XCTAssertEqual(trackpad.moveVertically(by: -1), .init(offset: 0, reachedEdge: true))
+    func testSidewaysStopsAtTheEndOfTheLine() {
+        var trackpad = pad("abc", "\ndef")
+        XCTAssertEqual(trackpad.move(columns: 5, rows: 0), .init(offset: 0, edge: nil))
+        XCTAssertEqual(trackpad.move(columns: -10, rows: 0).offset, -3)
     }
 
-    func testAWholeRowUpKeepsTheColumn() {
+    func testJumpsStraightUpInOneMoveWithoutPassingThroughTheText() {
         var trackpad = pad("abcdef\nhij")
-        XCTAssertEqual(trackpad.moveVertically(by: -1), .init(offset: -7, reachedEdge: false))
-        XCTAssertEqual(trackpad.moveVertically(by: 1), .init(offset: 7, reachedEdge: false))
+        let offsets = drag(&trackpad, rows: -1).map(\.offset).filter { $0 != 0 }
+        XCTAssertEqual(offsets, [-7])
     }
 
-    func testGlidesThroughTheCharactersBetweenRows() {
+    func testChangesLineHalfwayBetweenRows() {
         var trackpad = pad("abcdef\nhij")
-        let (offsets, _) = drag(&trackpad, rows: -1)
-        XCTAssertEqual(offsets.reduce(0, +), -7)
-        // Seven characters spread over twenty small steps: never more than one at a time.
-        XCTAssertTrue(offsets.allSatisfy { $0 == 0 || $0 == -1 })
-        XCTAssertEqual(offsets.filter { $0 != 0 }.count, 7)
+        XCTAssertEqual(trackpad.move(columns: 0, rows: -0.4).offset, 0)
+        XCTAssertEqual(trackpad.move(columns: 0, rows: -0.2).offset, -7)
     }
 
-    func testAShorterLineDoesNotLoseTheColumn() {
+    func testKeepsTheColumnAcrossAShorterLine() {
         let long = String(repeating: "a", count: 20)
         var trackpad = pad(long, "\nxy\n" + long)
-        XCTAssertEqual(trackpad.moveVertically(by: 1).offset, 3)
-        XCTAssertEqual(trackpad.moveVertically(by: 1).offset, 21)
+        XCTAssertEqual(trackpad.move(columns: 0, rows: 1).offset, 3)
+        XCTAssertEqual(trackpad.move(columns: 0, rows: 1).offset, 21)
     }
 
-    func testWrappedRowsCountAsLines() {
-        let line = String(repeating: "abcdefghij", count: 4)
-        let rowLength = CursorTrackpad.visualLineLength(forKeyboardWidth: phoneWidth)
-        var trackpad = pad(String(line.prefix(rowLength + 3)), String(line.dropFirst(rowLength + 3)))
-        XCTAssertEqual(trackpad.moveVertically(by: -1).offset, -rowLength)
+    func testMovesDiagonally() {
+        var trackpad = pad("abcdef\nabcdef")
+        XCTAssertEqual(trackpad.move(columns: -2, rows: -1).offset, -9)
     }
 
-    func testRunsToTheStartAboveTheFirstLineAndReportsTheEdge() {
-        var trackpad = pad("abc\ndefgh")
-        XCTAssertEqual(trackpad.moveVertically(by: -1).offset, -6)
-        let move = trackpad.moveVertically(by: -3)
-        XCTAssertEqual(move.offset, -3)
-        XCTAssertTrue(move.reachedEdge)
-        XCTAssertTrue(trackpad.isAtStart)
+    func testWrapsAtWordsLikeATextView() {
+        let rowLength = CursorTrackpad.rowLength(forKeyboardWidth: phoneWidth)
+        let firstRow = String(repeating: "a", count: rowLength - 3) + " "
+        var trackpad = pad(firstRow + "bcdef")
+        XCTAssertEqual(trackpad.move(columns: 0, rows: -1).offset, -firstRow.count)
     }
 
-    func testRunsToTheEndBelowTheLastLine() {
-        var trackpad = pad("abc", "defgh")
-        let move = trackpad.moveVertically(by: 2)
-        XCTAssertEqual(move.offset, 5)
-        XCTAssertTrue(move.reachedEdge)
-        XCTAssertTrue(trackpad.isAtEnd)
-    }
-
-    func testTurningBackAtTheEdgeMovesRightAway() {
+    func testStopsOnTheFirstLineAtTheStartOfTheDocument() {
         var trackpad = pad("abc\ndef")
-        _ = trackpad.moveVertically(by: -10)
-        XCTAssertTrue(trackpad.isAtStart)
-        XCTAssertEqual(trackpad.moveVertically(by: 1).offset, 3)
+        _ = trackpad.move(columns: 0, rows: -1)
+        let update = trackpad.move(columns: 0, rows: -1)
+        XCTAssertEqual(update, .init(offset: 0, edge: .top))
+        XCTAssertEqual(trackpad.probe(.top), -4)
+        XCTAssertEqual(trackpad.absorb(before: "", after: "abc\ndef"), .init(offset: 3, edge: nil))
+        XCTAssertEqual(trackpad.move(columns: 0, rows: -3), .init(offset: 0, edge: nil))
+        XCTAssertEqual(trackpad.move(columns: 0, rows: 1).offset, 4)
     }
 
-    func testAFreshReadKeepsThePreferredColumn() {
-        var trackpad = CursorTrackpad(before: "abcdefgh", after: "", keyboardWidth: phoneWidth, preferredColumn: 3)
-        XCTAssertEqual(trackpad.preferredColumn, 3)
-        trackpad = CursorTrackpad(before: "ab\nabcdefgh", after: "", keyboardWidth: phoneWidth, preferredColumn: 3)
-        XCTAssertEqual(trackpad.moveVertically(by: -1).offset, -9)
+    func testReadsTheTextAboveTheSharedSentence() {
+        var trackpad = pad("Second sentence.")
+        XCTAssertEqual(trackpad.move(columns: -10, rows: -1).edge, .top)
+        XCTAssertEqual(trackpad.probe(.top), -7)
+        let update = trackpad.absorb(before: "First line\n", after: " Second sentence.")
+        XCTAssertNil(update.edge)
+        // The caret probed to just before "Second" and lands on the line above, at column 6.
+        XCTAssertEqual(update.offset, -5)
+    }
+
+    func testKeepsGoingThroughSeveralReads() {
+        var trackpad = pad("c")
+        XCTAssertEqual(trackpad.move(columns: 0, rows: -1).edge, .top)
+        _ = trackpad.probe(.top)
+        var update = trackpad.absorb(before: "b", after: "\nc")
+        XCTAssertNil(update.edge)
+        update = trackpad.move(columns: 0, rows: -1)
+        XCTAssertEqual(update.edge, .top)
+        _ = trackpad.probe(.top)
+        update = trackpad.absorb(before: "a", after: "\nb\nc")
+        XCTAssertNil(update.edge)
+        XCTAssertEqual(trackpad.move(columns: 0, rows: 2).offset, 4)
+    }
+
+    func testReadsBelowTheSharedText() {
+        var trackpad = pad("abc", "")
+        XCTAssertEqual(trackpad.move(columns: 0, rows: 1).edge, .bottom)
+        XCTAssertEqual(trackpad.probe(.bottom), 1)
+        let update = trackpad.absorb(before: "abc\n", after: "defg")
+        XCTAssertEqual(update, .init(offset: 3, edge: nil))
+    }
+
+    func testIgnoresDragsWhileAReadIsPending() {
+        var trackpad = pad("abc")
+        _ = trackpad.move(columns: 0, rows: -1)
+        _ = trackpad.probe(.top)
+        XCTAssertTrue(trackpad.isProbing)
+        XCTAssertEqual(trackpad.move(columns: 0, rows: -1), .init(offset: 0, edge: nil))
+    }
+
+    func testStartsOverWhenTheTextChangedUnderneath() {
+        var trackpad = pad("abc")
+        _ = trackpad.move(columns: 0, rows: -1)
+        _ = trackpad.probe(.top)
+        _ = trackpad.absorb(before: "xyz", after: "")
+        XCTAssertFalse(trackpad.isProbing)
+        XCTAssertEqual(trackpad.move(columns: -1, rows: 0).offset, -1)
     }
 
     func testNeverLandsInsideAnEmoji() {
-        var trackpad = CursorTrackpad(before: "abcdef", after: "\n👋z", keyboardWidth: phoneWidth, preferredColumn: 1)
-        let move = trackpad.moveVertically(by: 1)
-        XCTAssertEqual(move.offset, 1)
+        var trackpad = pad("a", "\n👋z")
+        // Column 1 of the second line is inside the emoji.
+        XCTAssertEqual(trackpad.move(columns: 0, rows: 1).offset, 1)
     }
 }

@@ -41,8 +41,7 @@ final class KeyGridView: UIView {
         var trackpadY: CGFloat = 0
         var trackpadTime: TimeInterval = 0
         var pad: CursorTrackpad?
-        var padIsStale = false
-        var lastCursorMove: TimeInterval = 0
+        var readTimer: Timer?
         var holdTimer: Timer?
 
         init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
@@ -308,7 +307,6 @@ final class KeyGridView: UIView {
         tracker.trackpadY = point.y
         tracker.trackpadTime = ProcessInfo.processInfo.systemUptime
         tracker.pad = nil
-        tracker.padIsStale = false
         if let cap = tracker.cap { release(cap) }
         UIView.animate(withDuration: 0.15) {
             self.rows.joined().forEach { $0.setLabelHidden(true) }
@@ -316,46 +314,43 @@ final class KeyGridView: UIView {
     }
 
     private func moveCursor(_ tracker: Tracker, to point: CGPoint, at time: TimeInterval) {
-        let xSteps = Int((point.x - tracker.trackpadX) / Self.pointsPerCharacter)
-        tracker.trackpadX += CGFloat(xSteps) * Self.pointsPerCharacter
+        let dx = point.x - tracker.trackpadX
         let dy = point.y - tracker.trackpadY
         let speed = abs(dy) / CGFloat(max(time - tracker.trackpadTime, 1.0 / 120))
         let gain = min(1 + speed / Self.lineSpeedForDoubleGain, Self.maxLineGain)
+        tracker.trackpadX = point.x
         tracker.trackpadY = point.y
         tracker.trackpadTime = time
-
-        if tracker.pad == nil || (tracker.padIsStale && time - tracker.lastCursorMove > Self.hostCatchUp) {
+        if tracker.pad == nil {
             let context = model.trackpadContext()
-            tracker.pad = CursorTrackpad(
-                before: context.before,
-                after: context.after,
-                keyboardWidth: bounds.width,
-                preferredColumn: tracker.pad?.preferredColumn
-            )
-            tracker.padIsStale = false
+            tracker.pad = CursorTrackpad(before: context.before, after: context.after, keyboardWidth: bounds.width)
         }
-        guard var pad = tracker.pad, !tracker.padIsStale else { return }
-        var offset = 0
-        if xSteps != 0 {
-            let moved = pad.moveHorizontally(by: xSteps)
-            offset += moved.offset
-            tracker.padIsStale = moved.reachedEdge
-        }
-        if dy != 0, !tracker.padIsStale {
-            let moved = pad.moveVertically(by: Double(dy * gain / Self.pointsPerLine))
-            offset += moved.offset
-            if moved.reachedEdge {
-                tracker.padIsStale = true
-                // Hosts cut the shared text at paragraphs, so stepping over
-                // the boundary is what lets the next read see further.
-                if dy < 0, pad.isAtStart { offset -= 1 }
-                if dy > 0, pad.isAtEnd { offset += 1 }
+        guard var pad = tracker.pad else { return }
+        let update = pad.move(columns: Double(dx / Self.pointsPerCharacter), rows: Double(dy * gain / Self.pointsPerLine))
+        tracker.pad = pad
+        apply(update, for: tracker)
+    }
+
+    private func apply(_ update: CursorTrackpad.Update, for tracker: Tracker) {
+        if update.offset != 0 { model.moveCursor(by: update.offset) }
+        guard let edge = update.edge, tracker.readTimer == nil, var pad = tracker.pad else { return }
+        let probe = pad.probe(edge)
+        tracker.pad = pad
+        if probe != 0 { model.moveCursor(by: probe) }
+        // Holds the tracker, so a read that's still pending when the finger lifts still lands.
+        tracker.readTimer = Timer.scheduledTimer(withTimeInterval: Self.hostCatchUp, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                tracker.readTimer = nil
+                guard let self, var pad = tracker.pad else { return }
+                let context = self.model.trackpadContext()
+                var update = pad.absorb(before: context.before, after: context.after)
+                tracker.pad = pad
+                let isDragging = tracker.mode == .trackpad && self.trackers.values.contains { $0 === tracker }
+                if !isDragging { update.edge = nil }
+                self.apply(update, for: tracker)
+                if !isDragging { self.model.cursorMoveEnded() }
             }
         }
-        tracker.pad = pad
-        guard offset != 0 else { return }
-        tracker.lastCursorMove = time
-        model.moveCursor(by: offset)
     }
 
     private func endTrackpad() {

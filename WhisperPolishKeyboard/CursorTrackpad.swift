@@ -1,203 +1,201 @@
 import CoreGraphics
 
-/// Space-bar drags. Horizontal drags walk characters. Vertical drags change
-/// lines and keep the column, the way the iPhone trackpad does.
+/// Space-bar drags steer an invisible point over the text, and the caret sits
+/// on the character under it, the way the system caret follows the iPhone's
+/// floating cursor. Moving between lines jumps straight there instead of
+/// walking through the text in between.
 ///
-/// A keyboard can't draw a floating cursor in the host app, so between two
-/// lines the caret glides through the characters that separate them instead
-/// of jumping when a line's worth of travel builds up.
+/// A keyboard can't see the field's layout, so rows are estimated by word
+/// wrapping at `rowLength` characters. Hard returns are real lines.
 ///
-/// A keyboard also can't see the field's soft wraps, so a run of text longer
-/// than `visualLineLength` is treated as several rows. Hard returns are real
-/// lines. The host only shares the text near the caret, so running off either
-/// end of it is reported, and the caller rebuilds from a fresh read.
+/// The host only shares the text near the caret, cut at sentences and
+/// paragraphs. When the point runs past it, the caller steps the caret just
+/// past the shared text with `probe`, then hands the fresh read to `absorb`,
+/// which joins it to what's already known.
 struct CursorTrackpad {
-    struct Move: Equatable {
+    enum Edge: Equatable {
+        case top
+        case bottom
+    }
+
+    struct Update: Equatable {
         /// In UTF-16 units, which is what the text proxy moves by.
         var offset: Int
-        var reachedEdge: Bool
+        /// The point is past the known text, and more could be read there.
+        var edge: Edge?
+    }
+
+    private struct Row {
+        var start: Int
+        var end: Int
+        /// The last row of a hard line also owns the position after its last character.
+        var isLast: Bool
+
+        var maxColumn: Int { isLast ? end - start : max(end - start - 1, 0) }
+
+        func contains(_ index: Int) -> Bool {
+            index >= start && (index < end || (isLast && index == end))
+        }
     }
 
     private static let newline: UInt16 = 10
+    private static let space: UInt16 = 32
     private static let lowSurrogates: ClosedRange<UInt16> = 0xDC00...0xDFFF
     /// Body text is narrower than the keyboard, and a system-font character
-    /// is about this wide. Used only to guess where wrapped lines break.
+    /// is about this wide.
     private static let textWidthFraction: CGFloat = 0.8
     private static let estimatedCharacterWidth: CGFloat = 8.5
 
-    private let visualLineLength: Int
-    private let units: [UInt16]
-    private(set) var preferredColumn: Int
+    private let rowLength: Int
+    private var units: [UInt16]
+    private var rows: [Row] = []
+    /// The host's caret as an index into `units`, just outside them while a probe is pending.
     private var caret: Int
-    private var anchor: Int
-    /// Rows moved from the anchor, fractional while between two rows. Negative is up.
-    private var rows: Double = 0
-    private var rowsAbove: [Int] = []
-    private var rowsBelow: [Int] = []
-    private var rowsAboveComplete = false
-    private var rowsBelowComplete = false
+    /// The point, in characters across and rows down.
+    private var x: Double = 0
+    private var y: Double = 0
+    private var reachesDocumentStart = false
+    private var reachesDocumentEnd = false
 
-    init(before: String, after: String, keyboardWidth: CGFloat, preferredColumn: Int? = nil) {
-        visualLineLength = Self.visualLineLength(forKeyboardWidth: keyboardWidth)
+    init(before: String, after: String, keyboardWidth: CGFloat) {
+        rowLength = Self.rowLength(forKeyboardWidth: keyboardWidth)
         units = Array((before + after).utf16)
         caret = before.utf16.count
-        anchor = caret
-        self.preferredColumn = 0
-        self.preferredColumn = preferredColumn ?? columnPreference(at: caret)
+        layOut()
+        let row = rowIndex(containing: caret)
+        x = Double(caret - rows[row].start)
+        y = Double(row)
     }
 
-    static func visualLineLength(forKeyboardWidth width: CGFloat) -> Int {
+    static func rowLength(forKeyboardWidth width: CGFloat) -> Int {
         let textWidth = max(width * Self.textWidthFraction, 200)
         return max(Int((textWidth / Self.estimatedCharacterWidth).rounded()), 12)
     }
 
-    var isAtStart: Bool { caret <= 0 }
-    var isAtEnd: Bool { caret >= units.count }
+    var isProbing: Bool { caret < 0 || caret > units.count }
 
-    mutating func moveHorizontally(by characters: Int) -> Move {
-        caret += characters
-        resetVertical()
-        guard contains(caret) else { return Move(offset: characters, reachedEdge: true) }
-        preferredColumn = columnPreference(at: caret)
-        return Move(offset: characters, reachedEdge: false)
+    mutating func move(columns: Double, rows down: Double) -> Update {
+        x = min(max(x + columns, 0), Double(rowLength))
+        y += down
+        guard !isProbing else { return Update(offset: 0, edge: nil) }
+        return settle()
     }
 
-    /// Past the first row the caret runs to the start of the text, and past
-    /// the last to the end, so a fresh read picks up where this one stopped.
-    mutating func moveVertically(by delta: Double) -> Move {
-        let start = caret
-        guard contains(caret) else { return Move(offset: 0, reachedEdge: delta != 0) }
-        rows += delta
-        var reachedEdge = false
-        if rows < 0 {
-            let reachable = reachableRows(up: Int((-rows).rounded(.up)))
-            if Double(reachable) < -rows {
-                rows = -Double(reachable)
-                reachedEdge = delta < 0
-            }
-        } else if rows > 0 {
-            let reachable = reachableRows(down: Int(rows.rounded(.up)))
-            if Double(reachable) < rows {
-                rows = Double(reachable)
-                reachedEdge = delta > 0
-            }
+    /// Steps the caret one character past the known text, so the host shares what lies beyond.
+    mutating func probe(_ edge: Edge) -> Int {
+        let target = edge == .top ? -1 : units.count + 1
+        defer { caret = target }
+        return target - caret
+    }
+
+    /// Joins a fresh read of the host's text, then puts the caret back under the point.
+    mutating func absorb(before: String, after: String) -> Update {
+        let fresh = Array((before + after).utf16)
+        let host = before.utf16.count
+        let anchorRow = currentRow
+        let anchor = rows[anchorRow].start
+        let rowsFromAnchor = y - Double(anchorRow)
+
+        // A probe at either end of the document leaves the caret where it was.
+        let clamped = min(max(caret, 0), units.count)
+        let mayBeAtAnEnd = (caret < 0 && before.isEmpty) || (caret > units.count && after.isEmpty)
+        let candidates = mayBeAtAnEnd ? [clamped, caret] : [caret]
+        guard let assumed = candidates.first(where: { agrees(fresh, host: host, assumingCaret: $0) }) else {
+            units = fresh
+            caret = host
+            reachesDocumentStart = false
+            reachesDocumentEnd = false
+            layOut()
+            y = Double(rowIndex(containing: caret)) + rowsFromAnchor
+            return settle()
         }
-        let lower = Int(rows.rounded(.down))
-        let fraction = rows - Double(lower)
-        let from = position(row: lower)
-        let to = fraction > 0 ? position(row: lower + 1) : from
-        caret = snap(from + Int((Double(to - from) * fraction).rounded()))
-        return Move(offset: caret - start, reachedEdge: reachedEdge)
+        if assumed != caret {
+            if caret < 0 { reachesDocumentStart = true } else { reachesDocumentEnd = true }
+        }
+
+        let shift = host - assumed
+        let low = min(0, shift)
+        let high = max(fresh.count, shift + units.count)
+        units = (low..<high).map { index in
+            let old = index - shift
+            return old >= 0 && old < units.count ? units[old] : fresh[index]
+        }
+        caret = host - low
+        layOut()
+        y = Double(rowIndex(containing: anchor + shift - low)) + rowsFromAnchor
+        return settle()
     }
 
-    private mutating func resetVertical() {
-        anchor = caret
-        rows = 0
-        rowsAbove = []
-        rowsBelow = []
-        rowsAboveComplete = false
-        rowsBelowComplete = false
+    private var currentRow: Int {
+        min(max(Int(y.rounded()), 0), rows.count - 1)
     }
 
-    private func contains(_ index: Int) -> Bool {
-        index >= 0 && index <= units.count
-    }
-
-    private func position(row: Int) -> Int {
-        if row < 0 { return rowsAbove[-row - 1] }
-        if row > 0 { return rowsBelow[row - 1] }
-        return anchor
-    }
-
-    private mutating func reachableRows(up count: Int) -> Int {
-        while rowsAbove.count < count, !rowsAboveComplete {
-            let from = rowsAbove.last ?? anchor
-            if let next = stepRow(from: from, direction: -1) {
-                rowsAbove.append(next)
+    private mutating func settle() -> Update {
+        var edge: Edge?
+        let last = Double(rows.count - 1)
+        if y < -0.5 {
+            if reachesDocumentStart {
+                y = 0
             } else {
-                if from != 0 { rowsAbove.append(0) }
-                rowsAboveComplete = true
+                edge = .top
+                y = max(y, -1)
             }
-        }
-        return min(rowsAbove.count, count)
-    }
-
-    private mutating func reachableRows(down count: Int) -> Int {
-        while rowsBelow.count < count, !rowsBelowComplete {
-            let from = rowsBelow.last ?? anchor
-            if let next = stepRow(from: from, direction: 1) {
-                rowsBelow.append(next)
+        } else if y > last + 0.5 {
+            if reachesDocumentEnd {
+                y = last
             } else {
-                if from != units.count { rowsBelow.append(units.count) }
-                rowsBelowComplete = true
+                edge = .bottom
+                y = min(y, last + 1)
             }
         }
-        return min(rowsBelow.count, count)
+        let row = rows[currentRow]
+        let target = snap(row.start + min(Int(x.rounded()), row.maxColumn))
+        defer { caret = target }
+        return Update(offset: target - caret, edge: edge)
     }
 
-    private func stepRow(from index: Int, direction: Int) -> Int? {
-        let line = hardLine(at: index)
-        let length = line.end - line.start
-        let row = visualRow(column: index - line.start, length: length)
-        if direction < 0 {
-            if row > 0 {
-                return place(from: index, lineStart: line.start, lineLength: length, row: row - 1)
+    /// Whether the fresh read touches the known text and matches it wherever the two overlap.
+    private func agrees(_ fresh: [UInt16], host: Int, assumingCaret assumed: Int) -> Bool {
+        let shift = host - assumed
+        guard shift <= fresh.count, shift + units.count >= 0 else { return false }
+        let lower = max(0, -shift)
+        let upper = min(units.count, fresh.count - shift)
+        guard lower < upper else { return true }
+        return (lower..<upper).allSatisfy { units[$0] == fresh[$0 + shift] }
+    }
+
+    private mutating func layOut() {
+        rows = []
+        var lineStart = 0
+        for index in units.indices where units[index] == Self.newline {
+            wrap(lineStart, index)
+            lineStart = index + 1
+        }
+        wrap(lineStart, units.count)
+    }
+
+    /// Greedy word wrap, like a text view's.
+    private mutating func wrap(_ lineStart: Int, _ lineEnd: Int) {
+        var start = lineStart
+        while lineEnd - start > rowLength {
+            let limit = start + rowLength
+            let next: Int
+            if units[limit] == Self.space {
+                next = limit + 1
+            } else if let space = units[start..<limit].lastIndex(of: Self.space), space > start {
+                next = space + 1
+            } else {
+                next = limit
             }
-            guard let previous = previousHardLine(before: line.start) else { return nil }
-            let previousLength = previous.end - previous.start
-            let lastRow = visualRow(column: previousLength, length: previousLength)
-            return place(from: index, lineStart: previous.start, lineLength: previousLength, row: lastRow)
+            rows.append(Row(start: start, end: next, isLast: false))
+            start = next
         }
-        if (row + 1) * visualLineLength < length {
-            return place(from: index, lineStart: line.start, lineLength: length, row: row + 1)
-        }
-        guard let next = nextHardLine(after: line.end) else { return nil }
-        return place(from: index, lineStart: next.start, lineLength: next.end - next.start, row: 0)
+        rows.append(Row(start: start, end: lineEnd, isLast: true))
     }
 
-    private func place(from index: Int, lineStart: Int, lineLength: Int, row: Int) -> Int? {
-        let rowStart = row * visualLineLength
-        guard rowStart <= lineLength else { return nil }
-        let room = min(visualLineLength, lineLength - rowStart)
-        let next = snap(lineStart + rowStart + min(preferredColumn, room))
-        return next == index ? nil : next
-    }
-
-    /// The end of a hard line that fills its last row keeps the right edge.
-    /// A caret sitting on a wrap is the start of the next row.
-    private func columnPreference(at index: Int) -> Int {
-        let line = hardLine(at: index)
-        let length = line.end - line.start
-        let column = index - line.start
-        if column == length, length > 0, length.isMultiple(of: visualLineLength) {
-            return visualLineLength
-        }
-        return column % visualLineLength
-    }
-
-    private func visualRow(column: Int, length: Int) -> Int {
-        if column == 0 || length == 0 { return 0 }
-        return (min(column, length) - 1) / visualLineLength
-    }
-
-    private func hardLine(at index: Int) -> (start: Int, end: Int) {
-        let capped = min(max(index, 0), units.count)
-        let start = units[..<capped].lastIndex(of: Self.newline).map { $0 + 1 } ?? 0
-        let end = units[capped...].firstIndex(of: Self.newline) ?? units.count
-        return (start, end)
-    }
-
-    private func previousHardLine(before start: Int) -> (start: Int, end: Int)? {
-        guard start > 0, units[start - 1] == Self.newline else { return nil }
-        let end = start - 1
-        let lineStart = units[..<end].lastIndex(of: Self.newline).map { $0 + 1 } ?? 0
-        return (lineStart, end)
-    }
-
-    private func nextHardLine(after end: Int) -> (start: Int, end: Int)? {
-        guard end < units.count, units[end] == Self.newline else { return nil }
-        let start = end + 1
-        return (start, units[start...].firstIndex(of: Self.newline) ?? units.count)
+    private func rowIndex(containing index: Int) -> Int {
+        if index <= 0 { return 0 }
+        return rows.firstIndex { $0.contains(index) } ?? rows.count - 1
     }
 
     private func snap(_ index: Int) -> Int {
