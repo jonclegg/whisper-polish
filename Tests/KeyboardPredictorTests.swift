@@ -40,7 +40,13 @@ final class KeyboardPredictorTests: XCTestCase {
     }
 
     func testLetterOddsFavorLettersThatContinueTheWord() {
-        let odds = predictor().letterOdds(for: TypingContext(before: "th"))
+        let odds = predictor().letterOdds(for: TypingContext(before: "I want th"))
         XCTAssertEqual(odds.max { $0.value < $1.value }?.key, "e")
+    }
+
+    func testLetterOddsFollowTheSentenceSoFar() {
+        // "Thanks" and "That's" open sentences far more often than "The".
+        let odds = predictor().letterOdds(for: TypingContext(before: "Th"))
+        XCTAssertEqual(odds.max { $0.value < $1.value }?.key, "a")
     }
 }
