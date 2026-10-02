@@ -7,7 +7,7 @@ struct NoteDetailView: View {
 
     @Environment(TranscriptionService.self) private var transcription
     @Environment(SubscriptionStore.self) private var subscription
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.defaultStyle, store: AppGroup.defaults) private var defaultStyleRaw = PolishStyle.email.id
 
     @State private var showingPolished = false
     @State private var showPolishSheet = false
@@ -251,16 +251,15 @@ struct NoteDetailView: View {
     private func runPolish(style: PolishStyle) {
         defaultStyleRaw = style.id
         run("Polishing…", errorTitle: "Polish failed") {
-            guard let endpoint = AppConfiguration.cloudPolishEndpoint else {
-                throw CloudConfigurationError.missingEndpoint
-            }
-            let cloud = try await CloudPolishService(endpoint: endpoint).polish(
+            let polished = try await Polisher.polish(
                 text: note.originalText,
                 style: style,
-                transactionJWS: subscription.entitlementJWS ?? ""
+                transactionJWS: subscription.entitlementJWS
             )
-            subscription.record(cloud.usage)
-            note.applyPolish(cloud.polishResult(style: style))
+            if let usage = polished.usage {
+                subscription.record(usage)
+            }
+            note.applyPolish(polished.result)
             showingPolished = true
         }
     }

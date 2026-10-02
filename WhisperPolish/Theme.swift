@@ -18,4 +18,7 @@ enum SettingsKeys {
     static let customStyles = "customStyles"
     static let engine = "transcriptionEngine"
     static let hasCompletedSetup = "hasCompletedSetup"
+    /// App-group keys shared with the keyboard extension.
+    static let cloudEntitlementJWS = "cloudEntitlementJWS"
+    static let pendingDictation = "pendingDictation"
 }

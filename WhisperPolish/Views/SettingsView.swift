@@ -7,9 +7,9 @@ struct SettingsView: View {
 
     @AppStorage(SettingsKeys.recordOnLaunch) private var recordOnLaunch = false
     @AppStorage(SettingsKeys.autoCopyTranscript) private var autoCopy = false
-    @AppStorage(SettingsKeys.defaultStyle) private var defaultStyleRaw = PolishStyle.email.id
+    @AppStorage(SettingsKeys.defaultStyle, store: AppGroup.defaults) private var defaultStyleRaw = PolishStyle.email.id
     @AppStorage(SettingsKeys.engine) private var engineRaw = TranscriptionEngine.parakeet.rawValue
-    @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.customStyles, store: AppGroup.defaults) private var customStylesJSON = ""
 
     @State private var editingStyle: PolishStyle?
     @State private var showingNewStyle = false

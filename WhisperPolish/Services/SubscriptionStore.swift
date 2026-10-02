@@ -30,6 +30,7 @@ final class SubscriptionStore {
     private var updatesTask: Task<Void, Never>?
 
     var isSubscribed: Bool {
+        if AppConfiguration.isDevMode { return true }
         guard entitlementJWS != nil else { return false }
         return expirationDate.map { $0 > Date() } ?? false
     }
@@ -133,6 +134,7 @@ final class SubscriptionStore {
 
         entitlementJWS = currentJWS
         expirationDate = currentExpiration
+        AppGroup.defaults.set(currentJWS, forKey: SettingsKeys.cloudEntitlementJWS)
     }
 
     private func observeTransactions() -> Task<Void, Never> {

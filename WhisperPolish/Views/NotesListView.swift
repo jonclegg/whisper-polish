@@ -15,9 +15,11 @@ struct NotesListView: View {
     @State private var recording = RecordingController()
     @State private var showComposer = false
     @State private var showSettings = false
+    @State private var showNewStyle = false
     @State private var didRunStartupWork = false
     @State private var launchRecordingGate = LaunchRecordingGate()
     @State private var showModelBanner = false
+    @State private var showKeyboardHandoff = false
 
     /// True while the selected engine is downloading or being optimized.
     private var isPreparingModel: Bool {
@@ -50,6 +52,9 @@ struct NotesListView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 12) {
+                    if showKeyboardHandoff {
+                        keyboardHandoffBanner
+                    }
                     if showModelBanner {
                         modelBanner
                     }
@@ -107,6 +112,9 @@ struct NotesListView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showNewStyle) {
+            StyleEditorView()
+        }
         .fullScreenCover(isPresented: .init(
             get: { !hasCompletedSetup },
             set: { _ in }
@@ -131,12 +139,47 @@ struct NotesListView: View {
             case .active:
                 launchRecordingGate.appBecameActive()
                 handleAppReady()
-            case .inactive, .background:
+            case .inactive:
                 launchRecordingGate.appMovedAway()
+            case .background:
+                launchRecordingGate.appMovedAway()
+                showKeyboardHandoff = false
             @unknown default:
                 break
             }
         }
+        .onOpenURL { url in
+            guard hasCompletedSetup else { return }
+            showComposer = false
+            showSettings = false
+            switch url {
+            case AppGroup.dictationURL:
+                path.removeAll()
+                Task { await recording.begin(forKeyboard: true) }
+            case AppGroup.newStyleURL:
+                showNewStyle = true
+            default:
+                break
+            }
+        }
+    }
+
+    private var keyboardHandoffBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "keyboard")
+                .foregroundStyle(Color.polishTeal)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Dictation sent to the keyboard")
+                    .font(.footnote.weight(.semibold))
+                Text("Tap ◀ in the top-left corner to go back. The text appears where you were typing.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
     }
 
     private var modelBanner: some View {
@@ -179,6 +222,7 @@ struct NotesListView: View {
     /// Stop is instant: the note appears immediately and transcription
     /// finishes in the background (the model warm-up usually beat us here).
     private func handleRecorded(url: URL, duration: TimeInterval) {
+        let forKeyboard = recording.isKeyboardDictation
         let note = Note(
             source: .voice,
             originalText: "",
@@ -187,11 +231,21 @@ struct NotesListView: View {
         )
         note.isTranscribing = true
         modelContext.insert(note)
-        path.append(note)
+        if forKeyboard {
+            showKeyboardHandoff = true
+        } else {
+            path.append(note)
+        }
         Task { @MainActor in
+            // Keyboard dictation users leave right after stopping; finish the transcript anyway.
+            let backgroundTask = UIApplication.shared.beginBackgroundTask()
+            defer { UIApplication.shared.endBackgroundTask(backgroundTask) }
             let text = (try? await transcription.transcribe(url: url)) ?? ""
             note.originalText = text
             note.isTranscribing = false
+            if forKeyboard && !text.isEmpty {
+                AppGroup.defaults.set(text, forKey: SettingsKeys.pendingDictation)
+            }
             if autoCopy && !text.isEmpty {
                 UIPasteboard.general.string = text
             }

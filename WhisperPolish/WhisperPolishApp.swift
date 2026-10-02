@@ -6,6 +6,10 @@ struct WhisperPolishApp: App {
     @State private var transcription = TranscriptionService()
     @State private var subscription = SubscriptionStore()
 
+    init() {
+        AppGroup.migrateStandardDefaults()
+    }
+
     var body: some Scene {
         WindowGroup {
             NotesListView()

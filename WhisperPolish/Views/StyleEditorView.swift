@@ -4,7 +4,7 @@ import SwiftUI
 /// instruction appended to the polish prompt.
 struct StyleEditorView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(SettingsKeys.customStyles) private var customStylesJSON = ""
+    @AppStorage(SettingsKeys.customStyles, store: AppGroup.defaults) private var customStylesJSON = ""
 
     /// Custom style being edited, or nil to create a new one.
     let editingID: String?
