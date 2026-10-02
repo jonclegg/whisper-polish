@@ -29,15 +29,20 @@ final class KeyGridView: UIView {
             case layoutSlide
         }
 
-        var cap: KeyCapView?
+        var cap: KeyCapView? {
+            didSet { if cap !== oldValue { landing = nil } }
+        }
         var mode: Mode = .key
         let origin: CGPoint
+        /// Where the touch landed in key units, while it's still on the key it landed on.
+        var landing: CGPoint?
         var trackpadX: CGFloat = 0
         var holdTimer: Timer?
 
-        init(cap: KeyCapView, origin: CGPoint) {
+        init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
             self.cap = cap
             self.origin = origin
+            self.landing = landing
         }
     }
 
@@ -115,14 +120,30 @@ final class KeyGridView: UIView {
         return rows[rowIndex].min { abs($0.frame.midX - point.x) < abs($1.frame.midX - point.x) }
     }
 
+    /// `point` in key units: x in key widths, y in rows.
+    private func keyUnits(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x / (bounds.width / KeySpec.rowUnits), y: point.y / (bounds.height / CGFloat(rows.count)))
+    }
+
+    /// Near a letter's edge, the neighbor that better fits the word wins, like
+    /// the system keyboard's invisible key resizing.
+    private func intendedCap(for nearest: KeyCapView, at point: CGPoint) -> KeyCapView {
+        guard configuration?.layout == .letters, case .character(let character) = nearest.spec.key else { return nearest }
+        let letter = model.resolveLetter(at: point, nearest: character)
+        guard letter != character else { return nearest }
+        return rows.joined().first { $0.spec.key == .character(letter) } ?? nearest
+    }
+
     // MARK: - Touches
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             commitHeldTypingKeys()
             let point = touch.location(in: self)
-            guard let cap = cap(at: point) else { continue }
-            let tracker = Tracker(cap: cap, origin: point)
+            guard let nearest = cap(at: point) else { continue }
+            let units = keyUnits(point)
+            let cap = intendedCap(for: nearest, at: units)
+            let tracker = Tracker(cap: cap, origin: point, landing: units)
             trackers[touch] = tracker
             UIDevice.current.playInputClick()
             press(cap)
@@ -149,7 +170,9 @@ final class KeyGridView: UIView {
                 if let next { press(next) }
             case .key:
                 guard let current = tracker.cap, current.spec.key.slides,
-                      let next = cap(at: point), next !== current, next.spec.key.slides else { continue }
+                      let next = cap(at: point), next !== current, next.spec.key.slides,
+                      // A resolved neighbor stays put while the finger rests on the key it touched.
+                      tracker.landing == nil || next !== cap(at: tracker.origin) else { continue }
                 release(current)
                 tracker.cap = next
                 press(next)
@@ -176,7 +199,7 @@ final class KeyGridView: UIView {
             case .key:
                 guard let cap = tracker.cap else { continue }
                 release(cap)
-                model.keyUp(cap.spec.key)
+                model.keyUp(cap.spec.key, at: tracker.landing)
             }
         }
     }
@@ -201,7 +224,7 @@ final class KeyGridView: UIView {
             tracker.holdTimer?.invalidate()
             trackers.removeValue(forKey: touch)
             release(cap)
-            model.keyUp(cap.spec.key)
+            model.keyUp(cap.spec.key, at: tracker.landing)
         }
     }
 

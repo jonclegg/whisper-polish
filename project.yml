@@ -113,6 +113,10 @@ targets:
     platform: iOS
     sources:
       - Tests
+      # The keyboard is an app extension, so its pure logic is compiled into the tests directly.
+      - WhisperPolishKeyboard/KeyLayout.swift
+      - WhisperPolishKeyboard/Lexicon.swift
+      - WhisperPolishKeyboard/TouchDecoder.swift
     dependencies:
       - target: WhisperPolish
     settings:

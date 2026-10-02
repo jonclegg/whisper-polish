@@ -54,6 +54,9 @@ final class KeyboardModel {
     @ObservationIgnored private var lastAutocorrection: Predictor.Autocorrection?
     @ObservationIgnored private var revertCandidate: Predictor.Autocorrection?
     @ObservationIgnored private var insertedSuggestionSpace = false
+    /// Where each recently typed letter was touched, in key units, so corrections
+    /// can tell a near miss on a neighboring key from a deliberate letter.
+    @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
 
     init(controller: KeyboardViewController) {
         self.controller = controller
@@ -71,6 +74,7 @@ final class KeyboardModel {
         needsInputModeSwitchKey = controller.needsInputModeSwitchKey
         layout = proxy.keyboardType == .numbersAndPunctuation ? .numbers : .letters
         isPickingStyle = false
+        letterTouches = []
         resetTypingState()
         syncWithDocument()
         guard hasFullAccess else { return }
@@ -102,10 +106,19 @@ final class KeyboardModel {
         }
     }
 
-    func keyUp(_ key: Key) {
+    /// The letter a touch at `point` (in key units) most likely meant, which near
+    /// a key's edge can be the neighbor that fits the word being typed.
+    func resolveLetter(at point: CGPoint, nearest: String) -> String {
+        guard layout == .letters, nearest.count == 1, let letter = nearest.first,
+              (proxy.selectedText ?? "").isEmpty else { return nearest }
+        let odds = predictor.letterOdds(for: TypingContext(before: textBeforeCursor))
+        return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
+    }
+
+    func keyUp(_ key: Key, at point: CGPoint? = nil) {
         switch key {
         case .character(let character):
-            type(character)
+            type(character, at: point)
         case .space:
             typeSpace()
         case .returnKey:
@@ -152,11 +165,18 @@ final class KeyboardModel {
     }
 
     func cursorMoveEnded() {
+        letterTouches = []
         resetTypingState()
         syncWithDocument()
     }
 
-    private func type(_ character: String) {
+    private func type(_ character: String, at point: CGPoint? = nil) {
+        if character.count == 1, let letter = character.lowercased().first, letter.isLetter {
+            letterTouches.append((letter, point))
+            if letterTouches.count > 48 { letterTouches.removeFirst(letterTouches.count - 48) }
+        } else {
+            letterTouches = []
+        }
         let text = shift == .off ? character : character.uppercased()
         if Self.attachingPunctuation.contains(character) {
             if insertedSuggestionSpace, textBeforeCursor.hasSuffix(" ") {
@@ -238,6 +258,7 @@ final class KeyboardModel {
 
     private func deleteBackward() {
         let autocorrection = lastAutocorrection
+        if !letterTouches.isEmpty { letterTouches.removeLast() }
         proxy.deleteBackward()
         didType()
         // Backing into an autocorrected word offers the original back.
@@ -251,6 +272,7 @@ final class KeyboardModel {
         let spaces = before.reversed().prefix { $0.isWhitespace }.count
         let word = before.dropLast(spaces).reversed().prefix { !$0.isWhitespace }.count
         for _ in 0..<max(spaces + word, 1) { proxy.deleteBackward() }
+        letterTouches = []
         didType()
     }
 
@@ -290,13 +312,25 @@ final class KeyboardModel {
             pendingCorrection = nil
             return
         }
+        let context = TypingContext(before: textBeforeCursor)
         let result = predictor.suggestions(
-            for: TypingContext(before: textBeforeCursor),
+            for: context,
+            touches: touches(for: context.partialWord),
             allowsCorrection: proxy.autocorrectionType != .no,
             revert: revertCandidate
         )
         if suggestions != result.suggestions { suggestions = result.suggestions }
         pendingCorrection = result.correction
+    }
+
+    /// Touch points for `word`, or nil for letters that weren't typed on these keys just now.
+    private func touches(for word: String) -> [CGPoint?] {
+        let letters = Array(word.lowercased())
+        let recent = letterTouches.suffix(letters.count)
+        guard recent.count == letters.count, recent.map({ $0.letter }) == letters else {
+            return Array(repeating: nil, count: letters.count)
+        }
+        return recent.map { $0.point }
     }
 
     private func updateTraits() {

@@ -90,7 +90,26 @@ final class Predictor {
         UserDefaults.standard.set(Array(learned.values), forKey: Self.learnedKey)
     }
 
-    func suggestions(for context: TypingContext, allowsCorrection: Bool, revert: Autocorrection?) -> Result {
+    /// How likely each letter is to come next in the word being typed, from
+    /// word frequency and the words that usually follow the previous ones.
+    func letterOdds(for context: TypingContext) -> [Character: Double] {
+        guard let lexicon else { return [:] }
+        let prefix = context.partialWord.lowercased()
+        let frequency = lexicon.nextLetterOdds(after: prefix)
+        guard !frequency.isEmpty else { return [:] }
+        var fromContext: [Character: Double] = [:]
+        for (index, word) in context.lookupKeys.flatMap({ lexicon.followers(of: $0) }).enumerated() {
+            let lower = word.lowercased()
+            guard lower.hasPrefix(prefix), let letter = lower.dropFirst(prefix.count).first else { continue }
+            fromContext[letter, default: 0] += 1 / Double(index + 1)
+        }
+        let contextual = Lexicon.normalized(fromContext)
+        guard !contextual.isEmpty else { return frequency }
+        return frequency.merging(contextual) { $0 + $1 }.mapValues { $0 / 2 }
+    }
+
+    /// `touches[i]` is where the i-th letter of the word being typed was touched, if known.
+    func suggestions(for context: TypingContext, touches: [CGPoint?], allowsCorrection: Bool, revert: Autocorrection?) -> Result {
         guard let lexicon else { return Result(suggestions: [], correction: nil) }
         let followers = context.lookupKeys.flatMap { lexicon.followers(of: $0) }
         let typed = context.partialWord
@@ -107,10 +126,17 @@ final class Predictor {
             suggestions = [Suggestion(text: revert.original, isQuoted: true, learns: true), Suggestion(text: typed)]
         } else {
             let known = isKnown(typed)
-            correction = allowsCorrection ? self.correction(for: typed, isKnown: known, followers: followers) : nil
+            let decoded = known ? [] : decode(typed, touches: touches, followers: followers, lexicon: lexicon)
+            correction = allowsCorrection ? self.correction(for: typed, isKnown: known, decoded: decoded) : nil
             suggestions = [Suggestion(text: typed, isQuoted: !known, learns: !known)]
             if let correction {
                 suggestions.append(Suggestion(text: correction, isAutocorrection: true))
+            }
+            for candidate in decoded where suggestions.count < 3 {
+                let text = Self.matchingCase(of: typed, candidate.word)
+                if !suggestions.contains(where: { $0.text.lowercased() == text.lowercased() }) {
+                    suggestions.append(Suggestion(text: text))
+                }
             }
         }
         let taken = Set(suggestions.map { $0.text.lowercased() })
@@ -132,7 +158,7 @@ final class Predictor {
         return checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: Self.language).location == NSNotFound
     }
 
-    private func correction(for typed: String, isKnown: Bool, followers: [String]) -> String? {
+    private func correction(for typed: String, isKnown: Bool, decoded: [WordDecoder.Candidate]) -> String? {
         let lower = typed.lowercased()
         if let replacement = replacements[lower] { return replacement }
         if let contraction = Self.contractions[lower], learned[lower] == nil {
@@ -141,14 +167,21 @@ final class Predictor {
         }
         // Leave known words, acronyms and deliberate mixed case alone.
         guard !isKnown, typed.count >= 2, !typed.dropFirst().contains(where: \.isUppercase) else { return nil }
+        return decoded.first.map { Self.matchingCase(of: typed, $0.word) }
+    }
+
+    /// Words the touches most likely meant: keys near each touch, common words,
+    /// and words that fit the previous ones, plus the spell checker's guesses
+    /// for added or missing letters.
+    private func decode(_ typed: String, touches: [CGPoint?], followers: [String], lexicon: Lexicon) -> [WordDecoder.Candidate] {
+        guard typed.count >= 2 else { return [] }
         let range = NSRange(location: 0, length: (typed as NSString).length)
         let guesses = (checker.guesses(forWordRange: range, in: typed, language: Self.language) ?? [])
             .filter { !$0.contains(" ") }
-        let likely = Set(followers.map { $0.lowercased() })
-        let best = guesses.first { likely.contains($0.lowercased()) }
-            ?? guesses.first { lexicon?.contains($0) == true }
-            ?? guesses.first
-        return best.map { Self.matchingCase(of: typed, $0) }
+        let touches = touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)
+        let decoded = WordDecoder(lexicon: lexicon).candidates(typed: typed, touches: touches, likelyWords: followers, guesses: guesses)
+        // Words with apostrophes have no key positions to match against.
+        return decoded.isEmpty ? guesses.prefix(3).map { WordDecoder.Candidate(word: $0, score: 0) } : decoded
     }
 
     private func unique(_ words: [String]) -> [String] {
