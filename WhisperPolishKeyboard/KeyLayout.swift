@@ -33,6 +33,20 @@ struct KeySpec: Hashable {
     let units: CGFloat
 }
 
+extension Array where Element == KeySpec {
+    /// The key whose area contains `x` (in key units) when the row is centered,
+    /// as `KeyGridView` lays it out. Points past either end belong to the end keys.
+    func index(atUnit x: CGFloat) -> Int? {
+        guard !isEmpty else { return nil }
+        var edge = (KeySpec.rowUnits - reduce(0) { $0 + $1.units }) / 2
+        for (index, spec) in enumerated() {
+            edge += spec.units
+            if x < edge { return index }
+        }
+        return count - 1
+    }
+}
+
 extension KeyboardLayout {
     func rows(bottomRow: BottomRowStyle, showsNextKeyboard: Bool) -> [[KeySpec]] {
         switch self {

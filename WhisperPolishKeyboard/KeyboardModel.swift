@@ -54,6 +54,9 @@ final class KeyboardModel {
     @ObservationIgnored private var lastAutocorrection: Predictor.Autocorrection?
     @ObservationIgnored private var revertCandidate: Predictor.Autocorrection?
     @ObservationIgnored private var insertedSuggestionSpace = false
+    /// Where each recently typed letter was touched, in key units, so corrections
+    /// can tell a near miss on a neighboring key from a deliberate letter.
+    @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
 
     init(controller: KeyboardViewController) {
         self.controller = controller
@@ -64,13 +67,45 @@ final class KeyboardModel {
     }
 
     private var proxy: UITextDocumentProxy { controller.textDocumentProxy }
-    private var textBeforeCursor: String { proxy.documentContextBeforeInput ?? "" }
+    private var textBeforeCursor: String { hostText.textBefore(reported: proxy.documentContextBeforeInput) }
+
+    // MARK: - Editing
+
+    @ObservationIgnored private var hostText = HostTextTracker()
+    @ObservationIgnored private var lastSyncedState = ""
+    @ObservationIgnored private var suggestionsScheduled = false
+
+    private func insert(_ text: String) {
+        hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: proxy.documentIdentifier)
+        proxy.insertText(text)
+    }
+
+    private func delete(count: Int) {
+        guard count > 0 else { return }
+        hostText.willDelete(count, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: proxy.documentIdentifier)
+        for _ in 0..<count { proxy.deleteBackward() }
+    }
+
+    private func forgetLocalEdits() {
+        hostText.forget()
+    }
+
+    private var documentState: String {
+        [
+            textBeforeCursor,
+            proxy.documentContextAfterInput ?? "",
+            proxy.selectedText ?? "",
+            "\(proxy.keyboardType?.rawValue ?? -1) \(proxy.returnKeyType?.rawValue ?? -1) \(proxy.autocapitalizationType?.rawValue ?? -1)",
+        ].joined(separator: "\u{1}")
+    }
 
     func refresh() {
         hasFullAccess = controller.hasFullAccess
         needsInputModeSwitchKey = controller.needsInputModeSwitchKey
         layout = proxy.keyboardType == .numbersAndPunctuation ? .numbers : .letters
         isPickingStyle = false
+        letterTouches = []
+        forgetLocalEdits()
         resetTypingState()
         syncWithDocument()
         guard hasFullAccess else { return }
@@ -80,7 +115,14 @@ final class KeyboardModel {
         selectedStyle = PolishStyle.find(id: defaultID, customJSON: customJSON) ?? .email
     }
 
+    /// The host reports each keystroke several times, mostly echoes of edits already synced.
     func textDidChange() {
+        hostText.reconcile(
+            reported: proxy.documentContextBeforeInput,
+            after: proxy.documentContextAfterInput,
+            document: proxy.documentIdentifier
+        )
+        guard hostText.local == nil, documentState != lastSyncedState else { return }
         syncWithDocument()
     }
 
@@ -102,10 +144,19 @@ final class KeyboardModel {
         }
     }
 
-    func keyUp(_ key: Key) {
+    /// The letter a touch at `point` (in key units) most likely meant, which near
+    /// a key's edge can be the neighbor that fits the word being typed.
+    func resolveLetter(at point: CGPoint, nearest: String) -> String {
+        guard layout == .letters, nearest.count == 1, let letter = nearest.first,
+              (proxy.selectedText ?? "").isEmpty else { return nearest }
+        let odds = predictor.letterOdds(for: TypingContext(before: textBeforeCursor))
+        return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
+    }
+
+    func keyUp(_ key: Key, at point: CGPoint? = nil) {
         switch key {
         case .character(let character):
-            type(character)
+            type(character, at: point)
         case .space:
             typeSpace()
         case .returnKey:
@@ -138,36 +189,45 @@ final class KeyboardModel {
         let typed = TypingContext(before: before).partialWord
         if suggestion.learns { predictor.learn(suggestion.text) }
         if typed.isEmpty, let last = before.last, !last.isWhitespace {
-            proxy.insertText(" ")
+            insert(" ")
         }
         replace(typed, with: suggestion.text)
-        proxy.insertText(" ")
+        insert(" ")
         layout = .letters
         didType()
         insertedSuggestionSpace = true
     }
 
     func moveCursor(by offset: Int) {
+        forgetLocalEdits()
         proxy.adjustTextPosition(byCharacterOffset: offset)
     }
 
     func cursorMoveEnded() {
+        letterTouches = []
+        forgetLocalEdits()
         resetTypingState()
         syncWithDocument()
     }
 
-    private func type(_ character: String) {
+    private func type(_ character: String, at point: CGPoint? = nil) {
+        if character.count == 1, let letter = character.lowercased().first, letter.isLetter {
+            letterTouches.append((letter, point))
+            if letterTouches.count > 48 { letterTouches.removeFirst(letterTouches.count - 48) }
+        } else {
+            letterTouches = []
+        }
         let text = shift == .off ? character : character.uppercased()
         if Self.attachingPunctuation.contains(character) {
             if insertedSuggestionSpace, textBeforeCursor.hasSuffix(" ") {
-                proxy.deleteBackward()
-                proxy.insertText(text + " ")
+                delete(count: 1)
+                insert(text + " ")
                 didType()
                 return
             }
             applyPendingCorrection()
         }
-        proxy.insertText(text)
+        insert(text)
         if character == "'" { layout = .letters }
         didType()
     }
@@ -177,11 +237,11 @@ final class KeyboardModel {
         let before = textBeforeCursor
         var correction: Predictor.Autocorrection?
         if before.hasSuffix(" "), let previous = before.dropLast().last, previous.isLetter || previous.isNumber {
-            proxy.deleteBackward()
-            proxy.insertText(". ")
+            delete(count: 1)
+            insert(". ")
         } else {
             correction = applyPendingCorrection()
-            proxy.insertText(" ")
+            insert(" ")
         }
         layout = .letters
         didType()
@@ -191,12 +251,13 @@ final class KeyboardModel {
     private func typeReturn() {
         guard returnKey.isEnabled else { return }
         applyPendingCorrection()
-        proxy.insertText("\n")
+        insert("\n")
         didType()
     }
 
     @discardableResult
     private func applyPendingCorrection() -> Predictor.Autocorrection? {
+        if suggestionsScheduled { updateSuggestions() }
         guard let correction = pendingCorrection else { return nil }
         let typed = TypingContext(before: textBeforeCursor).partialWord
         replace(typed, with: correction)
@@ -205,8 +266,8 @@ final class KeyboardModel {
 
     private func replace(_ typed: String, with text: String) {
         guard typed != text else { return }
-        for _ in 0..<typed.count { proxy.deleteBackward() }
-        proxy.insertText(text)
+        delete(count: typed.count)
+        insert(text)
     }
 
     // MARK: - Delete
@@ -238,19 +299,31 @@ final class KeyboardModel {
 
     private func deleteBackward() {
         let autocorrection = lastAutocorrection
-        proxy.deleteBackward()
+        if !letterTouches.isEmpty { letterTouches.removeLast() }
+        if textBeforeCursor.isEmpty {
+            // Nothing known before the cursor, so let the host decide what goes.
+            proxy.deleteBackward()
+            forgetLocalEdits()
+        } else {
+            delete(count: 1)
+        }
         didType()
         // Backing into an autocorrected word offers the original back.
         guard let autocorrection, TypingContext(before: textBeforeCursor).partialWord == autocorrection.replacement else { return }
         revertCandidate = autocorrection
-        updateSuggestions()
     }
 
     private func deleteWordBackward() {
         let before = textBeforeCursor
         let spaces = before.reversed().prefix { $0.isWhitespace }.count
         let word = before.dropLast(spaces).reversed().prefix { !$0.isWhitespace }.count
-        for _ in 0..<max(spaces + word, 1) { proxy.deleteBackward() }
+        if before.isEmpty {
+            proxy.deleteBackward()
+            forgetLocalEdits()
+        } else {
+            delete(count: spaces + word)
+        }
+        letterTouches = []
         didType()
     }
 
@@ -279,24 +352,49 @@ final class KeyboardModel {
     }
 
     private func syncWithDocument() {
+        lastSyncedState = documentState
         updateAutoCapitalization()
         updateTraits()
-        updateSuggestions()
+        scheduleSuggestions()
+    }
+
+    /// Suggestions wait until the keystroke has been handled, so a slow
+    /// lookup never holds up the next key. Corrections refresh them first.
+    private func scheduleSuggestions() {
+        guard !suggestionsScheduled else { return }
+        suggestionsScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, suggestionsScheduled else { return }
+            updateSuggestions()
+        }
     }
 
     private func updateSuggestions() {
+        suggestionsScheduled = false
         guard (proxy.selectedText ?? "").isEmpty else {
             if !suggestions.isEmpty { suggestions = [] }
             pendingCorrection = nil
             return
         }
+        let context = TypingContext(before: textBeforeCursor)
         let result = predictor.suggestions(
-            for: TypingContext(before: textBeforeCursor),
+            for: context,
+            touches: touches(for: context.partialWord),
             allowsCorrection: proxy.autocorrectionType != .no,
             revert: revertCandidate
         )
         if suggestions != result.suggestions { suggestions = result.suggestions }
         pendingCorrection = result.correction
+    }
+
+    /// Touch points for `word`, or nil for letters that weren't typed on these keys just now.
+    private func touches(for word: String) -> [CGPoint?] {
+        let letters = Array(word.lowercased())
+        let recent = letterTouches.suffix(letters.count)
+        guard recent.count == letters.count, recent.map({ $0.letter }) == letters else {
+            return Array(repeating: nil, count: letters.count)
+        }
+        return recent.map { $0.point }
     }
 
     private func updateTraits() {
@@ -395,6 +493,7 @@ final class KeyboardModel {
         let jws = AppGroup.defaults.string(forKey: SettingsKeys.cloudEntitlementJWS)
         let style = selectedStyle
         AppGroup.defaults.set(style.id, forKey: SettingsKeys.defaultStyle)
+        forgetLocalEdits()
         show(.polishing)
         polishTask = Task {
             let selected = proxy.selectedText ?? ""
@@ -411,6 +510,7 @@ final class KeyboardModel {
                     for _ in 0..<text.count { proxy.deleteBackward() }
                 }
                 proxy.insertText(result.text)
+                forgetLocalEdits()
                 undo = (text, result.text)
                 show(.polished)
                 syncWithDocument()
@@ -428,6 +528,7 @@ final class KeyboardModel {
         guard let undo else { return }
         for _ in 0..<undo.polished.count { proxy.deleteBackward() }
         proxy.insertText(undo.original)
+        forgetLocalEdits()
         self.undo = nil
         notice = nil
         syncWithDocument()
@@ -450,7 +551,7 @@ final class KeyboardModel {
         guard hasFullAccess,
               let text = AppGroup.defaults.string(forKey: SettingsKeys.pendingDictation) else { return }
         AppGroup.defaults.removeObject(forKey: SettingsKeys.pendingDictation)
-        proxy.insertText(text)
+        insert(text)
         syncWithDocument()
         show(.dictated)
     }

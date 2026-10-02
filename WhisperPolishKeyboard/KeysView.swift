@@ -29,15 +29,20 @@ final class KeyGridView: UIView {
             case layoutSlide
         }
 
-        var cap: KeyCapView?
+        var cap: KeyCapView? {
+            didSet { if cap !== oldValue { landing = nil } }
+        }
         var mode: Mode = .key
         let origin: CGPoint
+        /// Where the touch landed in key units, while it's still on the key it landed on.
+        var landing: CGPoint?
         var trackpadX: CGFloat = 0
         var holdTimer: Timer?
 
-        init(cap: KeyCapView, origin: CGPoint) {
+        init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
             self.cap = cap
             self.origin = origin
+            self.landing = landing
         }
     }
 
@@ -45,6 +50,9 @@ final class KeyGridView: UIView {
     private static let accentHoldDelay: TimeInterval = 0.4
     private static let trackpadHoldDelay: TimeInterval = 0.5
     private static let pointsPerCharacter: CGFloat = 9
+    /// How far past its key a pressed finger has to slide before the key changes,
+    /// so a thumb rolling as it presses doesn't land on the neighbor.
+    private static let slideHysteresis: CGFloat = 12
 
     private unowned let model: KeyboardModel
     private var configuration: Configuration?
@@ -57,6 +65,9 @@ final class KeyGridView: UIView {
         self.model = model
         super.init(frame: .zero)
         isMultipleTouchEnabled = true
+        // Not `.clear`: keyboard extensions drop touches on fully transparent
+        // pixels, which would lose every tap in the gaps between keys.
+        backgroundColor = UIColor(white: 0, alpha: 0.02)
         clipsToBounds = false
         popup.isHidden = true
         accents.isHidden = true
@@ -108,11 +119,26 @@ final class KeyGridView: UIView {
         }
     }
 
-    /// The key nearest the touch within its row, so gaps and row edges still hit a key.
+    /// The key whose area holds the touch, gaps included; row edges belong to the end keys.
     private func cap(at point: CGPoint) -> KeyCapView? {
-        guard !rows.isEmpty, bounds.height > 0 else { return nil }
-        let rowIndex = min(max(Int(point.y / (bounds.height / CGFloat(rows.count))), 0), rows.count - 1)
-        return rows[rowIndex].min { abs($0.frame.midX - point.x) < abs($1.frame.midX - point.x) }
+        guard !rows.isEmpty, bounds.width > 0, bounds.height > 0 else { return nil }
+        let units = keyUnits(point)
+        let row = rows[min(max(Int(units.y), 0), rows.count - 1)]
+        return row.map(\.spec).index(atUnit: units.x).map { row[$0] }
+    }
+
+    /// `point` in key units: x in key widths, y in rows.
+    private func keyUnits(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x / (bounds.width / KeySpec.rowUnits), y: point.y / (bounds.height / CGFloat(rows.count)))
+    }
+
+    /// Near a letter's edge, the neighbor that better fits the word wins, like
+    /// the system keyboard's invisible key resizing.
+    private func intendedCap(for nearest: KeyCapView, at point: CGPoint) -> KeyCapView {
+        guard configuration?.layout == .letters, case .character(let character) = nearest.spec.key else { return nearest }
+        let letter = model.resolveLetter(at: point, nearest: character)
+        guard letter != character else { return nearest }
+        return rows.joined().first { $0.spec.key == .character(letter) } ?? nearest
     }
 
     // MARK: - Touches
@@ -121,8 +147,10 @@ final class KeyGridView: UIView {
         for touch in touches {
             commitHeldTypingKeys()
             let point = touch.location(in: self)
-            guard let cap = cap(at: point) else { continue }
-            let tracker = Tracker(cap: cap, origin: point)
+            guard let nearest = cap(at: point) else { continue }
+            let units = keyUnits(point)
+            let cap = intendedCap(for: nearest, at: units)
+            let tracker = Tracker(cap: cap, origin: point, landing: units)
             trackers[touch] = tracker
             UIDevice.current.playInputClick()
             press(cap)
@@ -149,7 +177,10 @@ final class KeyGridView: UIView {
                 if let next { press(next) }
             case .key:
                 guard let current = tracker.cap, current.spec.key.slides,
-                      let next = cap(at: point), next !== current, next.spec.key.slides else { continue }
+                      !current.frame.insetBy(dx: -Self.slideHysteresis, dy: -Self.slideHysteresis).contains(point),
+                      let next = cap(at: point), next !== current, next.spec.key.slides,
+                      // A resolved neighbor stays put while the finger rests on the key it touched.
+                      tracker.landing == nil || next !== cap(at: tracker.origin) else { continue }
                 release(current)
                 tracker.cap = next
                 press(next)
@@ -176,11 +207,14 @@ final class KeyGridView: UIView {
             case .key:
                 guard let cap = tracker.cap else { continue }
                 release(cap)
-                model.keyUp(cap.spec.key)
+                model.keyUp(cap.spec.key, at: tracker.landing)
             }
         }
     }
 
+    /// The system cancels touches near the screen edges when it suspects a
+    /// system swipe; a letter tap that gets cancelled was still a letter tap.
+    /// Space is left out because swiping up from the bottom row goes home.
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             guard let tracker = trackers.removeValue(forKey: touch) else { continue }
@@ -189,7 +223,11 @@ final class KeyGridView: UIView {
             if tracker.mode == .accents { accents.hide() }
             guard let cap = tracker.cap else { continue }
             release(cap)
-            model.keyCancelled(cap.spec.key)
+            if tracker.mode == .key, case .character = cap.spec.key {
+                model.keyUp(cap.spec.key, at: tracker.landing)
+            } else {
+                model.keyCancelled(cap.spec.key)
+            }
         }
     }
 
@@ -201,7 +239,7 @@ final class KeyGridView: UIView {
             tracker.holdTimer?.invalidate()
             trackers.removeValue(forKey: touch)
             release(cap)
-            model.keyUp(cap.spec.key)
+            model.keyUp(cap.spec.key, at: tracker.landing)
         }
     }
 
@@ -395,6 +433,8 @@ final class KeyCapView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         cap.frame = bounds.inset(by: capInsets)
+        // Without a path, every key's shadow is re-rendered offscreen each frame.
+        cap.layer.shadowPath = UIBezierPath(roundedRect: cap.bounds, cornerRadius: cap.layer.cornerRadius).cgPath
         label.frame = cap.bounds.insetBy(dx: 2, dy: 0)
         icon.frame = cap.bounds
     }
@@ -441,6 +481,7 @@ final class KeyPopupView: UIView {
         self.owner = owner
         label.text = text
         frame = CGRect(x: capFrame.minX - 6, y: capFrame.minY - 50, width: capFrame.width + 12, height: capFrame.height + 50)
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
         label.frame = CGRect(x: 4, y: 0, width: bounds.width - 8, height: 54)
         isHidden = false
     }
@@ -485,6 +526,7 @@ final class AccentPopupView: UIView {
         growsLeft = capFrame.minX - Self.padding + width > container.maxX
         let x = growsLeft ? capFrame.maxX + Self.padding - width : capFrame.minX - Self.padding
         frame = CGRect(x: max(x, container.minX), y: capFrame.minY - capFrame.height - 10, width: width, height: capFrame.height + 4)
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
         labels = displayed.enumerated().map { index, text in
             let label = UILabel()
             label.text = text
