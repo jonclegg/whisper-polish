@@ -6,7 +6,11 @@ enum Polisher {
     static func polish(text: String, style: PolishStyle, transactionJWS: String?) async throws -> (result: PolishResult, usage: CloudUsage?) {
         if AppConfiguration.isDevMode {
             if style.id == PolishStyle.cleanup.id {
-                return (try await PolishService().cleanUpWithGroq(text: text, apiKey: AppConfiguration.devGroqKey), nil)
+                let groqKey = AppConfiguration.devGroqKey
+                if groqKey.isEmpty {
+                    return (try await PolishService().cleanUpWithOpenRouter(text: text, model: .default, apiKey: AppConfiguration.devOpenRouterKey), nil)
+                }
+                return (try await PolishService().cleanUpWithGroq(text: text, apiKey: groqKey), nil)
             }
             let result = try await PolishService().polish(text: text, style: style, model: .default, apiKey: AppConfiguration.devOpenRouterKey)
             return (result, nil)

@@ -56,21 +56,30 @@ final class PolishService {
 
     /// "Just clean it up" through Groq with Fixit's native-speaker prompt.
     func cleanUpWithGroq(text: String, apiKey: String) async throws -> PolishResult {
+        try await cleanUp(text: text, endpoint: Self.groqEndpoint, model: Self.groqModel, reasoning: nil, apiKey: apiKey)
+    }
+
+    /// The same clean-up through OpenRouter, for dev builds without a Groq key.
+    func cleanUpWithOpenRouter(text: String, model: PolishModel, apiKey: String) async throws -> PolishResult {
+        try await cleanUp(text: text, endpoint: Self.openRouterEndpoint, model: model.rawValue, reasoning: .init(enabled: false), apiKey: apiKey)
+    }
+
+    private func cleanUp(text: String, endpoint: URL, model: String, reasoning: ChatRequest.Reasoning?, apiKey: String) async throws -> PolishResult {
         guard !apiKey.isEmpty else { throw PolishError.missingAPIKey }
         let output = try await chat(
-            endpoint: Self.groqEndpoint,
+            endpoint: endpoint,
             request: ChatRequest(
-                model: Self.groqModel,
+                model: model,
                 messages: [
                     Message(role: "system", content: Self.nativeSpeakerPrompt),
                     Message(role: "user", content: text),
                 ],
                 temperature: 0.2,
-                reasoning: nil
+                reasoning: reasoning
             ),
             apiKey: apiKey
         )
-        return PolishResult(text: output, style: .cleanup, model: Self.groqModel)
+        return PolishResult(text: output, style: .cleanup, model: model)
     }
 
     // MARK: - Prompt
