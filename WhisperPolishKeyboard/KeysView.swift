@@ -39,7 +39,10 @@ final class KeyGridView: UIView {
         var location: CGPoint
         var trackpadX: CGFloat = 0
         var trackpadY: CGFloat = 0
+        var trackpadTime: TimeInterval = 0
         var pad: CursorTrackpad?
+        var padIsStale = false
+        var lastCursorMove: TimeInterval = 0
         var holdTimer: Timer?
 
         init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
@@ -54,7 +57,14 @@ final class KeyGridView: UIView {
     private static let accentHoldDelay: TimeInterval = 0.4
     private static let trackpadHoldDelay: TimeInterval = 0.5
     private static let pointsPerCharacter: CGFloat = 9
-    private static let pointsPerLine: CGFloat = 22
+    /// Slow drags move a line per this much travel, and fast drags several
+    /// times further, so one swipe up the keyboard can cross a long note.
+    private static let pointsPerLine: CGFloat = 12
+    private static let lineSpeedForDoubleGain: CGFloat = 400
+    private static let maxLineGain: CGFloat = 4
+    /// The host applies cursor moves asynchronously, so its text is only
+    /// re-read once it has had time to catch up.
+    private static let hostCatchUp: TimeInterval = 0.08
     /// How far past its key a pressed finger has to slide before the key changes,
     /// so a thumb rolling as it presses doesn't land on the neighbor.
     private static let slideHysteresis: CGFloat = 12
@@ -172,7 +182,7 @@ final class KeyGridView: UIView {
             tracker.location = point
             switch tracker.mode {
             case .trackpad:
-                moveCursor(tracker, to: point)
+                moveCursor(tracker, to: point, at: touch.timestamp)
             case .accents:
                 accents.select(atX: convert(point, to: accents).x)
             case .layoutSlide:
@@ -296,28 +306,56 @@ final class KeyGridView: UIView {
         tracker.mode = .trackpad
         tracker.trackpadX = point.x
         tracker.trackpadY = point.y
+        tracker.trackpadTime = ProcessInfo.processInfo.systemUptime
         tracker.pad = nil
+        tracker.padIsStale = false
         if let cap = tracker.cap { release(cap) }
         UIView.animate(withDuration: 0.15) {
             self.rows.joined().forEach { $0.setLabelHidden(true) }
         }
     }
 
-    private func moveCursor(_ tracker: Tracker, to point: CGPoint) {
+    private func moveCursor(_ tracker: Tracker, to point: CGPoint, at time: TimeInterval) {
         let xSteps = Int((point.x - tracker.trackpadX) / Self.pointsPerCharacter)
-        let ySteps = Int((point.y - tracker.trackpadY) / Self.pointsPerLine)
-        guard xSteps != 0 || ySteps != 0 else { return }
-        if tracker.pad == nil {
-            let context = model.trackpadContext()
-            tracker.pad = CursorTrackpad(before: context.before, after: context.after, keyboardWidth: bounds.width)
-        }
-        guard var pad = tracker.pad else { return }
-        let moved = pad.move(horizontal: xSteps, vertical: ySteps)
-        tracker.pad = pad
         tracker.trackpadX += CGFloat(xSteps) * Self.pointsPerCharacter
-        tracker.trackpadY += CGFloat(moved.consumedVertical) * Self.pointsPerLine
-        guard moved.offset != 0 else { return }
-        model.moveCursor(by: moved.offset)
+        let dy = point.y - tracker.trackpadY
+        let speed = abs(dy) / CGFloat(max(time - tracker.trackpadTime, 1.0 / 120))
+        let gain = min(1 + speed / Self.lineSpeedForDoubleGain, Self.maxLineGain)
+        tracker.trackpadY = point.y
+        tracker.trackpadTime = time
+
+        if tracker.pad == nil || (tracker.padIsStale && time - tracker.lastCursorMove > Self.hostCatchUp) {
+            let context = model.trackpadContext()
+            tracker.pad = CursorTrackpad(
+                before: context.before,
+                after: context.after,
+                keyboardWidth: bounds.width,
+                preferredColumn: tracker.pad?.preferredColumn
+            )
+            tracker.padIsStale = false
+        }
+        guard var pad = tracker.pad, !tracker.padIsStale else { return }
+        var offset = 0
+        if xSteps != 0 {
+            let moved = pad.moveHorizontally(by: xSteps)
+            offset += moved.offset
+            tracker.padIsStale = moved.reachedEdge
+        }
+        if dy != 0, !tracker.padIsStale {
+            let moved = pad.moveVertically(by: Double(dy * gain / Self.pointsPerLine))
+            offset += moved.offset
+            if moved.reachedEdge {
+                tracker.padIsStale = true
+                // Hosts cut the shared text at paragraphs, so stepping over
+                // the boundary is what lets the next read see further.
+                if dy < 0, pad.isAtStart { offset -= 1 }
+                if dy > 0, pad.isAtEnd { offset += 1 }
+            }
+        }
+        tracker.pad = pad
+        guard offset != 0 else { return }
+        tracker.lastCursorMove = time
+        model.moveCursor(by: offset)
     }
 
     private func endTrackpad() {
