@@ -6,6 +6,9 @@ import Foundation
 /// them: right after the keyboard's edits the reported context can be several
 /// keystrokes behind, and corrections computed from it delete the wrong
 /// characters. So the keyboard's own text wins until the host catches up.
+///
+/// Each read of the host's text is a round trip to the host app, so the host
+/// is only asked when the keyboard doesn't already know the answer.
 struct HostTextTracker {
     /// Reports this long after the last edit that still disagree mean the
     /// user or the app changed the text.
@@ -18,18 +21,30 @@ struct HostTextTracker {
     private var after: String?
     private var lastEdit = Date.distantPast
 
-    func textBefore(reported: String?) -> String {
-        local ?? reported ?? ""
+    func textBefore(reported: @autoclosure () -> String?) -> String {
+        local ?? reported() ?? ""
     }
 
     /// Call before handing the insert to the host.
-    mutating func willInsert(_ text: String, reported: String?, after: String?, document: UUID?, at now: Date = Date()) {
-        record(textBefore(reported: reported) + text, after: after, document: document, at: now)
+    mutating func willInsert(
+        _ text: String,
+        reported: @autoclosure () -> String?,
+        after: @autoclosure () -> String?,
+        document: @autoclosure () -> UUID?,
+        at now: Date = Date()
+    ) {
+        record(textBefore(reported: reported()) + text, after: after(), document: document(), at: now)
     }
 
     /// Call before handing the deletes to the host.
-    mutating func willDelete(_ count: Int, reported: String?, after: String?, document: UUID?, at now: Date = Date()) {
-        record(String(textBefore(reported: reported).dropLast(count)), after: after, document: document, at: now)
+    mutating func willDelete(
+        _ count: Int,
+        reported: @autoclosure () -> String?,
+        after: @autoclosure () -> String?,
+        document: @autoclosure () -> UUID?,
+        at now: Date = Date()
+    ) {
+        record(String(textBefore(reported: reported()).dropLast(count)), after: after(), document: document(), at: now)
     }
 
     /// For edits that can't be followed character by character, like cursor moves.
@@ -50,10 +65,13 @@ struct HostTextTracker {
         }
     }
 
-    private mutating func record(_ text: String, after: String?, document: UUID?, at now: Date) {
-        if self.local == nil { self.after = after }
+    /// The text after the cursor and the document only need reading when local tracking starts.
+    private mutating func record(_ text: String, after: @autoclosure () -> String?, document: @autoclosure () -> UUID?, at now: Date) {
+        if local == nil {
+            self.after = after()
+            self.document = document()
+        }
         local = String(text.suffix(Self.length))
-        self.document = document
         lastEdit = now
     }
 }

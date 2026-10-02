@@ -89,6 +89,21 @@ final class HostTextTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.textBefore(reported: "elsewhere"), "elsewhere")
     }
 
+    func testOnlyAsksTheHostUntilItKnowsTheText() {
+        var tracker = HostTextTracker()
+        var reads = 0
+        func host() -> String? {
+            reads += 1
+            return "Let"
+        }
+        tracker.willInsert(" ", reported: host(), after: host(), document: document, at: start)
+        XCTAssertEqual(reads, 2)
+        tracker.willInsert("m", reported: host(), after: host(), document: document, at: at(0.05))
+        tracker.willDelete(1, reported: host(), after: host(), document: document, at: at(0.1))
+        XCTAssertEqual(tracker.textBefore(reported: host()), "Let ")
+        XCTAssertEqual(reads, 2)
+    }
+
     func testKeepsOnlyRecentText() {
         var tracker = HostTextTracker()
         tracker.willInsert(String(repeating: "a", count: 1000), reported: "", after: nil, document: document, at: start)
