@@ -12,8 +12,8 @@ final class HostTextTrackerTests: XCTestCase {
     private func type(_ text: String, into tracker: inout HostTextTracker, reported: String, from seconds: TimeInterval) {
         for (index, character) in text.enumerated() {
             let now = at(seconds + Double(index) * 0.05)
-            tracker.reconcile(reported: reported, document: document, at: now)
-            tracker.willInsert(String(character), reported: reported, document: document, at: now)
+            tracker.reconcile(reported: reported, after: nil, document: document, at: now)
+            tracker.willInsert(String(character), reported: reported, after: nil, document: document, at: now)
         }
     }
 
@@ -27,7 +27,7 @@ final class HostTextTrackerTests: XCTestCase {
         var tracker = HostTextTracker()
         // The host is still reporting "Let" while "Let me" is typed.
         type(" me", into: &tracker, reported: "Let", from: 0)
-        tracker.reconcile(reported: "Let m", document: document, at: at(0.2))
+        tracker.reconcile(reported: "Let m", after: nil, document: document, at: at(0.2))
         XCTAssertEqual(tracker.textBefore(reported: "Let m"), "Let me")
         XCTAssertEqual(TypingContext(before: tracker.textBefore(reported: "Let m")).partialWord, "me")
     }
@@ -35,14 +35,14 @@ final class HostTextTrackerTests: XCTestCase {
     func testDeletesApplyToItsOwnText() {
         var tracker = HostTextTracker()
         type(" me", into: &tracker, reported: "Let", from: 0)
-        tracker.willDelete(2, reported: "Let", document: document, at: at(0.2))
+        tracker.willDelete(2, reported: "Let", after: nil, document: document, at: at(0.2))
         XCTAssertEqual(tracker.textBefore(reported: "Let"), "Let ")
     }
 
     func testHandsBackToTheHostOnceItCatchesUp() {
         var tracker = HostTextTracker()
         type(" me", into: &tracker, reported: "Let", from: 0)
-        tracker.reconcile(reported: "Let me", document: document, at: at(0.3))
+        tracker.reconcile(reported: "Let me", after: nil, document: document, at: at(0.3))
         XCTAssertNil(tracker.local)
         XCTAssertEqual(tracker.textBefore(reported: "Let me"), "Let me")
     }
@@ -50,28 +50,35 @@ final class HostTextTrackerTests: XCTestCase {
     func testCatchingUpAllowsTheHostToReportOnlyTheLastSentence() {
         var tracker = HostTextTracker()
         type(" me", into: &tracker, reported: "Hi there. Let", from: 0)
-        tracker.reconcile(reported: "Let me", document: document, at: at(0.3))
+        tracker.reconcile(reported: "Let me", after: nil, document: document, at: at(0.3))
         XCTAssertNil(tracker.local)
     }
 
     func testAStaleEmptyReportDoesNotCountAsCaughtUp() {
         var tracker = HostTextTracker()
         type("hi", into: &tracker, reported: "", from: 0)
-        tracker.reconcile(reported: "", document: document, at: at(0.2))
+        tracker.reconcile(reported: "", after: nil, document: document, at: at(0.2))
         XCTAssertEqual(tracker.textBefore(reported: ""), "hi")
     }
 
     func testGivesWayWhenTheTextChangedElsewhere() {
         var tracker = HostTextTracker()
         type("hi", into: &tracker, reported: "", from: 0)
-        tracker.reconcile(reported: "something else", document: document, at: at(HostTextTracker.hostLag + 1))
+        tracker.reconcile(reported: "something else", after: nil, document: document, at: at(HostTextTracker.hostLag + 1))
         XCTAssertNil(tracker.local)
     }
 
     func testGivesWayInAnotherTextField() {
         var tracker = HostTextTracker()
         type("hi", into: &tracker, reported: "", from: 0)
-        tracker.reconcile(reported: "", document: UUID(), at: at(0.2))
+        tracker.reconcile(reported: "", after: nil, document: UUID(), at: at(0.2))
+        XCTAssertNil(tracker.local)
+    }
+
+    func testGivesWayWhenTheCursorMovesRightAfterTyping() {
+        var tracker = HostTextTracker()
+        type("hel", into: &tracker, reported: "", from: 0)
+        tracker.reconcile(reported: "Some", after: " other text", document: document, at: at(0.2))
         XCTAssertNil(tracker.local)
     }
 
@@ -84,7 +91,7 @@ final class HostTextTrackerTests: XCTestCase {
 
     func testKeepsOnlyRecentText() {
         var tracker = HostTextTracker()
-        tracker.willInsert(String(repeating: "a", count: 1000), reported: "", document: document, at: start)
+        tracker.willInsert(String(repeating: "a", count: 1000), reported: "", after: nil, document: document, at: start)
         XCTAssertEqual(tracker.local?.count, HostTextTracker.length)
     }
 }

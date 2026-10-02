@@ -76,13 +76,13 @@ final class KeyboardModel {
     @ObservationIgnored private var suggestionsScheduled = false
 
     private func insert(_ text: String) {
-        hostText.willInsert(text, reported: proxy.documentContextBeforeInput, document: proxy.documentIdentifier)
+        hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: proxy.documentIdentifier)
         proxy.insertText(text)
     }
 
     private func delete(count: Int) {
         guard count > 0 else { return }
-        hostText.willDelete(count, reported: proxy.documentContextBeforeInput, document: proxy.documentIdentifier)
+        hostText.willDelete(count, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: proxy.documentIdentifier)
         for _ in 0..<count { proxy.deleteBackward() }
     }
 
@@ -117,7 +117,11 @@ final class KeyboardModel {
 
     /// The host reports each keystroke several times, mostly echoes of edits already synced.
     func textDidChange() {
-        hostText.reconcile(reported: proxy.documentContextBeforeInput, document: proxy.documentIdentifier)
+        hostText.reconcile(
+            reported: proxy.documentContextBeforeInput,
+            after: proxy.documentContextAfterInput,
+            document: proxy.documentIdentifier
+        )
         guard hostText.local == nil, documentState != lastSyncedState else { return }
         syncWithDocument()
     }

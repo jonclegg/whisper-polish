@@ -14,6 +14,8 @@ struct HostTextTracker {
 
     private(set) var local: String?
     private var document: UUID?
+    /// Typing never changes the text after the cursor, so a different report means the cursor moved.
+    private var after: String?
     private var lastEdit = Date.distantPast
 
     func textBefore(reported: String?) -> String {
@@ -21,13 +23,13 @@ struct HostTextTracker {
     }
 
     /// Call before handing the insert to the host.
-    mutating func willInsert(_ text: String, reported: String?, document: UUID?, at now: Date = Date()) {
-        record(textBefore(reported: reported) + text, document: document, at: now)
+    mutating func willInsert(_ text: String, reported: String?, after: String?, document: UUID?, at now: Date = Date()) {
+        record(textBefore(reported: reported) + text, after: after, document: document, at: now)
     }
 
     /// Call before handing the deletes to the host.
-    mutating func willDelete(_ count: Int, reported: String?, document: UUID?, at now: Date = Date()) {
-        record(String(textBefore(reported: reported).dropLast(count)), document: document, at: now)
+    mutating func willDelete(_ count: Int, reported: String?, after: String?, document: UUID?, at now: Date = Date()) {
+        record(String(textBefore(reported: reported).dropLast(count)), after: after, document: document, at: now)
     }
 
     /// For edits that can't be followed character by character, like cursor moves.
@@ -37,17 +39,19 @@ struct HostTextTracker {
 
     /// Goes back to the host's text once it has caught up, or once it's clear
     /// something else changed the text.
-    mutating func reconcile(reported: String?, document: UUID?, at now: Date = Date()) {
+    mutating func reconcile(reported: String?, after: String?, document: UUID?, at now: Date = Date()) {
         guard let local else { return }
         let reported = reported ?? ""
         // Hosts only report text back to a sentence or paragraph boundary.
         let caughtUp = reported.isEmpty ? local.isEmpty : local.hasSuffix(reported)
-        if caughtUp || document != self.document || now.timeIntervalSince(lastEdit) > Self.hostLag {
+        let moved = (after ?? "") != (self.after ?? "") || document != self.document
+        if caughtUp || moved || now.timeIntervalSince(lastEdit) > Self.hostLag {
             self.local = nil
         }
     }
 
-    private mutating func record(_ text: String, document: UUID?, at now: Date) {
+    private mutating func record(_ text: String, after: String?, document: UUID?, at now: Date) {
+        if self.local == nil { self.after = after }
         local = String(text.suffix(Self.length))
         self.document = document
         lastEdit = now
