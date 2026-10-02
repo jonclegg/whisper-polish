@@ -25,6 +25,35 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertEqual(centers["m"], CGPoint(x: 8, y: 2.5))
     }
 
+    private func key(atUnit x: CGFloat, row: Int, bottomRow: BottomRowStyle = .standard, showsNextKeyboard: Bool = false) -> Key? {
+        let keys = KeyboardLayout.letters.rows(bottomRow: bottomRow, showsNextKeyboard: showsNextKeyboard)[row]
+        return keys.index(atUnit: x).map { keys[$0].key }
+    }
+
+    func testTapsAnywhereOnTheSpaceBarTypeASpace() {
+        // The space bar is far wider than its neighbors, so its edges are closer to their centers than to its own.
+        XCTAssertEqual(key(atUnit: 1.3, row: 3), .space)
+        XCTAssertEqual(key(atUnit: 7.9, row: 3), .space)
+        XCTAssertEqual(key(atUnit: 1.2, row: 3), .layout(.numbers))
+        XCTAssertEqual(key(atUnit: 8.1, row: 3), .returnKey)
+        XCTAssertEqual(key(atUnit: 2.6, row: 3, showsNextKeyboard: true), .space)
+        XCTAssertEqual(key(atUnit: 2.4, row: 3, showsNextKeyboard: true), .nextKeyboard)
+    }
+
+    func testShiftAndDeleteKeepTheirWholeWidth() {
+        XCTAssertEqual(key(atUnit: 1.4, row: 2), .shift)
+        XCTAssertEqual(key(atUnit: 1.6, row: 2), .character("z"))
+        XCTAssertEqual(key(atUnit: 8.6, row: 2), .delete)
+        XCTAssertEqual(key(atUnit: 8.4, row: 2), .character("m"))
+    }
+
+    func testRowEndsBelongToTheEndKeys() {
+        XCTAssertEqual(key(atUnit: 0.1, row: 1), .character("a"))
+        XCTAssertEqual(key(atUnit: 9.9, row: 1), .character("l"))
+        XCTAssertEqual(key(atUnit: -1, row: 0), .character("q"))
+        XCTAssertEqual(key(atUnit: 11, row: 0), .character("p"))
+    }
+
     // MARK: - Letter odds
 
     func testNextLetterOddsFollowCommonWords() throws {
