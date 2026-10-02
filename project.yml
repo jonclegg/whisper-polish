@@ -118,6 +118,7 @@ targets:
       - WhisperPolishKeyboard/KeyLayout.swift
       - WhisperPolishKeyboard/Lexicon.swift
       - WhisperPolishKeyboard/Predictor.swift
+      - WhisperPolishKeyboard/TextAroundImages.swift
       - WhisperPolishKeyboard/TouchDecoder.swift
       - WhisperPolishKeyboard/TypingContext.swift
     dependencies:

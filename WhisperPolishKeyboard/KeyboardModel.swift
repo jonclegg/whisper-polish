@@ -45,7 +45,8 @@ final class KeyboardModel {
     @ObservationIgnored private var polishTask: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var deleteRepeatTask: Task<Void, Never>?
-    @ObservationIgnored private var undo: (original: String, polished: String)?
+    /// The polished text's runs between images, before and after.
+    @ObservationIgnored private var undo: (original: [String], polished: [String])?
     @ObservationIgnored private var lastShiftTap = Date.distantPast
     @ObservationIgnored private var isShiftHeld = false
     @ObservationIgnored private var typedWhileShiftHeld = false
@@ -497,21 +498,28 @@ final class KeyboardModel {
         show(.polishing)
         polishTask = Task {
             let selected = proxy.selectedText ?? ""
+            // Typing over the selection would delete its images.
+            guard !selected.contains(TextAroundImages.image) else {
+                show(.message("Select just the text to polish. Images can't be put back from the keyboard."))
+                return
+            }
             let text = if selected.isEmpty { await DocumentReader(proxy: proxy).readWholeDocument() } else { selected }
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let field = TextAroundImages(text)
+            guard field.hasText else {
                 show(.message("Type or select some text to polish."))
                 return
             }
             do {
-                let result = try await Polisher.polish(text: text, style: style, transactionJWS: jws).result
+                let polished = try await polish(field.runs, style: style, transactionJWS: jws)
                 try Task.checkCancellation()
                 // Without a selection the reader left the cursor at the end of the field.
                 if selected.isEmpty {
-                    for _ in 0..<text.count { proxy.deleteBackward() }
+                    await apply(TextAroundImages.edits(from: field.runs, to: polished))
+                } else {
+                    proxy.insertText(polished[0])
                 }
-                proxy.insertText(result.text)
                 forgetLocalEdits()
-                undo = (text, result.text)
+                undo = (field.runs, polished)
                 show(.polished)
                 syncWithDocument()
             } catch is CancellationError {
@@ -526,12 +534,41 @@ final class KeyboardModel {
 
     func undoPolish() {
         guard let undo else { return }
-        for _ in 0..<undo.polished.count { proxy.deleteBackward() }
-        proxy.insertText(undo.original)
-        forgetLocalEdits()
         self.undo = nil
         notice = nil
-        syncWithDocument()
+        polishTask = Task {
+            await apply(TextAroundImages.edits(from: undo.polished, to: undo.original))
+            forgetLocalEdits()
+            syncWithDocument()
+        }
+    }
+
+    /// Text between images is polished one stretch at a time, so the images stay put.
+    private func polish(_ runs: [String], style: PolishStyle, transactionJWS: String?) async throws -> [String] {
+        guard runs.count > 1 else {
+            return [try await Polisher.polish(text: runs[0], style: style, transactionJWS: transactionJWS).result.text]
+        }
+        var polished = runs
+        for (index, run) in runs.enumerated() where !TextAroundImages.isBlank(run) {
+            let result = try await Polisher.polish(text: run, style: style, transactionJWS: transactionJWS).result
+            polished[index] = TextAroundImages.fitting(result.text, into: run)
+        }
+        return polished
+    }
+
+    private func apply(_ edits: [TextAroundImages.Edit]) async {
+        for edit in edits {
+            switch edit {
+            case .delete(let count):
+                for _ in 0..<count { proxy.deleteBackward() }
+            case .insert(let text):
+                proxy.insertText(text)
+            case .move(let offset):
+                proxy.adjustTextPosition(byCharacterOffset: offset)
+                // The host applies cursor moves asynchronously.
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
     }
 
     // MARK: - App handoff
