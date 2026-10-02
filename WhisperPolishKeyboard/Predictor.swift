@@ -131,6 +131,8 @@ final class Predictor {
     private func isKnown(_ word: String) -> Bool {
         let lower = word.lowercased()
         if learned[lower] != nil || names.contains(lower) || lexicon?.isWord(lower) == true { return true }
+        // The spell checker takes any letter on its own for a word.
+        if lower.count == 1 { return false }
         if let known = spellCheckedWords[lower] { return known }
         let range = NSRange(location: 0, length: (word as NSString).length)
         let known = checker.rangeOfMisspelledWord(in: word, range: range, startingAt: 0, wrap: false, language: Self.language).location == NSNotFound
