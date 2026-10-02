@@ -143,10 +143,12 @@ struct SettingsView: View {
                     Text("A style is just an instruction telling the model how to shape your text. Built-in styles can't be edited — make your own version instead.")
                 }
 
-                Section("About") {
+                Section {
                     Link("Privacy Policy", destination: AppLinks.privacyPolicy)
                     Link("Terms of Use", destination: AppLinks.termsOfUse)
                     Link("Support", destination: AppLinks.support)
+                } header: {
+                    Text("About")
                 } footer: {
                     Text(versionLabel)
                 }
