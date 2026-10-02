@@ -75,6 +75,20 @@ final class PolishServiceTests: XCTestCase {
         }
     }
 
+    func testCleanUpThroughOpenRouterUsesTheNativeSpeakerPrompt() async throws {
+        MockURLProtocol.responses = [Self.chatBody("Cleaned up.")]
+        let result = try await makeService().cleanUpWithOpenRouter(text: "raw text", model: .glm52, apiKey: "sk-or-test")
+        XCTAssertEqual(result.text, "Cleaned up.")
+        XCTAssertEqual(result.style, .cleanup)
+        XCTAssertEqual(MockURLProtocol.requests.first?.url?.host, "openrouter.ai")
+        XCTAssertEqual(MockURLProtocol.requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer sk-or-test")
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["model"] as? String, PolishModel.glm52.rawValue)
+        let messages = try XCTUnwrap(body["messages"] as? [[String: String]])
+        XCTAssertEqual(messages.first?["content"], PolishService.nativeSpeakerPrompt)
+        XCTAssertEqual(messages.last?["content"], "raw text")
+    }
+
     func testMissingAPIKeyThrowsBeforeAnyNetworkCall() async {
         do {
             _ = try await makeService().polish(text: "x", style: .email, model: .glm52, apiKey: "")
