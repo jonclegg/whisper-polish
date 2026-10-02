@@ -253,7 +253,7 @@ struct NotesListView: View {
     }
 
     private func delete(_ note: Note) {
-        if let url = note.audioURL {
+        for url in [note.audioURL, note.imageURL].compactMap({ $0 }) {
             try? FileManager.default.removeItem(at: url)
         }
         modelContext.delete(note)

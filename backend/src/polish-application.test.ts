@@ -27,9 +27,11 @@ class StubVerifier implements EntitlementVerifier {
 class StubPolisher implements CloudPolisher {
   calls = 0;
   shouldFail = false;
+  lastInput?: Parameters<CloudPolisher["polish"]>[0];
 
-  async polish() {
+  async polish(input: Parameters<CloudPolisher["polish"]>[0]) {
     this.calls += 1;
+    this.lastInput = input;
     if (this.shouldFail) throw new Error("provider failed");
     return { text: "Finished", model: "z-ai/glm-5.2", providerCostMicros: 3_000 };
   }
@@ -98,6 +100,29 @@ describe("PolishApplication", () => {
     );
 
     await expect(app.polish({ ...request, text: "12345678901" }))
+      .rejects.toBeInstanceOf(InputTooLongError);
+    expect(polisher.calls).toBe(0);
+  });
+
+  it("passes image context to the provider", async () => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(new StubVerifier(), new InMemoryUsageLedger(300), polisher);
+
+    await app.polish({ ...request, context: "Are we still on for Friday?" });
+
+    expect(polisher.lastInput?.context).toBe("Are we still on for Friday?");
+  });
+
+  it("rejects oversized image context before calling the provider", async () => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(
+      new StubVerifier(),
+      new InMemoryUsageLedger(300),
+      polisher,
+      { maxInputBytes: 10 },
+    );
+
+    await expect(app.polish({ ...request, text: "short", context: "12345678901" }))
       .rejects.toBeInstanceOf(InputTooLongError);
     expect(polisher.calls).toBe(0);
   });

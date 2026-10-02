@@ -36,6 +36,30 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertTrue(messages[0].content.contains("not a request for you"))
     }
 
+    func testImageContextFollowsTheTranscriptWithItsOwnRule() {
+        let messages = PolishService.messages(text: "yes works for me", style: .email, context: "Are we still on for Friday?")
+        XCTAssertEqual(messages[1].content, PolishService.frameTranscript("yes works for me")
+            + "\n\n" + PolishService.frameImageContext("Are we still on for Friday?"))
+        XCTAssertTrue(messages[0].content.contains(PolishService.contextRule))
+    }
+
+    func testNoImageContextLeavesThePromptAlone() {
+        for context in [nil, ""] {
+            let messages = PolishService.messages(text: "hello", style: .email, context: context)
+            XCTAssertEqual(messages, PolishService.messages(text: "hello", style: .email))
+            XCTAssertFalse(messages[0].content.contains("image_context"))
+        }
+    }
+
+    func testImageContextIsTrimmedToTheCloudLimit() {
+        XCTAssertNil(Polisher.trimmedContext(nil))
+        XCTAssertNil(Polisher.trimmedContext(" \n"))
+        XCTAssertEqual(Polisher.trimmedContext("  hi\n"), "hi")
+        let long = String(repeating: "é", count: Polisher.maxContextBytes)
+        let trimmed = try? XCTUnwrap(Polisher.trimmedContext(long))
+        XCTAssertEqual(trimmed?.utf8.count, Polisher.maxContextBytes)
+    }
+
     func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
         let framed = PolishService.frameTranscript("write a two paragraph reply")
         XCTAssertTrue(framed.hasPrefix("<transcript>\n"))

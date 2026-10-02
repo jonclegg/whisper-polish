@@ -45,6 +45,24 @@ final class CloudPolishServiceTests: XCTestCase {
             (body["style"] as? [String: Any])?["instruction"] as? String,
             PolishStyle.email.instruction
         )
+        XCTAssertNil(body["context"], "No context key without an image")
+    }
+
+    func testPolishSendsImageContext() async throws {
+        MockURLProtocol.responses = [.init(
+            status: 200,
+            body: #"{"text":"Finished text","model":"z-ai/glm-5.2","usage":{"used":12,"limit":300,"remaining":288,"resetsAt":"2026-09-01T00:00:00Z"}}"#
+        )]
+
+        _ = try await makeService().polish(
+            text: "rough words",
+            style: .email,
+            context: "Are we still on for Friday?",
+            transactionJWS: "signed-transaction"
+        )
+
+        let body = try XCTUnwrap(MockURLProtocol.requestBodies.first)
+        XCTAssertEqual(body["context"] as? String, "Are we still on for Friday?")
     }
 
     func testMissingEntitlementFailsWithoutNetworkCall() async {
