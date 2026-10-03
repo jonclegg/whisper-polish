@@ -38,6 +38,7 @@ final class KeyboardModel {
     private(set) var shift: Shift = .off
     private(set) var suggestions: [Suggestion] = []
     private(set) var notice: Notice?
+    private(set) var clipboardPreview: ClipboardPreview?
     var isPickingStyle = false
 
     @ObservationIgnored unowned let controller: KeyboardViewController
@@ -57,9 +58,14 @@ final class KeyboardModel {
     /// Where each recently typed letter was touched, in key units, so corrections
     /// can tell a near miss on a neighboring key from a deliberate letter.
     @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
+    @ObservationIgnored private var loadedPasteboardChangeCount: Int?
+    @ObservationIgnored private var dismissedPasteboardChangeCount: Int
+
+    private static let dismissedPasteboardChangeCountKey = "dismissedPasteboardChangeCount"
 
     init(controller: KeyboardViewController) {
         self.controller = controller
+        dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
         Task {
             predictor.setLexicon(await Task.detached { Lexicon.load() }.value)
             updateSuggestions()
@@ -108,6 +114,7 @@ final class KeyboardModel {
         forgetLocalEdits()
         resetTypingState()
         syncWithDocument()
+        updateClipboardPreview()
         guard hasFullAccess else { return }
         let customJSON = AppGroup.defaults.string(forKey: SettingsKeys.customStyles) ?? ""
         styles = PolishStyle.all(customJSON: customJSON)
@@ -330,6 +337,7 @@ final class KeyboardModel {
     // MARK: - Typing state
 
     private func didType() {
+        dismissClipboardPreview()
         polishTask?.cancel()
         undo = nil
         if notice != nil {
@@ -554,6 +562,44 @@ final class KeyboardModel {
         insert(text)
         syncWithDocument()
         show(.dictated)
+    }
+
+    // MARK: - Clipboard
+
+    /// The system keyboard offers the current pasteboard once, until the user pastes it or types.
+    func updateClipboardPreview() {
+        guard hasFullAccess else {
+            clipboardPreview = nil
+            return
+        }
+        let changeCount = UIPasteboard.general.changeCount
+        if changeCount == dismissedPasteboardChangeCount {
+            clipboardPreview = nil
+            return
+        }
+        if changeCount == loadedPasteboardChangeCount { return }
+        loadedPasteboardChangeCount = changeCount
+        clipboardPreview = ClipboardPreview.load()
+    }
+
+    func pasteClipboard() {
+        guard let preview = clipboardPreview else { return }
+        guard UIPasteboard.general.changeCount == preview.changeCount else {
+            dismissClipboardPreview()
+            return
+        }
+        if case .text(let text) = preview.kind {
+            insert(text)
+        }
+        dismissClipboardPreview()
+        syncWithDocument()
+    }
+
+    private func dismissClipboardPreview() {
+        guard let preview = clipboardPreview else { return }
+        dismissedPasteboardChangeCount = preview.changeCount
+        UserDefaults.standard.set(preview.changeCount, forKey: Self.dismissedPasteboardChangeCountKey)
+        clipboardPreview = nil
     }
 
     // MARK: - Notices

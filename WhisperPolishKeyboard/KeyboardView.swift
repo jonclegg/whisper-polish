@@ -8,23 +8,32 @@ extension Color {
 
 struct KeyboardView: View {
     static let toolbarHeight: CGFloat = 40
+    /// Taller so a clipboard photo preview fits the way it does on the system keyboard.
+    static let pasteBarHeight: CGFloat = 56
     static let keysHeight: CGFloat = 54 * 4
 
     let model: KeyboardModel
+
+    static func height(showingPastePreview: Bool) -> CGFloat {
+        (showingPastePreview ? pasteBarHeight : toolbarHeight) + keysHeight
+    }
+
+    private var showsPastePreview: Bool { model.clipboardPreview != nil }
 
     /// The keys are a UIKit sibling laid over the bottom; this view supplies the bar and the style picker.
     var body: some View {
         VStack(spacing: 0) {
             SuggestionBar(model: model)
-                .frame(height: Self.toolbarHeight)
+                .frame(height: showsPastePreview ? Self.pasteBarHeight : Self.toolbarHeight)
             if model.isPickingStyle {
                 StylePickerView(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .frame(height: Self.toolbarHeight + Self.keysHeight, alignment: .top)
+        .frame(height: Self.height(showingPastePreview: showsPastePreview), alignment: .top)
         .animation(.snappy(duration: 0.25), value: model.isPickingStyle)
         .animation(.snappy(duration: 0.25), value: model.notice)
+        .animation(.snappy(duration: 0.25), value: showsPastePreview)
     }
 }
 
@@ -40,6 +49,8 @@ private struct SuggestionBar: View {
             Group {
                 if let notice = model.notice {
                     noticeContent(notice)
+                } else if model.clipboardPreview != nil {
+                    clipboardPreview
                 } else {
                     suggestionSlots
                 }
@@ -67,6 +78,65 @@ private struct SuggestionBar: View {
             .onLongPressGesture(minimumDuration: 0.4, perform: model.togglePicker) { isPolishPressed = $0 }
             .accessibilityLabel("Polish as \(model.selectedStyle.name)")
             .accessibilityHint("Hold to choose a style")
+    }
+
+    private var clipboardPreview: some View {
+        HStack {
+            Spacer(minLength: 0)
+            clipboardPreviewControl
+                .accessibilityLabel(model.clipboardPreview?.accessibilityLabel ?? "Paste")
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var clipboardPreviewControl: some View {
+        let chip = clipboardPreviewLabel
+            .padding(.leading, 8)
+            .padding(.trailing, 12)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.keyFill)
+                    .shadow(color: .black.opacity(0.16), radius: 1.5, y: 1)
+            )
+        if case .image = model.clipboardPreview?.kind {
+            chip.overlay(ClipboardImagePasteControl(onPaste: model.pasteClipboard).colorMultiply(.clear))
+        } else {
+            Button(action: model.pasteClipboard) { chip }
+                .buttonStyle(PressableButtonStyle())
+        }
+    }
+
+    @ViewBuilder
+    private var clipboardPreviewLabel: some View {
+        switch model.clipboardPreview?.kind {
+        case .image(let image):
+            HStack(spacing: 8) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 28, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Photo")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("Paste")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case .text(let text):
+            Text(ClipboardPreview.displayText(text))
+                .font(.system(size: 16))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: 240, alignment: .leading)
+        case nil:
+            EmptyView()
+        }
     }
 
     private var suggestionSlots: some View {
@@ -225,6 +295,48 @@ private struct StylePickerView: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? Color.polishTeal : Color.keyFill))
         }
         .buttonStyle(PressableButtonStyle())
+    }
+}
+
+/// Tapping a copied photo has to go through the system paste control. The text
+/// document proxy can only insert strings, and this control pastes the image
+/// into the field the keyboard is attached to.
+private struct ClipboardImagePasteControl: UIViewRepresentable {
+    var onPaste: () -> Void
+
+    func makeUIView(context: Context) -> UIPasteControl {
+        let configuration = UIPasteControl.Configuration()
+        configuration.displayMode = .iconOnly
+        configuration.baseBackgroundColor = .clear
+        configuration.baseForegroundColor = .clear
+        configuration.cornerStyle = .fixed
+        configuration.cornerRadius = 12
+        let control = UIPasteControl(configuration: configuration)
+        control.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
+        return control
+    }
+
+    func updateUIView(_ control: UIPasteControl, context: Context) {
+        context.coordinator.onPaste = onPaste
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPaste: onPaste)
+    }
+
+    final class Coordinator: NSObject {
+        var onPaste: () -> Void
+
+        init(onPaste: @escaping () -> Void) {
+            self.onPaste = onPaste
+        }
+
+        @objc func tapped() {
+            // The control pastes on this same click. Dismissing immediately removes it before that finishes.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.onPaste()
+            }
+        }
     }
 }
 
