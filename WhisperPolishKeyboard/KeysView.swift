@@ -36,12 +36,18 @@ final class KeyGridView: UIView {
         let origin: CGPoint
         /// Where the touch landed in key units, while it's still on the key it landed on.
         var landing: CGPoint?
+        var location: CGPoint
         var trackpadX: CGFloat = 0
+        var trackpadY: CGFloat = 0
+        var trackpadTime: TimeInterval = 0
+        var pad: CursorTrackpad?
+        var readTimer: Timer?
         var holdTimer: Timer?
 
         init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
             self.cap = cap
             self.origin = origin
+            self.location = origin
             self.landing = landing
         }
     }
@@ -50,6 +56,14 @@ final class KeyGridView: UIView {
     private static let accentHoldDelay: TimeInterval = 0.4
     private static let trackpadHoldDelay: TimeInterval = 0.5
     private static let pointsPerCharacter: CGFloat = 9
+    /// Slow drags move a line per this much travel, and fast drags several
+    /// times further, so one swipe up the keyboard can cross a long note.
+    private static let pointsPerLine: CGFloat = 12
+    private static let lineSpeedForDoubleGain: CGFloat = 400
+    private static let maxLineGain: CGFloat = 4
+    /// The host applies cursor moves asynchronously, so its text is only
+    /// re-read once it has had time to catch up.
+    private static let hostCatchUp: TimeInterval = 0.08
     /// How far past its key a pressed finger has to slide before the key changes,
     /// so a thumb rolling as it presses doesn't land on the neighbor.
     private static let slideHysteresis: CGFloat = 12
@@ -164,9 +178,10 @@ final class KeyGridView: UIView {
         for touch in touches {
             guard let tracker = trackers[touch] else { continue }
             let point = touch.location(in: self)
+            tracker.location = point
             switch tracker.mode {
             case .trackpad:
-                moveCursor(tracker, to: point)
+                moveCursor(tracker, to: point, at: touch.timestamp)
             case .accents:
                 accents.select(atX: convert(point, to: accents).x)
             case .layoutSlide:
@@ -262,7 +277,7 @@ final class KeyGridView: UIView {
             MainActor.assumeIsolated {
                 guard let self, let tracker, self.trackers.values.contains(where: { $0 === tracker }) else { return }
                 if tracker.cap?.spec.key == .space {
-                    self.startTrackpad(tracker, at: CGPoint(x: tracker.origin.x, y: 0))
+                    self.startTrackpad(tracker, at: tracker.location)
                 } else {
                     self.showAccents(tracker)
                 }
@@ -289,17 +304,53 @@ final class KeyGridView: UIView {
         tracker.holdTimer?.invalidate()
         tracker.mode = .trackpad
         tracker.trackpadX = point.x
+        tracker.trackpadY = point.y
+        tracker.trackpadTime = ProcessInfo.processInfo.systemUptime
+        tracker.pad = nil
         if let cap = tracker.cap { release(cap) }
         UIView.animate(withDuration: 0.15) {
             self.rows.joined().forEach { $0.setLabelHidden(true) }
         }
     }
 
-    private func moveCursor(_ tracker: Tracker, to point: CGPoint) {
-        let steps = Int((point.x - tracker.trackpadX) / Self.pointsPerCharacter)
-        guard steps != 0 else { return }
-        tracker.trackpadX += CGFloat(steps) * Self.pointsPerCharacter
-        model.moveCursor(by: steps)
+    private func moveCursor(_ tracker: Tracker, to point: CGPoint, at time: TimeInterval) {
+        let dx = point.x - tracker.trackpadX
+        let dy = point.y - tracker.trackpadY
+        let speed = abs(dy) / CGFloat(max(time - tracker.trackpadTime, 1.0 / 120))
+        let gain = min(1 + speed / Self.lineSpeedForDoubleGain, Self.maxLineGain)
+        tracker.trackpadX = point.x
+        tracker.trackpadY = point.y
+        tracker.trackpadTime = time
+        if tracker.pad == nil {
+            let context = model.trackpadContext()
+            tracker.pad = CursorTrackpad(before: context.before, after: context.after, keyboardWidth: bounds.width)
+        }
+        guard var pad = tracker.pad else { return }
+        let update = pad.move(columns: Double(dx / Self.pointsPerCharacter), rows: Double(dy * gain / Self.pointsPerLine))
+        tracker.pad = pad
+        apply(update, for: tracker)
+    }
+
+    private func apply(_ update: CursorTrackpad.Update, for tracker: Tracker) {
+        if update.offset != 0 { model.moveCursor(by: update.offset) }
+        guard let edge = update.edge, tracker.readTimer == nil, var pad = tracker.pad else { return }
+        let probe = pad.probe(edge)
+        tracker.pad = pad
+        if probe != 0 { model.moveCursor(by: probe) }
+        // Holds the tracker, so a read that's still pending when the finger lifts still lands.
+        tracker.readTimer = Timer.scheduledTimer(withTimeInterval: Self.hostCatchUp, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                tracker.readTimer = nil
+                guard let self, var pad = tracker.pad else { return }
+                let context = self.model.trackpadContext()
+                var update = pad.absorb(before: context.before, after: context.after)
+                tracker.pad = pad
+                let isDragging = tracker.mode == .trackpad && self.trackers.values.contains { $0 === tracker }
+                if !isDragging { update.edge = nil }
+                self.apply(update, for: tracker)
+                if !isDragging { self.model.cursorMoveEnded() }
+            }
+        }
     }
 
     private func endTrackpad() {

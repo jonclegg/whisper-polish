@@ -198,6 +198,10 @@ final class KeyboardModel {
         insertedSuggestionSpace = true
     }
 
+    func trackpadContext() -> (before: String, after: String) {
+        (proxy.documentContextBeforeInput ?? "", proxy.documentContextAfterInput ?? "")
+    }
+
     func moveCursor(by offset: Int) {
         forgetLocalEdits()
         proxy.adjustTextPosition(byCharacterOffset: offset)

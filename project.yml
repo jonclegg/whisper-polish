@@ -114,6 +114,7 @@ targets:
     sources:
       - Tests
       # The keyboard is an app extension, so its pure logic is compiled into the tests directly.
+      - WhisperPolishKeyboard/CursorTrackpad.swift
       - WhisperPolishKeyboard/HostTextTracker.swift
       - WhisperPolishKeyboard/KeyLayout.swift
       - WhisperPolishKeyboard/Lexicon.swift
