@@ -61,35 +61,37 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if subscription.isSubscribed {
-                        LabeledContent("Plan", value: "Active")
-                        if let usage = subscription.usage {
-                            LabeledContent("This month", value: "\(usage.remaining) of \(usage.limit) left")
-                        } else {
-                            LabeledContent("Included", value: "Up to \(CloudPlan.monthlyPolishLimit) polishes/month")
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes each month")
-                                .font(.subheadline.weight(.semibold))
-                            Text("\(subscription.priceText) per month · cancel anytime")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button(purchaseInFlight ? "Starting…" : "Subscribe") {
-                            purchaseInFlight = true
-                            Task {
-                                defer { purchaseInFlight = false }
-                                do { try await subscription.purchase() }
-                                catch { cloudError = error.localizedDescription }
+                    if !AppConfiguration.isDevMode {
+                        if subscription.isSubscribed {
+                            LabeledContent("Plan", value: "Active")
+                            if let usage = subscription.usage {
+                                LabeledContent("This month", value: "\(usage.remaining) of \(usage.limit) left")
+                            } else {
+                                LabeledContent("Included", value: "Up to \(CloudPlan.monthlyPolishLimit) polishes/month")
                             }
-                        }
-                        .disabled(purchaseInFlight || subscription.product == nil)
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Up to \(CloudPlan.monthlyPolishLimit) cloud polishes each month")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("\(subscription.priceText) per month · cancel anytime")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Button(purchaseInFlight ? "Starting…" : "Subscribe") {
+                                purchaseInFlight = true
+                                Task {
+                                    defer { purchaseInFlight = false }
+                                    do { try await subscription.purchase() }
+                                    catch { cloudError = error.localizedDescription }
+                                }
+                            }
+                            .disabled(purchaseInFlight || subscription.product == nil)
 
-                        Button("Restore Purchases") {
-                            Task {
-                                do { try await subscription.restore() }
-                                catch { cloudError = error.localizedDescription }
+                            Button("Restore Purchases") {
+                                Task {
+                                    do { try await subscription.restore() }
+                                    catch { cloudError = error.localizedDescription }
+                                }
                             }
                         }
                     }
@@ -102,10 +104,12 @@ struct SettingsView: View {
                 } header: {
                     Text("Polish")
                 } footer: {
-                    if let cloudError {
-                        Text(cloudError).foregroundStyle(.red)
-                    } else {
-                        Text("Cloud requests use the plan's cost-controlled model.")
+                    if !AppConfiguration.isDevMode {
+                        if let cloudError {
+                            Text(cloudError).foregroundStyle(.red)
+                        } else {
+                            Text("Cloud requests use the plan's cost-controlled model.")
+                        }
                     }
                 }
 

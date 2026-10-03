@@ -14,7 +14,7 @@ enum PolishError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "Add your OpenRouter API key in Settings first."
+            return "Polish is unavailable in this build."
         case .emptyResponse:
             return "The model returned an empty response. Try again."
         case .http(let code, let body):

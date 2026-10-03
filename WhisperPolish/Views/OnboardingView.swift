@@ -15,7 +15,7 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                ForEach(0..<3) { index in
+                ForEach(0..<stepCount) { index in
                     Capsule()
                         .fill(index <= step ? Color.polishTeal : Color(.systemFill))
                         .frame(height: 4)
@@ -26,7 +26,7 @@ struct OnboardingView: View {
 
             switch step {
             case 0: engineStep
-            case 1: cloudStep
+            case 1 where showsCloudStep: cloudStep
             default: styleStep
             }
         }
@@ -140,6 +140,10 @@ struct OnboardingView: View {
             }
         }
     }
+
+    private var stepCount: Int { showsCloudStep ? 3 : 2 }
+
+    private var showsCloudStep: Bool { !AppConfiguration.isDevMode }
 
     // MARK: - Step 2: cloud plan
 

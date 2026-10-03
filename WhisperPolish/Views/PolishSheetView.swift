@@ -27,12 +27,14 @@ struct PolishSheetView: View {
                           selection: $style,
                           onNewStyle: { showingNewStyle = true })
 
-                sectionLabel("Cloud plan")
-                Label("Cost-controlled cloud model", systemImage: "cloud.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.polishTeal)
+                if !AppConfiguration.isDevMode {
+                    sectionLabel("Cloud plan")
+                    Label("Cost-controlled cloud model", systemImage: "cloud.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.polishTeal)
+                }
 
-                if hasSubscription {
+                if hasSubscription || AppConfiguration.isDevMode {
                     Button {
                         onPolish(style)
                     } label: {

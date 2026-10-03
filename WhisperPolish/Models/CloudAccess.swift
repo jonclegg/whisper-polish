@@ -6,14 +6,20 @@ enum CloudPlan {
 }
 
 enum AppConfiguration {
-    /// Dev builds skip the subscription and polish straight through OpenRouter.
+    /// Dev builds skip the subscription and polish straight through the provider.
     static let isDevMode = Bundle.main.object(forInfoDictionaryKey: "WhisperPolishDevMode") as? String == "YES"
     /// Injected at build time for dev builds only; never committed.
     static var devOpenRouterKey: String {
-        Bundle.main.object(forInfoDictionaryKey: "WhisperPolishDevOpenRouterKey") as! String
+        resolvedDevKey("WhisperPolishDevOpenRouterKey")
     }
     static var devGroqKey: String {
-        Bundle.main.object(forInfoDictionaryKey: "WhisperPolishDevGroqKey") as! String
+        resolvedDevKey("WhisperPolishDevGroqKey")
+    }
+
+    private static func resolvedDevKey(_ key: String) -> String {
+        let value = Bundle.main.object(forInfoDictionaryKey: key) as! String
+        if value.hasPrefix("$("), value.hasSuffix(")") { return "" }
+        return value
     }
 
     static var cloudPolishEndpoint: URL? {
