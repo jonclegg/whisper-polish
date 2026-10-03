@@ -12,9 +12,9 @@ settings:
     WHISPER_POLISH_API_BASE_URL: "https://api.whisper-polish.yallware.com"
     APP_BUNDLE_ID: com.jonclegg.WhisperPolish # pragma: allowlist secret
     APP_GROUP_ID: group.$(APP_BUNDLE_ID)
-    WHISPER_POLISH_DEV_MODE: "NO"
-    WHISPER_POLISH_DEV_OPENROUTER_KEY: ""
-    WHISPER_POLISH_DEV_GROQ_KEY: ""
+    WHISPER_POLISH_DEV_MODE: "YES"
+    WHISPER_POLISH_DEV_OPENROUTER_KEY: "$(OPENROUTER_API_KEY)"
+    WHISPER_POLISH_DEV_GROQ_KEY: "$(GROQ_API_KEY)"
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
