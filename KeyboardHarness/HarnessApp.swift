@@ -70,7 +70,7 @@ final class HarnessViewController: UIViewController, UITextViewDelegate {
         }
         if layoutManager.extraLineFragmentRect.height > 0 { lineTops.append(layoutManager.extraLineFragmentRect.minY + textView.textContainerInset.top) }
         let line = max(0, (lineTops.lastIndex { $0 <= caret.midY } ?? 0))
-        visits.append("\(textView.selectedRange.location):\(line)")
+        visits.append("\(textView.selectedRange.location):\(line):\(Int(caret.midY))")
         trace.text = visits.joined(separator: " ")
     }
 }
