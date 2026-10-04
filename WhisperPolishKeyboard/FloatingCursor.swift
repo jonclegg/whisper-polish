@@ -76,13 +76,16 @@ final class FloatingCursor {
     /// Rows read above the cursor before it starts following the finger, about
     /// a drag from the space bar to the top of the keyboard. Reading moves the
     /// host's cursor, so it's done up front while the keys fade instead of mid-drag.
-    private static let prefetchRows: CGFloat = 25
+    private static let prefetchRowsAbove: CGFloat = 25
+    private static let prefetchRowsBelow: CGFloat = 8
     /// The cursor travels farther than the finger so one drag covers a screenful.
     private static let gain: CGFloat = 1.5
     /// Rows of known text kept ahead of the finger once it's moving.
     private static let lookahead: CGFloat = 5
-    /// How long the host gets to show a move; a step it never shows means the cursor is at the document's edge.
-    private static let hostTimeout: TimeInterval = 0.3
+    /// How long the host gets to show a move within the known text.
+    private static let moveTimeout: TimeInterval = 0.3
+    /// A step past the known text the host doesn't show by then means the cursor is at the document's edge.
+    private static let stepTimeout: TimeInterval = 0.12
     /// The host can report a move in more than one update; it has caught up once its context holds still this long.
     private static let hostQuiet: TimeInterval = 0.02
 
@@ -103,11 +106,13 @@ final class FloatingCursor {
         self.proxy = proxy
         self.screenWidth = screenWidth
         let before = proxy.documentContextBeforeInput ?? ""
-        text = before + (proxy.documentContextAfterInput ?? "")
+        let after = proxy.documentContextAfterInput ?? ""
+        text = before + after
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: cursor)
-        prefetch()
+        // With nothing after the cursor it's usually at the document's end, where looking further only waits out a step.
+        prefetch(below: !after.isEmpty)
     }
 
     func move(by delta: CGVector) {
@@ -131,7 +136,6 @@ final class FloatingCursor {
         let maxX = reachedEnd && target == layout.length ? layout.caretPoint(at: target).x : bounds.maxX
         point.x = min(max(point.x, bounds.minX), maxX)
         NSLog("FCLOG follow p=(%.0f,%.0f) target=%d cursor=%d len=%d", point.x, point.y, target, cursor, layout.length)
-        NSLog("FCLOG follow p=(%.0f,%.0f) target=%d cursor=%d len=%d", point.x, point.y, target, cursor, layout.length)
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
@@ -142,12 +146,13 @@ final class FloatingCursor {
     private var rowsAbove: CGFloat { (point.y - layout.bounds.minY) / layout.lineHeight }
     private var rowsBelow: CGFloat { (layout.bounds.maxY - point.y) / layout.lineHeight }
 
-    private func prefetch() {
+    private func prefetch(below: Bool) {
         isReading = true
         Task {
             let started = Date()
-            while !reachedStart && rowsAbove < Self.prefetchRows { await readUp() }
-            NSLog("FCLOG prefetch done in %.0fms len=%d rowsAbove=%.1f", Date().timeIntervalSince(started) * 1000, layout.length, rowsAbove)
+            while !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
+            while below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
+            NSLog("FCLOG prefetch done in %.0fms len=%d rowsAbove=%.1f rowsBelow=%.1f", Date().timeIntervalSince(started) * 1000, layout.length, rowsAbove, rowsBelow)
             isReading = false
             follow()
         }
@@ -159,10 +164,7 @@ final class FloatingCursor {
         let down = !reachedEnd && rowsBelow < Self.lookahead && (direction.dy > 0 || direction.dx > 0)
         guard up || down else { return }
         isReading = true
-        let started = Date()
-        NSLog("FCLOG read %@ start", up ? "up" : "down")
         Task {
-            defer { NSLog("FCLOG read done in %.0fms len=%d reachedStart=%d reachedEnd=%d", Date().timeIntervalSince(started) * 1000, layout.length, reachedStart ? 1 : 0, reachedEnd ? 1 : 0) }
             if up { await readUp() } else { await readDown() }
             isReading = false
             follow()
@@ -174,7 +176,6 @@ final class FloatingCursor {
         let offset = point - layout.caretPoint(at: cursor)
         let anchor = cursor
         guard await moveHost(to: 0) else {
-            NSLog("FCLOG readUp moveHost failed len=%d before=[%@] after=[%@] known=[%@]", text.utf16.count, proxy.documentContextBeforeInput ?? "nil", proxy.documentContextAfterInput ?? "nil", String(text.prefix(120)))
             reachedStart = true
             return
         }
@@ -183,14 +184,12 @@ final class FloatingCursor {
         if before.isEmpty {
             // The host's context stopped at a sentence or paragraph boundary, so step over it.
             guard await stepHost(by: -1) else {
-                NSLog("FCLOG readUp step failed len=%d", text.utf16.count)
                 reachedStart = true
                 return
             }
             before = proxy.documentContextBeforeInput ?? ""
             joint = Self.steppedCharacter(proxy.documentContextAfterInput?.utf16.first)
         }
-        NSLog("FCLOG readUp got joint=%d before=[%@]", joint.isEmpty ? 0 : 1, before)
         NSLog("FCLOG readUp joint=[%@] before=[%@] after=[%@]", joint, before, proxy.documentContextAfterInput ?? "nil")
         text = before + joint + text
         cursor = before.utf16.count
@@ -246,7 +245,7 @@ final class FloatingCursor {
         let known = text as NSString
         let knownBefore = known.substring(to: index)
         let knownAfter = known.substring(from: index)
-        return await waitForHost {
+        return await waitForHost(timeout: Self.moveTimeout) {
             let (before, after) = self.hostContext
             return (!moved || (before, after) != start)
                 && (knownBefore.hasSuffix(before) || before.hasSuffix(knownBefore))
@@ -258,11 +257,11 @@ final class FloatingCursor {
     private func stepHost(by offset: Int) async -> Bool {
         let start = hostContext
         proxy.adjustTextPosition(byCharacterOffset: offset)
-        return await waitForHost { self.hostContext != start }
+        return await waitForHost(timeout: Self.stepTimeout) { self.hostContext != start }
     }
 
-    private func waitForHost(until isDone: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(Self.hostTimeout)
+    private func waitForHost(timeout: TimeInterval, until isDone: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
         var context = hostContext
         var lastChange = Date()
         while true {
