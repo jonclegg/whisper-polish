@@ -290,7 +290,7 @@ struct OnboardingView: View {
                 let pasteboard = UIPasteboard.general
                 return pasteboard.hasStrings ? pasteboard.string != nil : pasteboard.image != nil
             }.value
-            UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+            await UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
             pasteSetup = .sentToSettings
         }
     }
