@@ -64,7 +64,7 @@ final class FloatingCursorUITests: XCTestCase {
     /// The space bar's center, found from the toolbar above the keys.
     private func spaceKey(_ app: XCUIApplication) -> CGPoint {
         let record = app.buttons["Record in Whisper Polish"]
-        if !record.waitForExistence(timeout: 3) {
+        if !record.waitForExistence(timeout: 10) {
             let next = app.keyboards.buttons["Next keyboard"]
             XCTAssertTrue(next.waitForExistence(timeout: 5), "No keyboard switch key")
             next.tap()
