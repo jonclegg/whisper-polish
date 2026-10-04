@@ -76,13 +76,16 @@ final class FloatingCursor {
     /// Rows read above the cursor before it starts following the finger, about
     /// a drag from the space bar to the top of the keyboard. Reading moves the
     /// host's cursor, so it's done up front while the keys fade instead of mid-drag.
-    private static let prefetchRows: CGFloat = 25
+    private static let prefetchRowsAbove: CGFloat = 25
+    private static let prefetchRowsBelow: CGFloat = 8
     /// The cursor travels farther than the finger so one drag covers a screenful.
     private static let gain: CGFloat = 1.5
     /// Rows of known text kept ahead of the finger once it's moving.
     private static let lookahead: CGFloat = 5
-    /// How long the host gets to show a move; a step it never shows means the cursor is at the document's edge.
-    private static let hostTimeout: TimeInterval = 0.3
+    /// How long the host gets to show a move within the known text.
+    private static let moveTimeout: TimeInterval = 0.3
+    /// A step past the known text the host doesn't show by then means the cursor is at the document's edge.
+    private static let stepTimeout: TimeInterval = 0.12
     /// The host can report a move in more than one update; it has caught up once its context holds still this long.
     private static let hostQuiet: TimeInterval = 0.02
 
@@ -103,11 +106,13 @@ final class FloatingCursor {
         self.proxy = proxy
         self.screenWidth = screenWidth
         let before = proxy.documentContextBeforeInput ?? ""
-        text = before + (proxy.documentContextAfterInput ?? "")
+        let after = proxy.documentContextAfterInput ?? ""
+        text = before + after
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: cursor)
-        prefetch()
+        // With nothing after the cursor it's usually at the document's end, where looking further only waits out a step.
+        prefetch(below: !after.isEmpty)
     }
 
     func move(by delta: CGVector) {
@@ -140,10 +145,11 @@ final class FloatingCursor {
     private var rowsAbove: CGFloat { (point.y - layout.bounds.minY) / layout.lineHeight }
     private var rowsBelow: CGFloat { (layout.bounds.maxY - point.y) / layout.lineHeight }
 
-    private func prefetch() {
+    private func prefetch(below: Bool) {
         isReading = true
         Task {
-            while !reachedStart && rowsAbove < Self.prefetchRows { await readUp() }
+            while !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
+            while below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
             isReading = false
             follow()
         }
@@ -234,7 +240,7 @@ final class FloatingCursor {
         let known = text as NSString
         let knownBefore = known.substring(to: index)
         let knownAfter = known.substring(from: index)
-        return await waitForHost {
+        return await waitForHost(timeout: Self.moveTimeout) {
             let (before, after) = self.hostContext
             return (!moved || (before, after) != start)
                 && (knownBefore.hasSuffix(before) || before.hasSuffix(knownBefore))
@@ -246,11 +252,11 @@ final class FloatingCursor {
     private func stepHost(by offset: Int) async -> Bool {
         let start = hostContext
         proxy.adjustTextPosition(byCharacterOffset: offset)
-        return await waitForHost { self.hostContext != start }
+        return await waitForHost(timeout: Self.stepTimeout) { self.hostContext != start }
     }
 
-    private func waitForHost(until isDone: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(Self.hostTimeout)
+    private func waitForHost(timeout: TimeInterval, until isDone: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
         var context = hostContext
         var lastChange = Date()
         while true {
