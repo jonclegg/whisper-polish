@@ -40,6 +40,19 @@ final class FloatingCursorUITests: XCTestCase {
         app.terminate()
     }
 
+    func testDemo() {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["HARNESS_TEXT": Self.prose, "HARNESS_CURSOR": "end", "HARNESS_INSET": "16", "HARNESS_FONT_SIZE": "17"]
+        app.launch()
+        sleep(1)
+        run(app, "demo long-up", by: CGVector(dx: 0, dy: -320))
+        run(app, "demo down", by: CGVector(dx: 0, dy: 70))
+        run(app, "demo diagonal", by: CGVector(dx: -150, dy: -200))
+        run(app, "demo diagonal back", by: CGVector(dx: 150, dy: 60))
+        sleep(1)
+        app.terminate()
+    }
+
     func testDrags() {
         let fields: [(name: String, inset: String, font: String)] = [
             ("wide17", "16", "17"),
