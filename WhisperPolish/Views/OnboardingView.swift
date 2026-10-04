@@ -17,7 +17,6 @@ struct OnboardingView: View {
         case notStarted
         case asking
         case needsCopy
-        case sentToSettings
     }
 
     var body: some View {
@@ -261,23 +260,20 @@ struct OnboardingView: View {
 
             Spacer()
 
-            if pasteSetup == .sentToSettings {
-                primaryButton("Start using Whisper Polish") { hasCompletedSetup = true }
-            } else {
-                primaryButton("Allow paste", action: allowPaste)
-                    .disabled(pasteSetup == .asking)
+            primaryButton("Allow paste", action: allowPaste)
+                .disabled(pasteSetup == .asking)
 
-                Button("Not now") { hasCompletedSetup = true }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-            }
+            Button("Not now") { hasCompletedSetup = true }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
         }
         .padding(24)
     }
 
     /// Settings only lists Paste from Other Apps once iOS has asked about pasting,
     /// so this reads the clipboard to raise the prompt before opening Settings.
+    /// iOS relaunches the app when the permission changes, so setup is finished first.
     private func allowPaste() {
         let pasteboard = UIPasteboard.general
         guard pasteboard.hasStrings || pasteboard.hasImages else {
@@ -290,8 +286,8 @@ struct OnboardingView: View {
                 let pasteboard = UIPasteboard.general
                 return pasteboard.hasStrings ? pasteboard.string != nil : pasteboard.image != nil
             }.value
+            hasCompletedSetup = true
             await UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
-            pasteSetup = .sentToSettings
         }
     }
 
