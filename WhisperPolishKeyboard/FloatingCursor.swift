@@ -100,9 +100,11 @@ final class FloatingCursor {
         }
         let bounds = layout.bounds
         let target = layout.index(nearest: point)
+        // Past the end of the known text the invisible cursor stops at its end, so turning back responds at once.
+        let maxX = target == layout.length ? layout.caretPoint(at: target).x : bounds.maxX
         let pushesStart = target == 0 && (point.y < bounds.minY || point.x < bounds.minX)
-        let pushesEnd = target == layout.length && (point.y > bounds.maxY || point.x > bounds.maxX)
-        point.x = min(max(point.x, bounds.minX), bounds.maxX)
+        let pushesEnd = target == layout.length && (point.y > bounds.maxY || point.x > maxX)
+        point.x = min(max(point.x, bounds.minX), maxX)
         point.y = min(max(point.y, bounds.minY), bounds.maxY)
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
