@@ -4,6 +4,9 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
+configFiles:
+  Debug: Config/DevKeys.xcconfig
+  Release: Config/DevKeys.xcconfig
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -47,6 +50,14 @@ targets:
           - UIInterfaceOrientationPortrait
     sources:
       - WhisperPolish
+    preBuildScripts:
+      - name: Require dev polish key
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "$WHISPER_POLISH_DEV_MODE" = "YES" ] && [ -z "$WHISPER_POLISH_DEV_OPENROUTER_KEY" ]; then
+            echo "error: Dev mode build has no OpenRouter key. Run scripts/fetch-dev-keys.sh."
+            exit 1
+          fi
     entitlements:
       path: WhisperPolish/WhisperPolish.entitlements
       properties:

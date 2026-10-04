@@ -3,6 +3,8 @@ scheme: WhisperPolish
 project: WhisperPolish.xcodeproj
 configuration: Release
 codegen: true
+pre_build:
+  - scripts/fetch-dev-keys.sh
 build_mode: archive
 archive_path: build/ios/WhisperPolish.xcarchive
 device: Jiphone
