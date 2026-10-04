@@ -82,7 +82,9 @@ final class FloatingCursor {
     /// Rows of known text kept ahead of the finger once it's moving.
     private static let lookahead: CGFloat = 5
     /// How long the host gets to show a move; a step it never shows means the cursor is at the document's edge.
-    private static let hostTimeout: TimeInterval = 0.2
+    private static let hostTimeout: TimeInterval = 0.3
+    /// Moves sent while following can still be landing; the host has caught up once its context holds still this long.
+    private static let hostQuiet: TimeInterval = 0.03
 
     private let proxy: UITextDocumentProxy
     private let screenWidth: CGFloat
@@ -95,6 +97,7 @@ final class FloatingCursor {
     private var reachedEnd = false
     private var isReading = false
     private var isEnded = false
+    private var hostMayLag = false
     private var direction = CGVector.zero
 
     init(proxy: UITextDocumentProxy, screenWidth: CGFloat) {
@@ -131,6 +134,7 @@ final class FloatingCursor {
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
+            hostMayLag = true
         }
         readAheadIfNeeded()
     }
@@ -216,41 +220,53 @@ final class FloatingCursor {
         unit.map { String(utf16CodeUnits: [$0], count: 1) } ?? "\n"
     }
 
+    private var hostContext: (before: String, after: String) {
+        (proxy.documentContextBeforeInput ?? "", proxy.documentContextAfterInput ?? "")
+    }
+
     /// Moves the host's cursor within the known text and waits until its
-    /// context shows it there, past any moves it hadn't caught up with.
+    /// context shows it there.
     private func moveHost(to index: Int) async -> Bool {
-        if index != cursor {
+        let start = hostContext
+        let moved = index != cursor
+        if moved {
             proxy.adjustTextPosition(byCharacterOffset: index - cursor)
             cursor = index
         }
         let known = text as NSString
         let knownBefore = known.substring(to: index)
         let knownAfter = known.substring(from: index)
-        return await waitForHost {
-            let before = self.proxy.documentContextBeforeInput ?? ""
-            let after = self.proxy.documentContextAfterInput ?? ""
-            return (knownBefore.hasSuffix(before) || before.hasSuffix(knownBefore))
+        let quiet = hostMayLag
+        hostMayLag = false
+        return await waitForHost(quiet: quiet) {
+            let (before, after) = self.hostContext
+            return (!moved || (before, after) != start)
+                && (knownBefore.hasSuffix(before) || before.hasSuffix(knownBefore))
                 && (knownAfter.hasPrefix(after) || after.hasPrefix(knownAfter))
         }
     }
 
     /// Steps the host's cursor past the known text, reporting whether it moved at all.
     private func stepHost(by offset: Int) async -> Bool {
-        let before = proxy.documentContextBeforeInput
-        let after = proxy.documentContextAfterInput
+        let start = hostContext
         proxy.adjustTextPosition(byCharacterOffset: offset)
-        return await waitForHost {
-            self.proxy.documentContextBeforeInput != before || self.proxy.documentContextAfterInput != after
-        }
+        return await waitForHost { self.hostContext != start }
     }
 
-    private func waitForHost(until isDone: () -> Bool) async -> Bool {
+    private func waitForHost(quiet: Bool = false, until isDone: () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(Self.hostTimeout)
-        while !isDone() {
-            guard Date() < deadline else { return false }
+        var context = hostContext
+        var lastChange = Date()
+        while true {
+            let now = Date()
+            if hostContext != context {
+                context = hostContext
+                lastChange = now
+            }
+            if isDone() && (!quiet || now.timeIntervalSince(lastChange) >= Self.hostQuiet) { return true }
+            guard now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(5))
         }
-        return true
     }
 }
 
