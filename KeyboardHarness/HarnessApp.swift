@@ -63,7 +63,13 @@ final class HarnessViewController: UIViewController, UITextViewDelegate {
 
     private func record() {
         let caret = textView.caretRect(for: textView.selectedTextRange!.start)
-        let line = Int((caret.midY - textView.textContainerInset.top) / textView.font!.lineHeight)
+        var lineTops: [CGFloat] = []
+        let layoutManager = textView.layoutManager
+        layoutManager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layoutManager.numberOfGlyphs)) { rect, _, _, _, _ in
+            lineTops.append(rect.minY + self.textView.textContainerInset.top)
+        }
+        if layoutManager.extraLineFragmentRect.height > 0 { lineTops.append(layoutManager.extraLineFragmentRect.minY + textView.textContainerInset.top) }
+        let line = max(0, (lineTops.lastIndex { $0 <= caret.midY } ?? 0))
         visits.append("\(textView.selectedRange.location):\(line)")
         trace.text = visits.joined(separator: " ")
     }

@@ -21,6 +21,8 @@ final class FloatingCursorUITests: XCTestCase {
         continueAfterFailure = true
     }
 
+    func testBuildOnly() {}
+
     func testDrags() {
         let fields: [(name: String, inset: String, font: String)] = [
             ("wide17", "16", "17"),
@@ -29,6 +31,7 @@ final class FloatingCursorUITests: XCTestCase {
         ]
         let drags: [(name: String, text: String, cursor: String, delta: CGVector)] = [
             ("up", Self.prose, "end", CGVector(dx: 0, dy: -190)),
+            ("long-up", Self.prose, "end", CGVector(dx: 0, dy: -320)),
             ("down", Self.prose, "start", CGVector(dx: 0, dy: 60)),
             ("diagonal", Self.prose, "end", CGVector(dx: -150, dy: -150)),
             ("sideways", Self.prose, "end", CGVector(dx: -160, dy: 0)),
