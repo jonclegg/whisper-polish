@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// One-time first-launch setup: pick a transcription engine and download it,
-/// introduce Whisper Polish Cloud, choose a default polish style.
+/// introduce Whisper Polish Cloud, choose a default polish style, turn on the keyboard.
 struct OnboardingView: View {
     @Environment(TranscriptionService.self) private var transcription
     @Environment(SubscriptionStore.self) private var subscription
@@ -27,6 +27,7 @@ struct OnboardingView: View {
             switch step {
             case 0: engineStep
             case 1 where showsCloudStep: cloudStep
+            case stepCount - 1: keyboardStep
             default: styleStep
             }
         }
@@ -141,7 +142,7 @@ struct OnboardingView: View {
         }
     }
 
-    private var stepCount: Int { showsCloudStep ? 3 : 2 }
+    private var stepCount: Int { showsCloudStep ? 4 : 3 }
 
     private var showsCloudStep: Bool { !AppConfiguration.isDevMode }
 
@@ -222,11 +223,53 @@ struct OnboardingView: View {
 
             Spacer()
 
-            primaryButton("Start using Whisper Polish") {
-                hasCompletedSetup = true
-            }
+            primaryButton("Continue") { step = stepCount - 1 }
         }
         .padding(24)
+    }
+
+    // MARK: - Step 4: keyboard
+
+    private var keyboardStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header(
+                title: "Turn on the keyboard",
+                subtitle: "Polish, dictate, and paste from any app. The keyboard needs Full Access to reach Whisper Polish and your clipboard."
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
+                keyboardInstruction(1, "Tap Keyboards.")
+                keyboardInstruction(2, "Turn on Whisper Polish.")
+                keyboardInstruction(3, "Turn on Allow Full Access.")
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
+
+            Spacer()
+
+            primaryButton("Open Settings") {
+                // iOS can relaunch the app when keyboard access changes, so setup is finished first.
+                hasCompletedSetup = true
+                UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+            }
+
+            Button("Not now") { hasCompletedSetup = true }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(24)
+    }
+
+    private func keyboardInstruction(_ number: Int, _ text: String) -> some View {
+        Label {
+            Text(text)
+        } icon: {
+            Image(systemName: "\(number).circle.fill")
+                .foregroundStyle(Color.polishTeal)
+        }
+        .font(.subheadline)
     }
 
     // MARK: - Shared bits

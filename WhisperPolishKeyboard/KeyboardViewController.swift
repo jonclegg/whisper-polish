@@ -11,6 +11,8 @@ final class KeyboardViewController: UIInputViewController {
     private lazy var model = KeyboardModel(controller: self)
     private lazy var keyGrid = KeyGridView(model: model)
     private var dictationTimer: Timer?
+    private var pasteboardObserver: NSObjectProtocol?
+    private var keyboardHeightConstraint: NSLayoutConstraint?
     private var isSyncScheduled = false
 
     override func loadView() {
@@ -31,12 +33,16 @@ final class KeyboardViewController: UIInputViewController {
         // recognizers can never delay or cancel their touches.
         keyGrid.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyGrid)
+        let keyboardHeight = host.view.heightAnchor.constraint(
+            equalToConstant: KeyboardView.height(showingPastePreview: false)
+        )
+        keyboardHeightConstraint = keyboardHeight
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
             host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            host.view.heightAnchor.constraint(equalToConstant: KeyboardView.toolbarHeight + KeyboardView.keysHeight),
+            keyboardHeight,
             keyGrid.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             keyGrid.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             keyGrid.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -48,6 +54,11 @@ final class KeyboardViewController: UIInputViewController {
 
     private func observeModel() {
         withObservationTracking {
+            let height = KeyboardView.height(showingPastePreview: model.clipboardPreview != nil)
+            if keyboardHeightConstraint?.constant != height {
+                keyboardHeightConstraint?.constant = height
+                UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
+            }
             keyGrid.apply(KeyGridView.Configuration(
                 layout: model.layout,
                 bottomRow: model.bottomRow,
@@ -82,6 +93,13 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         model.refresh()
+        pasteboardObserver = NotificationCenter.default.addObserver(
+            forName: UIPasteboard.changedNotification,
+            object: UIPasteboard.general,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.updateClipboardPreview() }
+        }
         // The app hands dictation back through the app group, possibly
         // after the keyboard is already showing again.
         dictationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -115,6 +133,10 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         dictationTimer?.invalidate()
         dictationTimer = nil
+        if let pasteboardObserver {
+            NotificationCenter.default.removeObserver(pasteboardObserver)
+            self.pasteboardObserver = nil
+        }
     }
 
     /// Keyboards can't call `UIApplication.open` directly, so walk the
