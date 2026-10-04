@@ -60,6 +60,8 @@ final class KeyboardModel {
     @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
     @ObservationIgnored private var loadedPasteboardChangeCount: Int?
     @ObservationIgnored private var dismissedPasteboardChangeCount: Int
+    @ObservationIgnored private var clipboardReadAttempts = 0
+    @ObservationIgnored private var clipboardRetryScheduled = false
 
     private static let dismissedPasteboardChangeCountKey = "dismissedPasteboardChangeCount"
 
@@ -567,19 +569,38 @@ final class KeyboardModel {
     // MARK: - Clipboard
 
     /// The system keyboard offers the current pasteboard once, until the user pastes it or types.
+    /// Reading it can raise the system's paste prompt, which returns nothing until the user allows it.
     func updateClipboardPreview() {
         guard hasFullAccess else {
             clipboardPreview = nil
             return
         }
-        let changeCount = UIPasteboard.general.changeCount
+        let pasteboard = UIPasteboard.general
+        let changeCount = pasteboard.changeCount
         if changeCount == dismissedPasteboardChangeCount {
             clipboardPreview = nil
             return
         }
-        if changeCount == loadedPasteboardChangeCount { return }
+        if changeCount == loadedPasteboardChangeCount, clipboardPreview != nil { return }
+        if changeCount != loadedPasteboardChangeCount { clipboardReadAttempts = 0 }
+        guard let preview = ClipboardPreview.load() else {
+            scheduleClipboardRetry()
+            return
+        }
         loadedPasteboardChangeCount = changeCount
-        clipboardPreview = ClipboardPreview.load()
+        clipboardReadAttempts = 0
+        clipboardPreview = preview
+    }
+
+    private func scheduleClipboardRetry() {
+        guard !clipboardRetryScheduled, clipboardReadAttempts < 20 else { return }
+        clipboardRetryScheduled = true
+        clipboardReadAttempts += 1
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            clipboardRetryScheduled = false
+            updateClipboardPreview()
+        }
     }
 
     func pasteClipboard() {
