@@ -72,10 +72,14 @@ final class EstimatedTextLayout {
 /// briefly visits that edge to read the next piece, which joins the layout.
 @MainActor
 final class FloatingCursor {
-    /// Rows of known text kept ahead of the finger.
+    /// Rows read above the cursor before it starts following the finger, about
+    /// a drag from the space bar to the top of the keyboard. Reading moves the
+    /// host's cursor, so it's done up front while the keys fade instead of mid-drag.
+    private static let prefetchRows: CGFloat = 15
+    /// Rows of known text kept ahead of the finger once it's moving.
     private static let lookahead: CGFloat = 5
     /// A step the host hasn't answered by then means the cursor is at the document's edge.
-    private static let hostTimeout: TimeInterval = 0.3
+    private static let hostTimeout: TimeInterval = 0.15
 
     private let proxy: UITextDocumentProxy
     private let screenWidth: CGFloat
@@ -98,6 +102,7 @@ final class FloatingCursor {
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: cursor)
+        prefetch()
     }
 
     func move(by delta: CGVector) {
@@ -127,12 +132,22 @@ final class FloatingCursor {
         readAheadIfNeeded()
     }
 
+    private var rowsAbove: CGFloat { (point.y - layout.bounds.minY) / layout.lineHeight }
+    private var rowsBelow: CGFloat { (layout.bounds.maxY - point.y) / layout.lineHeight }
+
+    private func prefetch() {
+        isReading = true
+        Task {
+            while !reachedStart && rowsAbove < Self.prefetchRows { await readUp() }
+            isReading = false
+            follow()
+        }
+    }
+
     private func readAheadIfNeeded() {
         guard !isEnded else { return }
-        let bounds = layout.bounds
-        let reach = Self.lookahead * layout.lineHeight
-        let up = !reachedStart && point.y - bounds.minY < reach && (direction.dy < 0 || direction.dx < 0)
-        let down = !reachedEnd && bounds.maxY - point.y < reach && (direction.dy > 0 || direction.dx > 0)
+        let up = !reachedStart && rowsAbove < Self.lookahead && (direction.dy < 0 || direction.dx < 0)
+        let down = !reachedEnd && rowsBelow < Self.lookahead && (direction.dy > 0 || direction.dx > 0)
         guard up || down else { return }
         isReading = true
         Task {
