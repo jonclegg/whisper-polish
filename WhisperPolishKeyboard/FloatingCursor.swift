@@ -6,7 +6,8 @@ import UIKit
 /// offsets, the unit `adjustTextPosition(byCharacterOffset:)` counts in.
 @MainActor
 final class EstimatedTextLayout {
-    private static let fieldInset: CGFloat = 16
+    /// A full-width text view's margins plus its text container's padding.
+    private static let fieldInset: CGFloat = 21
 
     let length: Int
     private let text: NSString
@@ -75,7 +76,9 @@ final class FloatingCursor {
     /// Rows read above the cursor before it starts following the finger, about
     /// a drag from the space bar to the top of the keyboard. Reading moves the
     /// host's cursor, so it's done up front while the keys fade instead of mid-drag.
-    private static let prefetchRows: CGFloat = 15
+    private static let prefetchRows: CGFloat = 25
+    /// The cursor travels farther than the finger so one drag covers a screenful.
+    private static let gain: CGFloat = 1.5
     /// Rows of known text kept ahead of the finger once it's moving.
     private static let lookahead: CGFloat = 5
     /// A step the host hasn't answered by then means the cursor is at the document's edge.
@@ -106,8 +109,8 @@ final class FloatingCursor {
     }
 
     func move(by delta: CGVector) {
-        point.x += delta.dx
-        point.y += delta.dy
+        point.x += delta.dx * Self.gain
+        point.y += delta.dy * Self.gain
         direction = delta
         guard !isReading else { return }
         follow()
