@@ -62,14 +62,16 @@ final class KeyboardModel {
     @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
     @ObservationIgnored private var loadedPasteboardChangeCount: Int?
     @ObservationIgnored private var dismissedPasteboardChangeCount: Int
-    @ObservationIgnored private var clipboardReadAttempts = 0
-    @ObservationIgnored private var clipboardRetryScheduled = false
+    @ObservationIgnored private var deniedPasteboardChangeCount: Int
+    @ObservationIgnored private var isReadingClipboard = false
 
     private static let dismissedPasteboardChangeCountKey = "dismissedPasteboardChangeCount"
+    private static let deniedPasteboardChangeCountKey = "deniedPasteboardChangeCount"
 
     init(controller: KeyboardViewController) {
         self.controller = controller
         dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
+        deniedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.deniedPasteboardChangeCountKey)
         Task {
             predictor.setLexicon(await Task.detached { Lexicon.load() }.value)
             updateSuggestions()
@@ -571,48 +573,54 @@ final class KeyboardModel {
     // MARK: - Clipboard
 
     /// The system keyboard offers the current pasteboard once, until the user pastes it or types.
-    /// Reading it can raise the system's paste prompt, which returns nothing until the user allows it.
+    /// Reading it can raise the system's paste prompt, and the read waits until the user answers,
+    /// so it runs off the main thread. A denied copy isn't read again, or the prompt would repeat.
     func updateClipboardPreview() {
         guard hasFullAccess else {
             clipboardPreview = nil
             isClipboardBlocked = false
             return
         }
-        let pasteboard = UIPasteboard.general
-        let changeCount = pasteboard.changeCount
+        let changeCount = UIPasteboard.general.changeCount
         if changeCount == dismissedPasteboardChangeCount {
             clipboardPreview = nil
             isClipboardBlocked = false
             return
         }
-        if changeCount == loadedPasteboardChangeCount, clipboardPreview != nil { return }
-        if changeCount != loadedPasteboardChangeCount { clipboardReadAttempts = 0 }
-        guard let preview = ClipboardPreview.load() else {
+        if changeCount == deniedPasteboardChangeCount {
             clipboardPreview = nil
-            isClipboardBlocked = pasteboard.hasStrings || pasteboard.hasImages
-            scheduleClipboardRetry()
+            isClipboardBlocked = true
             return
         }
-        loadedPasteboardChangeCount = changeCount
-        clipboardReadAttempts = 0
-        isClipboardBlocked = false
-        clipboardPreview = preview
+        if changeCount == loadedPasteboardChangeCount, clipboardPreview != nil { return }
+        guard !isReadingClipboard else { return }
+        isReadingClipboard = true
+        Task {
+            let preview = await Task.detached { ClipboardPreview.load() }.value
+            isReadingClipboard = false
+            let pasteboard = UIPasteboard.general
+            guard pasteboard.changeCount == changeCount else {
+                updateClipboardPreview()
+                return
+            }
+            if let preview {
+                loadedPasteboardChangeCount = changeCount
+                isClipboardBlocked = false
+                clipboardPreview = preview
+            } else if pasteboard.hasStrings || pasteboard.hasImages {
+                deniedPasteboardChangeCount = changeCount
+                UserDefaults.standard.set(changeCount, forKey: Self.deniedPasteboardChangeCountKey)
+                clipboardPreview = nil
+                isClipboardBlocked = true
+            }
+        }
     }
 
     /// iOS asks before every read until Paste from Other Apps is set to Allow on the app's Settings page.
     func allowPasteInSettings() {
+        deniedPasteboardChangeCount = 0
+        UserDefaults.standard.removeObject(forKey: Self.deniedPasteboardChangeCountKey)
         controller.openContainingApp(AppGroup.pasteSettingsURL)
-    }
-
-    private func scheduleClipboardRetry() {
-        guard !clipboardRetryScheduled, clipboardReadAttempts < 20 else { return }
-        clipboardRetryScheduled = true
-        clipboardReadAttempts += 1
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            clipboardRetryScheduled = false
-            updateClipboardPreview()
-        }
     }
 
     func pasteClipboard() {
