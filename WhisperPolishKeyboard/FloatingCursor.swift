@@ -81,8 +81,8 @@ final class FloatingCursor {
     private static let gain: CGFloat = 1.5
     /// Rows of known text kept ahead of the finger once it's moving.
     private static let lookahead: CGFloat = 5
-    /// A step the host hasn't answered by then means the cursor is at the document's edge.
-    private static let hostTimeout: TimeInterval = 0.15
+    /// How long the host gets to show a move; a step it never shows means the cursor is at the document's edge.
+    private static let hostTimeout: TimeInterval = 0.2
 
     private let proxy: UITextDocumentProxy
     private let screenWidth: CGFloat
@@ -167,14 +167,16 @@ final class FloatingCursor {
     /// Reads the text before the known text and puts it in front.
     private func readUp() async {
         let offset = point - layout.caretPoint(at: cursor)
-        let target = cursor
-        await moveHost(by: -cursor)
-        cursor = 0
+        let anchor = cursor
+        guard await moveHost(to: 0) else {
+            reachedStart = true
+            return
+        }
         var before = proxy.documentContextBeforeInput ?? ""
         var joint = ""
         if before.isEmpty {
             // Hosts stop the context at a line break, so step over it.
-            guard await moveHost(by: -1) else {
+            guard await stepHost(by: -1) else {
                 reachedStart = true
                 return
             }
@@ -184,20 +186,22 @@ final class FloatingCursor {
         text = before + joint + text
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
-        point = layout.caretPoint(at: target + cursor + joint.utf16.count) + offset
+        point = layout.caretPoint(at: anchor + cursor + joint.utf16.count) + offset
     }
 
     /// Reads the text after the known text and puts it behind.
     private func readDown() async {
         let offset = point - layout.caretPoint(at: cursor)
-        let target = cursor
+        let anchor = cursor
         let length = text.utf16.count
-        await moveHost(by: length - cursor)
-        cursor = length
+        guard await moveHost(to: length) else {
+            reachedEnd = true
+            return
+        }
         var after = proxy.documentContextAfterInput ?? ""
         var joint = ""
         if after.isEmpty {
-            guard await moveHost(by: 1) else {
+            guard await stepHost(by: 1) else {
                 reachedEnd = true
                 return
             }
@@ -207,23 +211,44 @@ final class FloatingCursor {
         text = text + joint + after
         cursor = length + joint.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
-        point = layout.caretPoint(at: target) + offset
+        point = layout.caretPoint(at: anchor) + offset
     }
 
-    /// Moves the host's cursor and waits until its context reflects the move,
-    /// reporting whether it moved at all.
-    @discardableResult
-    private func moveHost(by offset: Int) async -> Bool {
-        guard offset != 0 else { return true }
+    /// Moves the host's cursor within the known text and waits until its
+    /// context shows it there, past any moves it hadn't caught up with.
+    private func moveHost(to index: Int) async -> Bool {
+        if index != cursor {
+            proxy.adjustTextPosition(byCharacterOffset: index - cursor)
+            cursor = index
+        }
+        let known = text as NSString
+        let knownBefore = known.substring(to: index)
+        let knownAfter = known.substring(from: index)
+        return await waitForHost {
+            let before = self.proxy.documentContextBeforeInput ?? ""
+            let after = self.proxy.documentContextAfterInput ?? ""
+            return (knownBefore.hasSuffix(before) || before.hasSuffix(knownBefore))
+                && (knownAfter.hasPrefix(after) || after.hasPrefix(knownAfter))
+        }
+    }
+
+    /// Steps the host's cursor past the known text, reporting whether it moved at all.
+    private func stepHost(by offset: Int) async -> Bool {
         let before = proxy.documentContextBeforeInput
         let after = proxy.documentContextAfterInput
         proxy.adjustTextPosition(byCharacterOffset: offset)
-        let deadline = Date().addingTimeInterval(Self.hostTimeout)
-        while Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-            if proxy.documentContextBeforeInput != before || proxy.documentContextAfterInput != after { return true }
+        return await waitForHost {
+            self.proxy.documentContextBeforeInput != before || self.proxy.documentContextAfterInput != after
         }
-        return false
+    }
+
+    private func waitForHost(until isDone: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(Self.hostTimeout)
+        while !isDone() {
+            guard Date() < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return true
     }
 }
 
