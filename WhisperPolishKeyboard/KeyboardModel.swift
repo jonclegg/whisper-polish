@@ -54,6 +54,7 @@ final class KeyboardModel {
     @ObservationIgnored private var lastAutocorrection: Predictor.Autocorrection?
     @ObservationIgnored private var revertCandidate: Predictor.Autocorrection?
     @ObservationIgnored private var insertedSuggestionSpace = false
+    @ObservationIgnored private var floatingCursor: FloatingCursor?
     /// Where each recently typed letter was touched, in key units, so corrections
     /// can tell a near miss on a neighboring key from a deliberate letter.
     @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
@@ -198,12 +199,17 @@ final class KeyboardModel {
         insertedSuggestionSpace = true
     }
 
-    func moveCursor(by offset: Int) {
+    func cursorMoveBegan() {
         forgetLocalEdits()
-        proxy.adjustTextPosition(byCharacterOffset: offset)
+        floatingCursor = FloatingCursor(proxy: proxy, screenWidth: controller.view.bounds.width)
+    }
+
+    func moveCursor(by delta: CGVector) {
+        floatingCursor!.move(by: delta)
     }
 
     func cursorMoveEnded() {
+        floatingCursor = nil
         letterTouches = []
         forgetLocalEdits()
         resetTypingState()

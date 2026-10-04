@@ -36,7 +36,7 @@ final class KeyGridView: UIView {
         let origin: CGPoint
         /// Where the touch landed in key units, while it's still on the key it landed on.
         var landing: CGPoint?
-        var trackpadX: CGFloat = 0
+        var trackpadPoint = CGPoint.zero
         var holdTimer: Timer?
 
         init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
@@ -49,7 +49,6 @@ final class KeyGridView: UIView {
     private static let capInsets = UIEdgeInsets(top: 6, left: 3, bottom: 6, right: 3)
     private static let accentHoldDelay: TimeInterval = 0.4
     private static let trackpadHoldDelay: TimeInterval = 0.5
-    private static let pointsPerCharacter: CGFloat = 9
     /// How far past its key a pressed finger has to slide before the key changes,
     /// so a thumb rolling as it presses doesn't land on the neighbor.
     private static let slideHysteresis: CGFloat = 12
@@ -262,7 +261,7 @@ final class KeyGridView: UIView {
             MainActor.assumeIsolated {
                 guard let self, let tracker, self.trackers.values.contains(where: { $0 === tracker }) else { return }
                 if tracker.cap?.spec.key == .space {
-                    self.startTrackpad(tracker, at: CGPoint(x: tracker.origin.x, y: 0))
+                    self.startTrackpad(tracker)
                 } else {
                     self.showAccents(tracker)
                 }
@@ -285,21 +284,20 @@ final class KeyGridView: UIView {
     // MARK: - Trackpad
 
     /// Holding the space bar turns the keys into a trackpad that moves the cursor.
-    private func startTrackpad(_ tracker: Tracker, at point: CGPoint) {
+    private func startTrackpad(_ tracker: Tracker) {
         tracker.holdTimer?.invalidate()
         tracker.mode = .trackpad
-        tracker.trackpadX = point.x
+        tracker.trackpadPoint = tracker.origin
         if let cap = tracker.cap { release(cap) }
         UIView.animate(withDuration: 0.15) {
             self.rows.joined().forEach { $0.setLabelHidden(true) }
         }
+        model.cursorMoveBegan()
     }
 
     private func moveCursor(_ tracker: Tracker, to point: CGPoint) {
-        let steps = Int((point.x - tracker.trackpadX) / Self.pointsPerCharacter)
-        guard steps != 0 else { return }
-        tracker.trackpadX += CGFloat(steps) * Self.pointsPerCharacter
-        model.moveCursor(by: steps)
+        model.moveCursor(by: CGVector(dx: point.x - tracker.trackpadPoint.x, dy: point.y - tracker.trackpadPoint.y))
+        tracker.trackpadPoint = point
     }
 
     private func endTrackpad() {
