@@ -36,6 +36,8 @@ final class EstimatedTextLayout {
         }
     }
 
+    var lineHeight: CGFloat { lines[0].rect.height }
+
     var bounds: CGRect {
         CGRect(x: 0, y: lines[0].rect.minY, width: container.size.width, height: lines[lines.count - 1].rect.maxY - lines[0].rect.minY)
     }
@@ -65,69 +67,145 @@ final class EstimatedTextLayout {
 
 /// Holding space steers an invisible cursor through the estimated layout and
 /// the real cursor jumps to the insertion point nearest it, like the system
-/// keyboard's trackpad. Hosts only share text up to a sentence or paragraph
-/// boundary, so pushing past the known text waits for the host to catch up,
-/// then reads further.
+/// keyboard's trackpad. Hosts only share the sentence or paragraph around the
+/// cursor, so as the finger nears the edge of the known text the cursor
+/// briefly visits that edge to read the next piece, which joins the layout.
 @MainActor
 final class FloatingCursor {
-    /// How long after the last move the host's reported text can be trusted again.
-    private static let settleDelay: TimeInterval = 0.12
+    /// Rows of known text kept ahead of the finger.
+    private static let lookahead: CGFloat = 5
+    /// A step the host hasn't answered by then means the cursor is at the document's edge.
+    private static let hostTimeout: TimeInterval = 0.3
 
     private let proxy: UITextDocumentProxy
     private let screenWidth: CGFloat
+    private var text: String
     private var layout: EstimatedTextLayout
-    private var cursor = 0
-    private var point = CGPoint.zero
-    private var lastMove = Date.distantPast
-    /// Set after stepping blindly over a boundary, until the text is read again.
-    private var isStale = false
+    /// Where the host's cursor is in `text`.
+    private var cursor: Int
+    private var point: CGPoint
+    private var reachedStart = false
+    private var reachedEnd = false
+    private var isReading = false
+    private var isEnded = false
+    private var direction = CGVector.zero
 
     init(proxy: UITextDocumentProxy, screenWidth: CGFloat) {
         self.proxy = proxy
         self.screenWidth = screenWidth
-        layout = EstimatedTextLayout(text: "", screenWidth: screenWidth)
-        reload()
+        let before = proxy.documentContextBeforeInput ?? ""
+        text = before + (proxy.documentContextAfterInput ?? "")
+        cursor = before.utf16.count
+        layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
+        point = layout.caretPoint(at: cursor)
     }
 
     func move(by delta: CGVector) {
         point.x += delta.dx
         point.y += delta.dy
-        let now = Date()
-        let isSettled = now.timeIntervalSince(lastMove) > Self.settleDelay
-        if isStale {
-            guard isSettled else { return }
-            reload()
-        }
+        direction = delta
+        guard !isReading else { return }
+        follow()
+    }
+
+    /// A read in progress still finishes and puts the cursor back under the finger.
+    func end() {
+        isEnded = true
+    }
+
+    private func follow() {
         let bounds = layout.bounds
+        if reachedStart { point.y = max(point.y, bounds.minY) }
+        if reachedEnd { point.y = min(point.y, bounds.maxY) }
         let target = layout.index(nearest: point)
-        // Past the end of the known text the invisible cursor stops at its end, so turning back responds at once.
-        let maxX = target == layout.length ? layout.caretPoint(at: target).x : bounds.maxX
-        let pushesStart = target == 0 && (point.y < bounds.minY || point.x < bounds.minX)
-        let pushesEnd = target == layout.length && (point.y > bounds.maxY || point.x > maxX)
+        let maxX = reachedEnd && target == layout.length ? layout.caretPoint(at: target).x : bounds.maxX
         point.x = min(max(point.x, bounds.minX), maxX)
-        point.y = min(max(point.y, bounds.minY), bounds.maxY)
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
-            lastMove = now
-            return
         }
-        guard (pushesStart || pushesEnd) && isSettled else { return }
-        reload()
-        let atEdge = pushesStart ? cursor == 0 : cursor == layout.length
-        guard atEdge else { return }
-        // The host stops its text at a paragraph break; stepping over it reveals the next paragraph.
-        proxy.adjustTextPosition(byCharacterOffset: pushesStart ? -1 : 1)
-        lastMove = now
-        isStale = true
+        readAheadIfNeeded()
     }
 
-    private func reload() {
-        let before = proxy.documentContextBeforeInput ?? ""
-        let after = proxy.documentContextAfterInput ?? ""
-        layout = EstimatedTextLayout(text: before + after, screenWidth: screenWidth)
-        cursor = (before as NSString).length
-        point = layout.caretPoint(at: cursor)
-        isStale = false
+    private func readAheadIfNeeded() {
+        guard !isEnded else { return }
+        let bounds = layout.bounds
+        let reach = Self.lookahead * layout.lineHeight
+        let up = !reachedStart && point.y - bounds.minY < reach && (direction.dy < 0 || direction.dx < 0)
+        let down = !reachedEnd && bounds.maxY - point.y < reach && (direction.dy > 0 || direction.dx > 0)
+        guard up || down else { return }
+        isReading = true
+        Task {
+            if up { await readUp() } else { await readDown() }
+            isReading = false
+            follow()
+        }
     }
+
+    /// Reads the text before the known text and puts it in front.
+    private func readUp() async {
+        let offset = point - layout.caretPoint(at: cursor)
+        let target = cursor
+        await moveHost(by: -cursor)
+        cursor = 0
+        var before = proxy.documentContextBeforeInput ?? ""
+        var joint = ""
+        if before.isEmpty {
+            // Hosts stop the context at a line break, so step over it.
+            guard await moveHost(by: -1) else {
+                reachedStart = true
+                return
+            }
+            before = proxy.documentContextBeforeInput ?? ""
+            joint = "\n"
+        }
+        text = before + joint + text
+        cursor = before.utf16.count
+        layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
+        point = layout.caretPoint(at: target + cursor + joint.utf16.count) + offset
+    }
+
+    /// Reads the text after the known text and puts it behind.
+    private func readDown() async {
+        let offset = point - layout.caretPoint(at: cursor)
+        let target = cursor
+        let length = text.utf16.count
+        await moveHost(by: length - cursor)
+        cursor = length
+        var after = proxy.documentContextAfterInput ?? ""
+        var joint = ""
+        if after.isEmpty {
+            guard await moveHost(by: 1) else {
+                reachedEnd = true
+                return
+            }
+            after = proxy.documentContextAfterInput ?? ""
+            joint = "\n"
+        }
+        text = text + joint + after
+        cursor = length + joint.utf16.count
+        layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
+        point = layout.caretPoint(at: target) + offset
+    }
+
+    /// Moves the host's cursor and waits until its context reflects the move,
+    /// reporting whether it moved at all.
+    @discardableResult
+    private func moveHost(by offset: Int) async -> Bool {
+        guard offset != 0 else { return true }
+        let before = proxy.documentContextBeforeInput
+        let after = proxy.documentContextAfterInput
+        proxy.adjustTextPosition(byCharacterOffset: offset)
+        let deadline = Date().addingTimeInterval(Self.hostTimeout)
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+            if proxy.documentContextBeforeInput != before || proxy.documentContextAfterInput != after { return true }
+        }
+        return false
+    }
+}
+
+private extension CGPoint {
+    static func - (lhs: CGPoint, rhs: CGPoint) -> CGVector { CGVector(dx: lhs.x - rhs.x, dy: lhs.y - rhs.y) }
+    static func + (lhs: CGPoint, rhs: CGVector) -> CGPoint { CGPoint(x: lhs.x + rhs.dx, y: lhs.y + rhs.dy) }
 }

@@ -220,6 +220,7 @@ final class KeyboardModel {
     }
 
     func cursorMoveEnded() {
+        floatingCursor!.end()
         floatingCursor = nil
         letterTouches = []
         forgetLocalEdits()
