@@ -147,7 +147,9 @@ final class FloatingCursor {
     private func prefetch() {
         isReading = true
         Task {
+            let started = Date()
             while !reachedStart && rowsAbove < Self.prefetchRows { await readUp() }
+            NSLog("FCLOG prefetch done in %.0fms len=%d rowsAbove=%.1f", Date().timeIntervalSince(started) * 1000, layout.length, rowsAbove)
             isReading = false
             follow()
         }

@@ -15,7 +15,16 @@ final class FloatingCursorUITests: XCTestCase {
 
     Tomorrow we will try the other hardware store, the one across the river, and maybe stop at the bakery that only opens on weekends.
     """
-    private static let longParagraph = String(repeating: "Every word here sits in one long paragraph with no line breaks at all, so only wrapping makes rows. ", count: 8)
+    private static let longParagraph = [
+        "Every word here sits in one long paragraph with no line breaks at all, so only wrapping makes rows.",
+        "The river behind the old mill runs quiet in late summer, low enough to cross on the flat stones.",
+        "Nobody remembers who built the footbridge, but everyone has an opinion about who should fix it.",
+        "On Saturdays the market fills the square with folding tables, hand-painted signs, and arguments over plums.",
+        "A man with a cart sells lemonade for a dollar and tells anyone who listens about his time at sea.",
+        "By late afternoon the shadows stretch across the cobblestones and the vendors start packing crates.",
+        "Children chase pigeons around the fountain while their parents count change and compare tomatoes.",
+        "When the bells ring at six the square empties quickly, leaving only paper bags and a few stray cats.",
+    ].joined(separator: " ")
 
     override func setUp() {
         continueAfterFailure = true
