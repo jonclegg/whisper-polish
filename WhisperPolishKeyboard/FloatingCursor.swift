@@ -129,6 +129,7 @@ final class FloatingCursor {
         let maxX = reachedEnd && target == layout.length ? layout.caretPoint(at: target).x : bounds.maxX
         point.x = min(max(point.x, bounds.minX), maxX)
         NSLog("FCLOG follow p=(%.0f,%.0f) target=%d cursor=%d len=%d", point.x, point.y, target, cursor, layout.length)
+        NSLog("FCLOG follow p=(%.0f,%.0f) target=%d cursor=%d len=%d", point.x, point.y, target, cursor, layout.length)
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
@@ -186,6 +187,7 @@ final class FloatingCursor {
             joint = Self.steppedCharacter(proxy.documentContextAfterInput?.utf16.first)
         }
         NSLog("FCLOG readUp got joint=%d before=[%@]", joint.isEmpty ? 0 : 1, before)
+        NSLog("FCLOG readUp joint=[%@] before=[%@] after=[%@]", joint, before, proxy.documentContextAfterInput ?? "nil")
         text = before + joint + text
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
@@ -211,6 +213,7 @@ final class FloatingCursor {
             after = proxy.documentContextAfterInput ?? ""
             joint = Self.steppedCharacter(proxy.documentContextBeforeInput?.utf16.last)
         }
+        NSLog("FCLOG readDown joint=[%@] after=[%@] before=[%@]", joint, after, proxy.documentContextBeforeInput ?? "nil")
         text = text + joint + after
         cursor = length + joint.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
