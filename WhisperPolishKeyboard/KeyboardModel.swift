@@ -628,7 +628,7 @@ final class KeyboardModel {
         let data = pasteboard.data(forPasteboardType: "com.apple.uikit.image")
             ?? pasteboard.data(forPasteboardType: "public.png")
         guard let data else { return }
-        input.insertAdaptiveImageGlyph?(NSAdaptiveImageGlyph(imageContent: data), replacementRange: range)
+        input.insert?(NSAdaptiveImageGlyph(imageContent: data), replacementRange: range)
     }
 
     private func dismissClipboardPreview() {
