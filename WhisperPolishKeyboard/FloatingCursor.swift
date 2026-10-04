@@ -183,7 +183,12 @@ final class FloatingCursor {
         var joint = ""
         if before.isEmpty {
             // The host's context stopped at a sentence or paragraph boundary, so step over it.
-            guard await stepHost(by: -1) else {
+            let known = text
+            let stepped = await stepHost(by: -1) { _, after in
+                let rest = after.isEmpty ? "" : (after as NSString).substring(from: 1)
+                return known.hasPrefix(rest) || rest.hasPrefix(known)
+            }
+            guard stepped else {
                 reachedStart = true
                 return
             }
@@ -209,7 +214,12 @@ final class FloatingCursor {
         var after = proxy.documentContextAfterInput ?? ""
         var joint = ""
         if after.isEmpty {
-            guard await stepHost(by: 1) else {
+            let known = text
+            let stepped = await stepHost(by: 1) { before, _ in
+                let rest = before.isEmpty ? "" : (before as NSString).substring(to: before.utf16.count - 1)
+                return known.hasSuffix(rest) || rest.hasSuffix(known)
+            }
+            guard stepped else {
                 reachedEnd = true
                 return
             }
@@ -253,11 +263,15 @@ final class FloatingCursor {
         }
     }
 
-    /// Steps the host's cursor past the known text, reporting whether it moved at all.
-    private func stepHost(by offset: Int) async -> Bool {
+    /// Steps the host's cursor one unit past the known text and waits until its
+    /// context is the known text plus the crossed character, reporting whether it moved at all.
+    private func stepHost(by offset: Int, until joinsKnownText: (String, String) -> Bool) async -> Bool {
         let start = hostContext
         proxy.adjustTextPosition(byCharacterOffset: offset)
-        return await waitForHost(timeout: Self.stepTimeout) { self.hostContext != start }
+        return await waitForHost(timeout: Self.stepTimeout) {
+            let context = self.hostContext
+            return context != start && joinsKnownText(context.before, context.after)
+        }
     }
 
     private func waitForHost(timeout: TimeInterval, until isDone: () -> Bool) async -> Bool {
