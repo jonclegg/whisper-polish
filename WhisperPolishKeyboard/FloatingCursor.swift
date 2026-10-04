@@ -148,8 +148,8 @@ final class FloatingCursor {
     private func prefetch(below: Bool) {
         isReading = true
         Task {
-            while !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
-            while below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
+            while !isEnded && !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
+            while !isEnded && below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
             isReading = false
             follow()
         }
