@@ -171,13 +171,13 @@ final class FloatingCursor {
         var before = proxy.documentContextBeforeInput ?? ""
         var joint = ""
         if before.isEmpty {
-            // Hosts stop the context at a line break, so step over it.
+            // The host's context stopped at a sentence or paragraph boundary, so step over it.
             guard await stepHost(by: -1) else {
                 reachedStart = true
                 return
             }
             before = proxy.documentContextBeforeInput ?? ""
-            joint = "\n"
+            joint = Self.steppedCharacter(proxy.documentContextAfterInput?.utf16.first)
         }
         text = before + joint + text
         cursor = before.utf16.count
@@ -202,12 +202,18 @@ final class FloatingCursor {
                 return
             }
             after = proxy.documentContextAfterInput ?? ""
-            joint = "\n"
+            joint = Self.steppedCharacter(proxy.documentContextBeforeInput?.utf16.last)
         }
         text = text + joint + after
         cursor = length + joint.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: anchor) + offset
+    }
+
+    /// The character a one-unit step crossed, as the context on its far side shows it.
+    /// Hosts leave a line break out of the context, so a missing one was a line break.
+    private static func steppedCharacter(_ unit: UTF16.CodeUnit?) -> String {
+        unit.map { String(utf16CodeUnits: [$0], count: 1) } ?? "\n"
     }
 
     /// Moves the host's cursor within the known text and waits until its
