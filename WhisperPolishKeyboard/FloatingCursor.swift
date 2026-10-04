@@ -169,6 +169,7 @@ final class FloatingCursor {
         let offset = point - layout.caretPoint(at: cursor)
         let anchor = cursor
         guard await moveHost(to: 0) else {
+            NSLog("FCLOG readUp moveHost failed len=%d before=[%@] after=[%@] known=[%@]", text.utf16.count, proxy.documentContextBeforeInput ?? "nil", proxy.documentContextAfterInput ?? "nil", String(text.prefix(120)))
             reachedStart = true
             return
         }
@@ -177,12 +178,14 @@ final class FloatingCursor {
         if before.isEmpty {
             // Hosts stop the context at a line break, so step over it.
             guard await stepHost(by: -1) else {
+                NSLog("FCLOG readUp step failed len=%d", text.utf16.count)
                 reachedStart = true
                 return
             }
             before = proxy.documentContextBeforeInput ?? ""
             joint = "\n"
         }
+        NSLog("FCLOG readUp got joint=%d before=[%@]", joint.isEmpty ? 0 : 1, before)
         text = before + joint + text
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
