@@ -39,6 +39,8 @@ final class KeyboardModel {
     private(set) var suggestions: [Suggestion] = []
     private(set) var notice: Notice?
     private(set) var clipboardPreview: ClipboardPreview?
+    /// The clipboard has something on it, but iOS hasn't let the keyboard read it.
+    private(set) var isClipboardBlocked = false
     var isPickingStyle = false
 
     @ObservationIgnored unowned let controller: KeyboardViewController
@@ -573,23 +575,33 @@ final class KeyboardModel {
     func updateClipboardPreview() {
         guard hasFullAccess else {
             clipboardPreview = nil
+            isClipboardBlocked = false
             return
         }
         let pasteboard = UIPasteboard.general
         let changeCount = pasteboard.changeCount
         if changeCount == dismissedPasteboardChangeCount {
             clipboardPreview = nil
+            isClipboardBlocked = false
             return
         }
         if changeCount == loadedPasteboardChangeCount, clipboardPreview != nil { return }
         if changeCount != loadedPasteboardChangeCount { clipboardReadAttempts = 0 }
         guard let preview = ClipboardPreview.load() else {
+            clipboardPreview = nil
+            isClipboardBlocked = pasteboard.hasStrings || pasteboard.hasImages
             scheduleClipboardRetry()
             return
         }
         loadedPasteboardChangeCount = changeCount
         clipboardReadAttempts = 0
+        isClipboardBlocked = false
         clipboardPreview = preview
+    }
+
+    /// iOS asks before every read until Paste from Other Apps is set to Allow on the app's Settings page.
+    func allowPasteInSettings() {
+        controller.openContainingApp(AppGroup.pasteSettingsURL)
     }
 
     private func scheduleClipboardRetry() {
@@ -617,10 +629,18 @@ final class KeyboardModel {
     }
 
     private func dismissClipboardPreview() {
-        guard let preview = clipboardPreview else { return }
-        dismissedPasteboardChangeCount = preview.changeCount
-        UserDefaults.standard.set(preview.changeCount, forKey: Self.dismissedPasteboardChangeCountKey)
+        let changeCount: Int
+        if let preview = clipboardPreview {
+            changeCount = preview.changeCount
+        } else if isClipboardBlocked {
+            changeCount = UIPasteboard.general.changeCount
+        } else {
+            return
+        }
+        dismissedPasteboardChangeCount = changeCount
+        UserDefaults.standard.set(changeCount, forKey: Self.dismissedPasteboardChangeCountKey)
         clipboardPreview = nil
+        isClipboardBlocked = false
     }
 
     // MARK: - Notices

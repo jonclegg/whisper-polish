@@ -9,6 +9,8 @@ enum AppGroup {
     static let dictationURL = URL(string: "whisperpolish://dictate")!
     /// Opened by the keyboard's style picker to create a custom style.
     static let newStyleURL = URL(string: "whisperpolish://new-style")!
+    /// Opened by the keyboard when iOS won't let it read the clipboard.
+    static let pasteSettingsURL = URL(string: "whisperpolish://paste-settings")!
 
     /// Style settings lived in standard defaults before the keyboard existed.
     static func migrateStandardDefaults() {
