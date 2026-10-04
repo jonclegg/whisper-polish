@@ -51,8 +51,6 @@ private struct SuggestionBar: View {
                     noticeContent(notice)
                 } else if model.clipboardPreview != nil {
                     clipboardPreview
-                } else if model.isClipboardBlocked {
-                    allowPasteButton
                 } else {
                     suggestionSlots
                 }
@@ -89,18 +87,6 @@ private struct SuggestionBar: View {
                 .accessibilityLabel(model.clipboardPreview?.accessibilityLabel ?? "Paste")
             Spacer(minLength: 0)
         }
-    }
-
-    private var allowPasteButton: some View {
-        Button(action: model.allowPasteInSettings) {
-            Label("Allow paste in Settings", systemImage: "doc.on.clipboard")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .frame(height: 30)
-                .background(Capsule().fill(Color.keyFill))
-        }
-        .buttonStyle(PressableButtonStyle())
     }
 
     @ViewBuilder

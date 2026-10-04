@@ -39,8 +39,6 @@ final class KeyboardModel {
     private(set) var suggestions: [Suggestion] = []
     private(set) var notice: Notice?
     private(set) var clipboardPreview: ClipboardPreview?
-    /// The clipboard has something on it, but iOS hasn't let the keyboard read it.
-    private(set) var isClipboardBlocked = false
     var isPickingStyle = false
 
     @ObservationIgnored unowned let controller: KeyboardViewController
@@ -576,20 +574,11 @@ final class KeyboardModel {
     /// Reading it can raise the system's paste prompt, and the read waits until the user answers,
     /// so it runs off the main thread. A denied copy isn't read again, or the prompt would repeat.
     func updateClipboardPreview() {
-        guard hasFullAccess else {
-            clipboardPreview = nil
-            isClipboardBlocked = false
-            return
-        }
         let changeCount = UIPasteboard.general.changeCount
-        if changeCount == dismissedPasteboardChangeCount {
+        guard hasFullAccess,
+              changeCount != dismissedPasteboardChangeCount,
+              changeCount != deniedPasteboardChangeCount else {
             clipboardPreview = nil
-            isClipboardBlocked = false
-            return
-        }
-        if changeCount == deniedPasteboardChangeCount {
-            clipboardPreview = nil
-            isClipboardBlocked = true
             return
         }
         if changeCount == loadedPasteboardChangeCount, clipboardPreview != nil { return }
@@ -605,22 +594,12 @@ final class KeyboardModel {
             }
             if let preview {
                 loadedPasteboardChangeCount = changeCount
-                isClipboardBlocked = false
                 clipboardPreview = preview
             } else if pasteboard.hasStrings || pasteboard.hasImages {
                 deniedPasteboardChangeCount = changeCount
                 UserDefaults.standard.set(changeCount, forKey: Self.deniedPasteboardChangeCountKey)
-                clipboardPreview = nil
-                isClipboardBlocked = true
             }
         }
-    }
-
-    /// iOS asks before every read until Paste from Other Apps is set to Allow on the app's Settings page.
-    func allowPasteInSettings() {
-        deniedPasteboardChangeCount = 0
-        UserDefaults.standard.removeObject(forKey: Self.deniedPasteboardChangeCountKey)
-        controller.openContainingApp(AppGroup.pasteSettingsURL)
     }
 
     func pasteClipboard() {
@@ -637,18 +616,10 @@ final class KeyboardModel {
     }
 
     private func dismissClipboardPreview() {
-        let changeCount: Int
-        if let preview = clipboardPreview {
-            changeCount = preview.changeCount
-        } else if isClipboardBlocked {
-            changeCount = UIPasteboard.general.changeCount
-        } else {
-            return
-        }
-        dismissedPasteboardChangeCount = changeCount
-        UserDefaults.standard.set(changeCount, forKey: Self.dismissedPasteboardChangeCountKey)
+        guard let preview = clipboardPreview else { return }
+        dismissedPasteboardChangeCount = preview.changeCount
+        UserDefaults.standard.set(preview.changeCount, forKey: Self.dismissedPasteboardChangeCountKey)
         clipboardPreview = nil
-        isClipboardBlocked = false
     }
 
     // MARK: - Notices

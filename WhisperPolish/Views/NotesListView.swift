@@ -149,10 +149,6 @@ struct NotesListView: View {
             }
         }
         .onOpenURL { url in
-            if url == AppGroup.pasteSettingsURL {
-                UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
-                return
-            }
             guard hasCompletedSetup else { return }
             showComposer = false
             showSettings = false
