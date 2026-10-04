@@ -83,8 +83,8 @@ final class FloatingCursor {
     private static let lookahead: CGFloat = 5
     /// How long the host gets to show a move; a step it never shows means the cursor is at the document's edge.
     private static let hostTimeout: TimeInterval = 0.3
-    /// Moves sent while following can still be landing; the host has caught up once its context holds still this long.
-    private static let hostQuiet: TimeInterval = 0.03
+    /// The host can report a move in more than one update; it has caught up once its context holds still this long.
+    private static let hostQuiet: TimeInterval = 0.02
 
     private let proxy: UITextDocumentProxy
     private let screenWidth: CGFloat
@@ -97,7 +97,6 @@ final class FloatingCursor {
     private var reachedEnd = false
     private var isReading = false
     private var isEnded = false
-    private var hostMayLag = false
     private var direction = CGVector.zero
 
     init(proxy: UITextDocumentProxy, screenWidth: CGFloat) {
@@ -134,7 +133,6 @@ final class FloatingCursor {
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
-            hostMayLag = true
         }
         readAheadIfNeeded()
     }
@@ -236,9 +234,7 @@ final class FloatingCursor {
         let known = text as NSString
         let knownBefore = known.substring(to: index)
         let knownAfter = known.substring(from: index)
-        let quiet = hostMayLag
-        hostMayLag = false
-        return await waitForHost(quiet: quiet) {
+        return await waitForHost {
             let (before, after) = self.hostContext
             return (!moved || (before, after) != start)
                 && (knownBefore.hasSuffix(before) || before.hasSuffix(knownBefore))
@@ -253,7 +249,7 @@ final class FloatingCursor {
         return await waitForHost { self.hostContext != start }
     }
 
-    private func waitForHost(quiet: Bool = false, until isDone: () -> Bool) async -> Bool {
+    private func waitForHost(until isDone: () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(Self.hostTimeout)
         var context = hostContext
         var lastChange = Date()
@@ -263,7 +259,7 @@ final class FloatingCursor {
                 context = hostContext
                 lastChange = now
             }
-            if isDone() && (!quiet || now.timeIntervalSince(lastChange) >= Self.hostQuiet) { return true }
+            if now.timeIntervalSince(lastChange) >= Self.hostQuiet && isDone() { return true }
             guard now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(5))
         }
