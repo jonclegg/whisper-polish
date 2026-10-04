@@ -15,3 +15,4 @@ ota:
   cloudfront_distribution_id: E5DW9A600TBJR
   configuration: Release
   derived_data: build/ios/DerivedData-ota
+simulator: FC Test iPhone

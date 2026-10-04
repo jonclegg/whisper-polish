@@ -106,6 +106,7 @@ final class FloatingCursor {
         let pushesEnd = target == layout.length && (point.y > bounds.maxY || point.x > maxX)
         point.x = min(max(point.x, bounds.minX), maxX)
         point.y = min(max(point.y, bounds.minY), bounds.maxY)
+        NSLog("FCLOG move d=(%.0f,%.0f) p=(%.0f,%.0f) target=%d cursor=%d len=%d pushS=%d pushE=%d settled=%d", delta.dx, delta.dy, point.x, point.y, target, cursor, layout.length, pushesStart ? 1 : 0, pushesEnd ? 1 : 0, isSettled ? 1 : 0)
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
@@ -128,6 +129,7 @@ final class FloatingCursor {
         layout = EstimatedTextLayout(text: before + after, screenWidth: screenWidth)
         cursor = (before as NSString).length
         point = layout.caretPoint(at: cursor)
+        NSLog("FCLOG reload before=%d after=%d bounds=%@ before=[%@] after=[%@]", (before as NSString).length, (after as NSString).length, NSCoder.string(for: layout.bounds), before, after)
         isStale = false
     }
 }
