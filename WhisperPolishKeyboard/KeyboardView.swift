@@ -100,12 +100,8 @@ private struct SuggestionBar: View {
                     .fill(Color.keyFill)
                     .shadow(color: .black.opacity(0.16), radius: 1.5, y: 1)
             )
-        if case .image = model.clipboardPreview?.kind {
-            chip.overlay(ClipboardImagePasteControl(onPaste: model.pasteClipboard).colorMultiply(.clear))
-        } else {
-            Button(action: model.pasteClipboard) { chip }
-                .buttonStyle(PressableButtonStyle())
-        }
+        Button(action: model.pasteClipboard) { chip }
+            .buttonStyle(PressableButtonStyle())
     }
 
     @ViewBuilder
@@ -295,48 +291,6 @@ private struct StylePickerView: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? Color.polishTeal : Color.keyFill))
         }
         .buttonStyle(PressableButtonStyle())
-    }
-}
-
-/// Tapping a copied photo has to go through the system paste control. The text
-/// document proxy can only insert strings, and this control pastes the image
-/// into the field the keyboard is attached to.
-private struct ClipboardImagePasteControl: UIViewRepresentable {
-    var onPaste: () -> Void
-
-    func makeUIView(context: Context) -> UIPasteControl {
-        let configuration = UIPasteControl.Configuration()
-        configuration.displayMode = .iconOnly
-        configuration.baseBackgroundColor = .clear
-        configuration.baseForegroundColor = .clear
-        configuration.cornerStyle = .fixed
-        configuration.cornerRadius = 12
-        let control = UIPasteControl(configuration: configuration)
-        control.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
-        return control
-    }
-
-    func updateUIView(_ control: UIPasteControl, context: Context) {
-        context.coordinator.onPaste = onPaste
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPaste: onPaste)
-    }
-
-    final class Coordinator: NSObject {
-        var onPaste: () -> Void
-
-        init(onPaste: @escaping () -> Void) {
-            self.onPaste = onPaste
-        }
-
-        @objc func tapped() {
-            // The control pastes on this same click. Dismissing immediately removes it before that finishes.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.onPaste()
-            }
-        }
     }
 }
 
