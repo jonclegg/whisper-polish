@@ -107,6 +107,7 @@ final class FloatingCursor {
         self.screenWidth = screenWidth
         let before = proxy.documentContextBeforeInput ?? ""
         let after = proxy.documentContextAfterInput ?? ""
+        NSLog("FCLOG init afterIsNil=%d beforeIsNil=%d before=%d after=%d", proxy.documentContextAfterInput == nil ? 1 : 0, proxy.documentContextBeforeInput == nil ? 1 : 0, before.utf16.count, after.utf16.count)
         text = before + after
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
