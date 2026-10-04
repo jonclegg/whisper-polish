@@ -107,7 +107,6 @@ final class FloatingCursor {
         self.screenWidth = screenWidth
         let before = proxy.documentContextBeforeInput ?? ""
         let after = proxy.documentContextAfterInput ?? ""
-        NSLog("FCLOG init afterIsNil=%d beforeIsNil=%d before=%d after=%d", proxy.documentContextAfterInput == nil ? 1 : 0, proxy.documentContextBeforeInput == nil ? 1 : 0, before.utf16.count, after.utf16.count)
         text = before + after
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
@@ -151,8 +150,8 @@ final class FloatingCursor {
         isReading = true
         Task {
             let started = Date()
-            while !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
-            while below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
+            while !isEnded && !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
+            while !isEnded && below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
             NSLog("FCLOG prefetch done in %.0fms len=%d rowsAbove=%.1f rowsBelow=%.1f", Date().timeIntervalSince(started) * 1000, layout.length, rowsAbove, rowsBelow)
             isReading = false
             follow()
@@ -196,7 +195,6 @@ final class FloatingCursor {
             before = proxy.documentContextBeforeInput ?? ""
             joint = Self.steppedCharacter(proxy.documentContextAfterInput?.utf16.first)
         }
-        NSLog("FCLOG readUp joint=[%@] before=[%@] after=[%@]", joint, before, proxy.documentContextAfterInput ?? "nil")
         text = before + joint + text
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
@@ -227,7 +225,6 @@ final class FloatingCursor {
             after = proxy.documentContextAfterInput ?? ""
             joint = Self.steppedCharacter(proxy.documentContextBeforeInput?.utf16.last)
         }
-        NSLog("FCLOG readDown joint=[%@] after=[%@] before=[%@]", joint, after, proxy.documentContextBeforeInput ?? "nil")
         text = text + joint + after
         cursor = length + joint.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
