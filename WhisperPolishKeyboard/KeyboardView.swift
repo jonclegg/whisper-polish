@@ -100,29 +100,35 @@ private struct SuggestionBar: View {
                     .fill(Color.keyFill)
                     .shadow(color: .black.opacity(0.16), radius: 1.5, y: 1)
             )
-        Button(action: model.pasteClipboard) { chip }
-            .buttonStyle(PressableButtonStyle())
-    }
-
-    @ViewBuilder
-    private var clipboardPreviewLabel: some View {
-        switch model.clipboardPreview?.kind {
-        case .image(let image):
+        if case .image(let image) = model.clipboardPreview?.kind {
             HStack(spacing: 8) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 28, height: 36)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Photo")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text("Paste")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
+                ClipboardImagePasteControl(onPaste: model.pasteClipboard)
+                    .frame(width: 88, height: 36)
             }
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.keyFill)
+                    .shadow(color: .black.opacity(0.16), radius: 1.5, y: 1)
+            )
+        } else {
+            Button(action: model.pasteClipboard) { chip }
+                .buttonStyle(PressableButtonStyle())
+        }
+    }
+
+    @ViewBuilder
+    private var clipboardPreviewLabel: some View {
+        switch model.clipboardPreview?.kind {
+        case .image, nil:
+            EmptyView()
         case .text(let text):
             Text(ClipboardPreview.displayText(text))
                 .font(.system(size: 16))
@@ -130,8 +136,6 @@ private struct SuggestionBar: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: 240, alignment: .leading)
-        case nil:
-            EmptyView()
         }
     }
 
@@ -291,6 +295,47 @@ private struct StylePickerView: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? Color.polishTeal : Color.keyFill))
         }
         .buttonStyle(PressableButtonStyle())
+    }
+}
+
+/// The text proxy can only insert strings. This control is the system paste button,
+/// drawn over the preview, so a tap pastes the photo into the field.
+private struct ClipboardImagePasteControl: UIViewRepresentable {
+    var onPaste: () -> Void
+
+    func makeUIView(context: Context) -> UIPasteControl {
+        let configuration = UIPasteControl.Configuration()
+        configuration.displayMode = .iconAndLabel
+        configuration.baseBackgroundColor = .secondarySystemBackground
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .fixed
+        configuration.cornerRadius = 12
+        let control = UIPasteControl(configuration: configuration)
+        control.accessibilityLabel = "Paste photo"
+        control.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
+        return control
+    }
+
+    func updateUIView(_ control: UIPasteControl, context: Context) {
+        context.coordinator.onPaste = onPaste
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPaste: onPaste)
+    }
+
+    final class Coordinator: NSObject {
+        var onPaste: () -> Void
+
+        init(onPaste: @escaping () -> Void) {
+            self.onPaste = onPaste
+        }
+
+        @objc func tapped() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                self.onPaste()
+            }
+        }
     }
 }
 

@@ -609,26 +609,11 @@ final class KeyboardModel {
             dismissClipboardPreview()
             return
         }
-        switch preview.kind {
-        case .text(let text):
+        if case .text(let text) = preview.kind {
             insert(text)
-        case .image:
-            insertClipboardImage()
         }
         dismissClipboardPreview()
         syncWithDocument()
-    }
-
-    /// The text proxy only inserts strings. A copied photo goes in as an adaptive image glyph
-    /// when the host field accepts one.
-    private func insertClipboardImage() {
-        guard #available(iOS 18, *) else { return }
-        guard let input = proxy as? UITextInput, let range = input.selectedTextRange else { return }
-        let pasteboard = UIPasteboard.general
-        let data = pasteboard.data(forPasteboardType: "com.apple.uikit.image")
-            ?? pasteboard.data(forPasteboardType: "public.png")
-        guard let data else { return }
-        input.insert?(NSAdaptiveImageGlyph(imageContent: data), replacementRange: range)
     }
 
     private func dismissClipboardPreview() {
