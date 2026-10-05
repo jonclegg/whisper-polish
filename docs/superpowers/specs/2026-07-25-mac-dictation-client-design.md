@@ -147,9 +147,12 @@ Chromium/Electron. `AXEnhancedUserInterface` is the flag VoiceOver sets; on a na
 AppKit app it changes window-resize and animation behaviour permanently, which is what
 window managers fight with, so it must not be applied speculatively.
 
-**`TextInserter`** — saves the current pasteboard items, writes the text, posts a
-synthetic ⌘V (`CGEvent` with `.cghidEventTap`), restores the previous pasteboard after
-~150ms, and only if nothing else has touched the pasteboard since. Protocol-backed for
+**`TextInserter`** — saves the current pasteboard items, writes the text as a promised
+(lazily provided) item marked `org.nspasteboard.TransientType`, posts a synthetic ⌘V
+(`CGEvent` with `.cghidEventTap`), and restores the previous pasteboard ~250ms after the
+target app has actually read the promise (or after 10s if nothing ever reads it), and only
+if nothing else has touched the pasteboard since. A fixed delay is not enough: under load
+the target can reach the ⌘V after the restore and paste the old clipboard. Protocol-backed for
 tests. Alternate `.clipboardOnly` mode selectable in Settings for users who don't want
 synthetic keystrokes. Pasting is gated on the target app still being frontmost, on
 Accessibility being granted, and on secure input not having engaged since the dictation

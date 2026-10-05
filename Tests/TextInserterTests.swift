@@ -1,10 +1,10 @@
 import XCTest
 @testable import DogballWhisper
 
-/// Covers only the pure decision extracted from `PasteboardTextInserter`:
-/// whether a delayed restore should still apply. `insert()` itself posts real
-/// keyboard events into whatever app has focus and touches the user's real
-/// clipboard, so it is intentionally not called from a test.
+/// Covers the pure decisions extracted from `PasteboardTextInserter`: whether
+/// to paste at all, and whether a delayed restore should still apply.
+/// `insert()` itself is driven end to end in `PasteRaceTests`, against a
+/// private pasteboard and a simulated target instead of real keystrokes.
 final class TextInserterTests: XCTestCase {
     func testPastingProceedsWhenEveryGateIsOpen() {
         XCTAssertTrue(
@@ -28,7 +28,7 @@ final class TextInserterTests: XCTestCase {
     // The coordinator's own secure check ran a second or more earlier, before
     // transcription and cleanup. A `sudo` prompt appearing in that window
     // would swallow the synthetic ⌘V silently: nothing inserted, `.pasted`
-    // reported anyway, and the clipboard restored 150ms later, leaving the
+    // reported anyway, and the clipboard restored afterward, leaving the
     // user with no text and no way to get it back.
     func testSecureInputEngagedSinceTheDictationStartedFallsBackToTheClipboard() {
         XCTAssertFalse(

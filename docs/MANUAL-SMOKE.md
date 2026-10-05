@@ -142,8 +142,8 @@ the same apps.
       Keyboard Entry, or trigger an auth sheet). Nothing is pasted, the panel
       says the text was copied to the clipboard, and ⌘V afterwards pastes it.
       The failure this replaces was silent: the keystroke swallowed, the
-      panel dismissed as if it had worked, and the clipboard restored 150ms
-      later so the text was gone for good
+      panel dismissed as if it had worked, and the clipboard restored
+      afterward so the text was gone for good
 - [ ] **(never verified)** Focus-change gate: start dictating into TextEdit,
       then ⌘-Tab to another app *before* releasing the key. Nothing is pasted
       into the app you switched to, the panel says the text was copied to the
@@ -155,17 +155,21 @@ the same apps.
 
 - [ ] Copy "keepme", dictate something, then ⌘V: pastes "keepme" back (the
       delayed pasteboard restore returned your original clipboard)
-- [ ] **(never verified)** Copy "keepme", dictate, and in the roughly 150ms
+- [ ] Copy "keepme", then dictate into an app whose main thread is busy
+      (e.g. a heavy Electron window while the machine is under load): the
+      dictation is pasted, never "keepme" and never nothing, however late
+      the app gets to the ⌘V, and ⌘V afterward pastes "keepme" again
+- [ ] **(never verified)** Copy "keepme", dictate, and in the roughly 250ms
       window right after the panel shows the dictated text landed, press
       ⌘C to copy something else ("dontclobber"): ⌘V afterward pastes
       "dontclobber", not "keepme". This exercises the change-count gate in
       `PasteboardTextInserter`, which exists so a delayed restore cannot
       stomp a newer copy
 - [ ] **(never verified)** Fire two dictations back to back, faster than the
-      ~150ms restore delay between them (e.g. hold-release-hold-release
+      ~250ms restore grace between them (e.g. hold-release-hold-release
       quickly for two short phrases): the second dictation's text is what
-      ends up pasted, and the first dictation's pending clipboard restore
-      does not overwrite it afterward
+      ends up pasted, and ⌘V afterward pastes your original clipboard, not
+      the first dictation
 - [ ] **(never verified)** Promised or lazy clipboard payload: copy a file
       from Finder (a file promise) or a large image from Preview, then
       dictate. Nothing stalls while the snapshot resolves every declared
