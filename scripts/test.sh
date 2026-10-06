@@ -13,7 +13,7 @@ ARGS=()
 # inherit this shell's environment. Xcode copies TEST_RUNNER_-prefixed
 # variables into the test process, so forward the integration-test gates.
 GATES=()
-for gate in RUN_AUDIO_IT RUN_ENGINE_IT RUN_MIRROR_IT; do
+for gate in RUN_AUDIO_IT RUN_ENGINE_IT RUN_MIRROR_IT RUN_S1MINI_IT; do
   value="${!gate:-}"
   [[ -n "$value" ]] && GATES+=("TEST_RUNNER_$gate=$value")
 done

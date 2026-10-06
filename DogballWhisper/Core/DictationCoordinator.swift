@@ -25,6 +25,9 @@ protocol DictationPresenting: AnyObject {
 }
 
 typealias EngineProvider = () -> TranscriptionEngine?
+/// Asked once per dictation, so switching the cleanup engine in Settings takes
+/// effect on the next dictation.
+typealias CleanerProvider = () -> TextCleaning?
 
 /// Where the caret is, and whether dictating there is allowed at all.
 /// Injected so the refusal path — the one place a bug means shipping a
@@ -59,7 +62,7 @@ final class DictationCoordinator {
     private let recorder: AudioRecording
     private let engineProvider: EngineProvider
     private let inserter: TextInserting
-    private let cleaner: TextCleaning?
+    private let cleanerProvider: CleanerProvider
     private let presenter: DictationPresenting
     private let preferences: Preferences
     private let caretProvider: CaretProvider
@@ -84,7 +87,7 @@ final class DictationCoordinator {
         recorder: AudioRecording,
         engineProvider: @escaping EngineProvider,
         inserter: TextInserting,
-        cleaner: TextCleaning?,
+        cleanerProvider: @escaping CleanerProvider,
         presenter: DictationPresenting,
         preferences: Preferences,
         caretProvider: @escaping CaretProvider = CaretLocator.current,
@@ -94,7 +97,7 @@ final class DictationCoordinator {
         self.recorder = recorder
         self.engineProvider = engineProvider
         self.inserter = inserter
-        self.cleaner = cleaner
+        self.cleanerProvider = cleanerProvider
         self.presenter = presenter
         self.preferences = preferences
         self.caretProvider = caretProvider
@@ -354,7 +357,7 @@ final class DictationCoordinator {
             Diagnostics.verbose("cleanup skipped: disabled in settings")
             return text
         }
-        guard let cleaner else {
+        guard let cleaner = cleanerProvider() else {
             Diagnostics.verbose("cleanup skipped: no cleaner wired up")
             return text
         }

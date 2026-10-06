@@ -12,6 +12,8 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
     from: 0.18.0
+  LlamaCpp:
+    path: Packages/LlamaCpp
 
 targets:
   DogballWhisper:
@@ -22,6 +24,8 @@ targets:
     dependencies:
       - package: FluidAudio
       - package: WhisperKit
+      - package: LlamaCpp
+        product: llama
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jonclegg.DogballWhisper

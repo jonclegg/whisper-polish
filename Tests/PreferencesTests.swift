@@ -23,6 +23,14 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(Preferences(defaults: defaults).cleanupModelID, "openai/gpt-oss-120b")
     }
 
+    // Groq stays the default so an existing setup keeps working; S1-mini is
+    // opt-in because it needs a download first.
+    func testTheCleanupEngineDefaultsToGroqAndPersists() {
+        XCTAssertEqual(Preferences(defaults: defaults).cleanupEngine, .groq)
+        Preferences(defaults: defaults).cleanupEngine = .s1Mini
+        XCTAssertEqual(Preferences(defaults: defaults).cleanupEngine, .s1Mini)
+    }
+
     func testDefaultsAreUsableOnFirstLaunch() {
         let prefs = Preferences(defaults: defaults)
         XCTAssertNil(prefs.activeModelID)

@@ -284,6 +284,14 @@ their caret was.
 
 - [ ] Turn it back off with `-bool NO` and relaunch
 
+- [ ] Settings > Cleanup > Engine > "S1-mini by Superwhisper (on this Mac)":
+      the section offers "Download (484 MB)", shows progress, then "Ready".
+      With Wi-Fi off afterwards, a dictation with "um" and a stutter still
+      inserts cleaned text, and Test shows a cleaned sentence
+- [ ] Quit and relaunch with S1-mini selected: the very first dictation is
+      cleaned (the model loads at launch), not pasted raw after a timeout
+- [ ] Switch the engine back to Groq: the next dictation goes to Groq
+
 ## 7. Models
 
 - [ ] Install a Whisper model: progress advances, then it shows Installed

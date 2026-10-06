@@ -111,10 +111,32 @@ The prompt is a plain text field, so that pattern adapts to any field with
 its own vocabulary. Keep it short: it is read by the model on every
 dictation, between letting go of the key and the text appearing.
 
-Cleanup only happens if you supply a Groq API key, and only your
+With the Groq engine, cleanup only happens if you supply a Groq API key, and only your
 transcribed text is ever sent, straight to Groq. To stop it, clear the API
 key field in Settings > Cleanup: an empty field deletes the stored key
 rather than leaving it in the Keychain.
+
+## On-device cleanup
+
+Settings > Cleanup > Engine can run cleanup on this Mac instead of Groq,
+with S1-mini by Superwhisper: a 0.6B model fine-tuned only to turn raw
+dictation into clean text (fillers and false starts removed, self-corrections
+resolved, punctuation and capitalization fixed). Nothing is sent anywhere.
+Choosing it offers a one-time 484 MB download, pinned to one revision and
+checked against its SHA-256, into
+`~/Library/Application Support/DogballWhisper/Models/cleanup/`. It runs
+through llama.cpp (a pinned prebuilt XCFramework, `Packages/LlamaCpp`) and is
+loaded at launch, since loading takes longer than the cleanup budget.
+
+On 44 synthetic dictations it scored 94.6 to Groq gpt-oss-120b's 95.4, at a
+185ms median instead of 958ms. Its weak spots: it does not fix wrong-word
+errors ("there car"), it can drop words it mistakes for dictation commands,
+and its semi-formal register turns "gonna" into "going to". It ignores the
+cleanup prompt: the model card requires its own fixed prompt and format.
+
+To check it end to end (downloads the real model):
+
+    RUN_S1MINI_IT=1 ./scripts/test.sh DogballWhisperTests/S1MiniIntegrationTests
 
 ## Diagnostics
 
@@ -151,7 +173,7 @@ granularity, managed by `Transcribe/ModelManager.swift`.
 - `Hotkey/` - the event tap and the pure matcher that decides began / ended / cancelled
 - `Capture/` - 16kHz mono WAV recording with level metering
 - `Transcribe/` - engine protocol, Parakeet (FluidAudio), Whisper (WhisperKit), model catalog
-- `Polish/` - the Groq cleanup call
+- `Polish/` - the Groq cleanup call, and S1-mini on llama.cpp for on-device cleanup
 - `Insert/` - caret location and clipboard-preserving paste
 - `Core/DictationCoordinator.swift` - the state machine everything else hangs off
 - `UI/` - floating panel, settings, onboarding

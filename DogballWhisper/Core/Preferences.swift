@@ -1,5 +1,12 @@
 import Foundation
 
+/// Where cleanup runs. Groq stays the default so an existing setup keeps
+/// working; S1-mini is opt-in because it needs a 484 MB download first.
+enum CleanupEngine: String, CaseIterable {
+    case groq
+    case s1Mini
+}
+
 enum InsertionMode: String, Codable {
     case paste
     case clipboardOnly
@@ -17,6 +24,7 @@ final class Preferences {
         /// is a 404 at Groq, so it must not be read back as a Groq model.
         static let cleanupModelID = "groqCleanupModelID"
         static let cleanupPrompt = "cleanupPrompt"
+        static let cleanupEngine = "cleanupEngine"
         static let insertionMode = "insertionMode"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
     }
@@ -90,6 +98,11 @@ final class Preferences {
     var cleanupPrompt: String {
         get { nonBlank(Key.cleanupPrompt, default: Self.defaultCleanupPrompt) }
         set { defaults.set(newValue, forKey: Key.cleanupPrompt) }
+    }
+
+    var cleanupEngine: CleanupEngine {
+        get { CleanupEngine(rawValue: defaults.string(forKey: Key.cleanupEngine) ?? "") ?? .groq }
+        set { defaults.set(newValue.rawValue, forKey: Key.cleanupEngine) }
     }
 
     var insertionMode: InsertionMode {

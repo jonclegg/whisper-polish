@@ -142,39 +142,48 @@ enum ModelMirror {
         let baseCompleted = completedBytes
         var priorFilesBytes = 0
         for file in pending {
-            let dest = dir.appendingPathComponent(file.path)
-            try FileManager.default.createDirectory(
-                at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-
             let remoteURL = baseURL
                 .appendingPathComponent(manifest.prefix)
                 .appendingPathComponent(file.path)
-            let tmp = dest.appendingPathExtension("partial")
 
             // Bytes already on disk for this file are only folded into the
             // reported fraction once the response has been accepted, so a
             // server that ignores our Range header (and forces a restart from
             // zero) cannot make progress run backwards.
             let priorBytes = baseCompleted + priorFilesBytes
-            let fileBytes = try await fetch(
-                file: file, from: remoteURL, into: tmp,
+            try await downloadFile(
+                file, from: remoteURL, to: dir.appendingPathComponent(file.path),
                 onBytes: { done in
                     onProgress(min(1.0, Double(priorBytes + done) / Double(total)))
                 })
-
-            guard fileBytes == file.size else {
-                try? FileManager.default.removeItem(at: tmp)
-                throw MirrorError.sizeMismatch(path: file.path, expected: file.size, got: fileBytes)
-            }
-            if FileManager.default.fileExists(atPath: dest.path) {
-                try FileManager.default.removeItem(at: dest)
-            }
-            try FileManager.default.moveItem(at: tmp, to: dest)
 
             priorFilesBytes += file.size
             onProgress(min(1.0, Double(baseCompleted + priorFilesBytes) / Double(total)))
         }
         onProgress(1.0)
+    }
+
+    /// Downloads one file to `dest`, resuming a `.partial` left by an earlier
+    /// attempt, and moves it into place only once it is exactly `file.size`
+    /// bytes. `onBytes` reports the bytes this file now holds.
+    static func downloadFile(
+        _ file: Manifest.File,
+        from remoteURL: URL,
+        to dest: URL,
+        onBytes: @escaping @Sendable (Int) -> Void
+    ) async throws {
+        try FileManager.default.createDirectory(
+            at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let tmp = dest.appendingPathExtension("partial")
+        let fileBytes = try await fetch(file: file, from: remoteURL, into: tmp, onBytes: onBytes)
+        guard fileBytes == file.size else {
+            try? FileManager.default.removeItem(at: tmp)
+            throw MirrorError.sizeMismatch(path: file.path, expected: file.size, got: fileBytes)
+        }
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.moveItem(at: tmp, to: dest)
     }
 
     /// Brings `tmp` up to `file.size` bytes, resuming from whatever is already

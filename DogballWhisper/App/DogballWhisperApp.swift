@@ -16,6 +16,8 @@ enum DogballWhisperMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences()
     private lazy var models = ModelManager(preferences: preferences)
+    private let polish = PolishService()
+    private let s1Mini = S1MiniModel()
 
     private var menuBar: MenuBarController?
     private var panel: DictationPanelController?
@@ -38,7 +40,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             recorder: recorder,
             engineProvider: { [weak self] in self?.models.activeEngine },
             inserter: PasteboardTextInserter(),
-            cleaner: PolishService(),
+            cleanerProvider: { [weak self] in
+                guard let self else { return nil }
+                switch self.preferences.cleanupEngine {
+                case .groq: return self.polish
+                case .s1Mini: return self.s1Mini.cleaner
+                }
+            },
             presenter: panel,
             preferences: preferences
         )
@@ -86,6 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 await models.loadActiveEngine()
                 refreshActiveModelLabel()
+            }
+            if preferences.cleanupEnabled, preferences.cleanupEngine == .s1Mini, S1Mini.isInstalled {
+                Task { await s1Mini.cleaner.prewarm() }
             }
         } else {
             showOnboarding()
@@ -183,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings = SettingsWindowController(
                 preferences: preferences,
                 models: models,
+                s1Mini: s1Mini,
                 onHotkeyChange: { [weak self] binding in self?.monitor?.binding = binding },
                 onLaunchAtLoginChange: { [weak self] in self?.menuBar?.refreshLaunchAtLoginState() }
             )

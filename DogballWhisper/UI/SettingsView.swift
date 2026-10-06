@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     let preferences: Preferences
     let models: ModelManager
+    let s1Mini: S1MiniModel
     let onHotkeyChange: (HotkeyBinding) -> Void
     let onLaunchAtLoginChange: () -> Void
 
@@ -16,7 +17,7 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             ModelsSettingsTab(models: models)
                 .tabItem { Label("Models", systemImage: "square.and.arrow.down") }
-            CleanupSettingsTab(preferences: preferences)
+            CleanupSettingsTab(preferences: preferences, s1Mini: s1Mini)
                 .tabItem { Label("Cleanup", systemImage: "wand.and.sparkles") }
         }
         .frame(width: 520, height: 420)
@@ -119,8 +120,10 @@ private struct ModelsSettingsTab: View {
 
 private struct CleanupSettingsTab: View {
     let preferences: Preferences
+    let s1Mini: S1MiniModel
 
     @State private var enabled = true
+    @State private var engine = CleanupEngine.groq
     @State private var apiKey = ""
     @State private var modelID = ""
     @State private var prompt = ""
@@ -170,40 +173,20 @@ private struct CleanupSettingsTab: View {
         Form {
             Section {
                 Toggle("Clean up transcripts", isOn: $enabled)
-                Text("Only the transcribed text is sent to Groq. Audio never leaves this Mac.")
+                Picker("Engine", selection: $engine) {
+                    Text("Groq (cloud)").tag(CleanupEngine.groq)
+                    Text("\(S1Mini.displayName) (on this Mac)").tag(CleanupEngine.s1Mini)
+                }
+                Text(engine == .groq
+                     ? "Only the transcribed text is sent to Groq. Audio never leaves this Mac."
+                     : "Cleanup runs entirely on this Mac. Nothing you say is sent anywhere.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("Groq") {
-                SecureField("API key", text: $apiKey)
-                Picker("Model", selection: modelSelection) {
-                    ForEach(Self.suggestedModels, id: \.self) { model in
-                        Text(model).tag(model)
-                    }
-                    Divider()
-                    Text("Custom…").tag(Self.customModelTag)
-                }
-                if isCustomModel {
-                    TextField("Model ID", text: $modelID)
-                        .textFieldStyle(.roundedBorder)
-                }
-                Text("Cleanup runs between letting go of the key and the text appearing, so a faster model means less waiting. Anything slower than \(Int(DictationCoordinator.Config().cleanupTimeout)) seconds is abandoned and the raw transcript is used.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section("Prompt") {
-                TextEditor(text: $prompt)
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(minHeight: 110)
-                HStack {
-                    Button("Reset to default") { prompt = Preferences.defaultCleanupPrompt }
-                    Button("Use the developer prompt") {
-                        prompt = Preferences.developerCleanupPrompt
-                    }
-                }
-                Text("The developer prompt also fixes technical terms the speech model mishears, so \"Maine\" becomes \"main\" and \"guess\" becomes \"git\". Pick it only if you dictate about code, because it rewrites those words wherever they appear.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if engine == .groq {
+                groqSections
+            } else {
+                s1MiniSection
             }
             Section {
                 HStack {
@@ -217,6 +200,7 @@ private struct CleanupSettingsTab: View {
         .formStyle(.grouped)
         .onAppear {
             enabled = preferences.cleanupEnabled
+            engine = preferences.cleanupEngine
             modelID = preferences.cleanupModelID
             // A stored model that is not on the list is by definition one the
             // user typed, so open on the custom field rather than silently
@@ -235,6 +219,17 @@ private struct CleanupSettingsTab: View {
         .onChange(of: enabled) { _, new in
             guard new != preferences.cleanupEnabled else { return }
             preferences.cleanupEnabled = new
+        }
+        .onChange(of: engine) { _, new in
+            guard new != preferences.cleanupEngine else { return }
+            preferences.cleanupEngine = new
+            // Hold the 0.5GB model in memory only while it is the engine in
+            // use, and have it loaded before the next dictation needs it.
+            switch new {
+            case .s1Mini where S1Mini.isInstalled: Task { await s1Mini.cleaner.prewarm() }
+            case .s1Mini: break
+            case .groq: Task { await s1Mini.cleaner.unload() }
+            }
         }
         .onChange(of: modelID) { _, new in
             guard new != preferences.cleanupModelID else { return }
@@ -274,6 +269,67 @@ private struct CleanupSettingsTab: View {
         }
     }
 
+    @ViewBuilder private var s1MiniSection: some View {
+        Section(S1Mini.displayName) {
+            HStack {
+                switch s1Mini.state {
+                case .notInstalled:
+                    Text("Not downloaded")
+                    Spacer()
+                    Button("Download (484 MB)") { Task { await s1Mini.install() } }
+                case let .downloading(fraction):
+                    Text("Downloading…")
+                    Spacer()
+                    ProgressView(value: fraction).frame(width: 120)
+                case .installed:
+                    Text("Ready")
+                    Spacer()
+                    Button("Delete") { Task { await s1Mini.delete() } }
+                }
+            }
+            if let error = s1Mini.lastError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            Text("A small model built only for cleaning up dictation: it removes filler words and false starts, keeps your self-corrections, and fixes punctuation and capitalization. It has its own fixed instructions, so the Groq prompt is not used.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var groqSections: some View {
+        Section("Groq") {
+            SecureField("API key", text: $apiKey)
+            Picker("Model", selection: modelSelection) {
+                ForEach(Self.suggestedModels, id: \.self) { model in
+                    Text(model).tag(model)
+                }
+                Divider()
+                Text("Custom…").tag(Self.customModelTag)
+            }
+            if isCustomModel {
+                TextField("Model ID", text: $modelID)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Text("Cleanup runs between letting go of the key and the text appearing, so a faster model means less waiting. Anything slower than \(Int(DictationCoordinator.Config().cleanupTimeout)) seconds is abandoned and the raw transcript is used.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        Section("Prompt") {
+            TextEditor(text: $prompt)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(minHeight: 110)
+            HStack {
+                Button("Reset to default") { prompt = Preferences.defaultCleanupPrompt }
+                Button("Use the developer prompt") {
+                    prompt = Preferences.developerCleanupPrompt
+                }
+            }
+            Text("The developer prompt also fixes technical terms the speech model mishears, so \"Maine\" becomes \"main\" and \"guess\" becomes \"git\". Pick it only if you dictate about code, because it rewrites those words wherever they appear.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private func commitAPIKey() {
         apiKeyCommit?.cancel()
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -295,8 +351,8 @@ private struct CleanupSettingsTab: View {
         let sample = "so um I was thinking that we could uh maybe ship it on friday"
         Task {
             do {
-                let cleaned = try await PolishService().clean(
-                    sample, prompt: prompt, model: modelID)
+                let cleaner: TextCleaning = engine == .groq ? PolishService() : s1Mini.cleaner
+                let cleaned = try await cleaner.clean(sample, prompt: prompt, model: modelID)
                 testResult = cleaned
             } catch {
                 // `PolishError` describes itself by status and cause, never

@@ -130,6 +130,7 @@ final class DictationCoordinatorTests: XCTestCase {
     private func makeCoordinator(
         engineProvider: EngineProvider? = nil,
         cleaner: TextCleaning? = nil,
+        cleanerProvider: CleanerProvider? = nil,
         caretProvider: CaretProvider? = nil,
         secureInput: Bool = false,
         config: DictationCoordinator.Config = .init(minimumDuration: 0.3, cleanupTimeout: 0.2)
@@ -138,7 +139,7 @@ final class DictationCoordinatorTests: XCTestCase {
             recorder: recorder,
             engineProvider: engineProvider ?? { [engine] in engine },
             inserter: inserter,
-            cleaner: cleaner,
+            cleanerProvider: cleanerProvider ?? { cleaner },
             presenter: presenter,
             preferences: prefs,
             caretProvider: caretProvider ?? { .unknown },
@@ -173,6 +174,21 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(cleaner.receivedText, "um so the thing is")
         XCTAssertEqual(inserter.inserted, ["So the thing is."])
         XCTAssertTrue(presenter.states.contains(.polishing))
+    }
+
+    // Switching the cleanup engine in Settings must apply to the very next
+    // dictation, so the cleaner is asked for each time rather than captured.
+    func testTheCleanerIsChosenAfreshForEachDictation() async {
+        let other = FakeCleaner()
+        other.result = "From the other engine."
+        var current: TextCleaning = cleaner
+        let coordinator = makeCoordinator(cleanerProvider: { current })
+
+        await dictate(coordinator)
+        current = other
+        await dictate(coordinator)
+
+        XCTAssertEqual(inserter.inserted, ["So the thing is.", "From the other engine."])
     }
 
     func testCleanupIsSkippedWhenDisabled() async {
@@ -304,7 +320,7 @@ final class DictationCoordinatorTests: XCTestCase {
             recorder: recorder,
             engineProvider: { [engine] in engine },
             inserter: inserter,
-            cleaner: nil,
+            cleanerProvider: { nil },
             presenter: presenter,
             preferences: prefs,
             caretProvider: { .unknown },
