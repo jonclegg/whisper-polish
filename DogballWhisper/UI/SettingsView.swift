@@ -138,33 +138,15 @@ private struct CleanupSettingsTab: View {
     /// window or pressing return flushes it early.
     @State private var apiKeyCommit: Task<Void, Never>?
 
-    /// Fast, inexpensive models suited to a short rewrite. Not exhaustive on
-    /// purpose — OpenRouter carries hundreds, and the custom field is there
-    /// for anything not listed.
-    /// Every model here was measured against this app's exact request shape:
-    /// three transcript lengths, three runs each, reasoning disabled.
-    ///
-    ///     openai/gpt-4.1-nano         0.86s median, most faithful
-    ///     amazon/nova-micro-v1        0.89s
-    ///     openai/gpt-4.1              1.05s
-    ///     anthropic/claude-haiku-4.5  1.24s
-    ///     z-ai/glm-5-turbo            1.70s
-    ///
-    /// Both Gemini models are deliberately absent: their endpoints reject a
-    /// disabled-reasoning request outright, and permitting reasoning puts them
-    /// at the timeout. cohere/command-r7b is absent for quality, not speed —
-    /// it rewrites rather than cleans ("Okay, I understand. We can merge the
-    /// code to the 'main' branch...").
+    /// The model the Fixit app uses, which is the only one measured against
+    /// this app's request (0.7–1.1s through Groq). Any other Groq model ID
+    /// goes in the custom field.
     private static let suggestedModels = [
-        "openai/gpt-4.1-nano",
-        "amazon/nova-micro-v1",
-        "openai/gpt-4.1",
-        "anthropic/claude-haiku-4.5",
-        "z-ai/glm-5-turbo",
+        "openai/gpt-oss-120b",
     ]
 
     /// Sentinel for the "Custom…" row. Contains a space, so it can never
-    /// collide with a real OpenRouter model ID.
+    /// collide with a real Groq model ID.
     private static let customModelTag = "custom model"
 
     /// Picking a listed model stores it directly; picking "Custom…" reveals
@@ -188,11 +170,11 @@ private struct CleanupSettingsTab: View {
         Form {
             Section {
                 Toggle("Clean up transcripts", isOn: $enabled)
-                Text("Only the transcribed text is sent to OpenRouter. Audio never leaves this Mac.")
+                Text("Only the transcribed text is sent to Groq. Audio never leaves this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("OpenRouter") {
+            Section("Groq") {
                 SecureField("API key", text: $apiKey)
                 Picker("Model", selection: modelSelection) {
                     ForEach(Self.suggestedModels, id: \.self) { model in

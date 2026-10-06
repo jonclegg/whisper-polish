@@ -27,11 +27,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.jonclegg.DogballWhisper
         PRODUCT_NAME: Dogball Whisper
         PRODUCT_MODULE_NAME: DogballWhisper
-        # Placeholders. `scripts/release-macos.sh` overrides both on the
-        # xcodebuild command line from the release tag, so a published build
-        # reports the version someone can actually name in a bug report;
-        # 0.0.0 is what a local `build-mac.sh` build reports, and it says
-        # exactly what it is — a build nobody published.
+        # Placeholders. Both scripts override them on the xcodebuild command
+        # line: `release-macos.sh` from the tag being released, and
+        # `build-mac.sh` from the last release tag plus the commit count, so
+        # the menu bar menu always names the build. 0.0.0 (0) only shows up
+        # in a build made some other way, such as straight from Xcode.
         MARKETING_VERSION: "0.0.0"
         CURRENT_PROJECT_VERSION: "0"
         SWIFT_VERSION: "5.10"

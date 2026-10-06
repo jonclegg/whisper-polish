@@ -55,19 +55,17 @@ enum Diagnostics {
         log(message())
     }
 
-    /// How an error may be written to the log: its shape, never a body.
-    /// `PolishError.http` carries up to 300 bytes of the provider's response,
-    /// and providers echo the submitted text back in moderation rejections,
-    /// so `localizedDescription` here would be a route from transcript to
-    /// system log.
+    /// How an error may be written to the log: its shape, never a message.
+    /// Errors from outside this app (a `URLError`, a `DecodingError`) can
+    /// carry the text that was sent in their descriptions, so only their
+    /// type and code are logged.
     static func describe(_ error: Error) -> String {
         switch error {
         case let polish as PolishError:
             switch polish {
             case .missingAPIKey: return "no API key"
             case .emptyResponse: return "empty response"
-            case let .http(status, _): return "HTTP \(status)"
-            case .requiresReasoning: return "model mandates reasoning"
+            case let .http(status): return "HTTP \(status)"
             }
         case let urlError as URLError:
             return "URLError \(urlError.code.rawValue)"

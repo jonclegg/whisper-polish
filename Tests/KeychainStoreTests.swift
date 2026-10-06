@@ -4,7 +4,7 @@ import XCTest
 /// The app's only secret, and the only store it lives in.
 ///
 /// Every case here runs against its own service/account, never
-/// `Location.openRouterAPIKey`, so running the suite can neither read nor
+/// `Location.groqAPIKey`, so running the suite can neither read nor
 /// overwrite the key the machine is actually dictating with.
 final class KeychainStoreTests: XCTestCase {
     private let location = KeychainStore.Location(
@@ -21,8 +21,8 @@ final class KeychainStoreTests: XCTestCase {
     }
 
     func testSavingThenReadingRoundTrips() {
-        XCTAssertTrue(KeychainStore.save("sk-or-v1-abc123", at: location))
-        XCTAssertEqual(KeychainStore.read(at: location), "sk-or-v1-abc123")
+        XCTAssertTrue(KeychainStore.save("gsk_abc123", at: location))
+        XCTAssertEqual(KeychainStore.read(at: location), "gsk_abc123")
     }
 
     func testSavingOverAnExistingKeyReplacesIt() {
@@ -34,13 +34,13 @@ final class KeychainStoreTests: XCTestCase {
     // Onboarding calls `save` unconditionally on "Start dictating", so an
     // empty save must not be able to wipe a working key.
     func testSavingAnEmptyStringLeavesAnExistingKeyAlone() {
-        KeychainStore.save("sk-or-v1-abc123", at: location)
+        KeychainStore.save("gsk_abc123", at: location)
         XCTAssertTrue(KeychainStore.save("", at: location))
-        XCTAssertEqual(KeychainStore.read(at: location), "sk-or-v1-abc123")
+        XCTAssertEqual(KeychainStore.read(at: location), "gsk_abc123")
     }
 
     func testDeleteRemovesTheKeyAndReadingAfterwardsReturnsNil() {
-        KeychainStore.save("sk-or-v1-abc123", at: location)
+        KeychainStore.save("gsk_abc123", at: location)
         XCTAssertTrue(KeychainStore.delete(at: location))
         XCTAssertNil(KeychainStore.read(at: location))
     }
@@ -57,19 +57,19 @@ final class KeychainStoreTests: XCTestCase {
     // remove the key, or a user who deletes it to stop sending their
     // dictation to a third party keeps sending it.
     func testAnEmptiedFieldRevokesTheStoredKey() {
-        KeychainStore.save("sk-or-v1-abc123", at: location)
+        KeychainStore.save("gsk_abc123", at: location)
         KeychainStore.setKey(fromField: "", at: location)
         XCTAssertNil(KeychainStore.read(at: location))
     }
 
     func testAWhitespaceOnlyFieldAlsoRevokes() {
-        KeychainStore.save("sk-or-v1-abc123", at: location)
+        KeychainStore.save("gsk_abc123", at: location)
         KeychainStore.setKey(fromField: "   \n ", at: location)
         XCTAssertNil(KeychainStore.read(at: location))
     }
 
     func testAFieldWithAKeyInItStoresTheKeyTrimmed() {
-        KeychainStore.setKey(fromField: "  sk-or-v1-abc123\n", at: location)
-        XCTAssertEqual(KeychainStore.read(at: location), "sk-or-v1-abc123")
+        KeychainStore.setKey(fromField: "  gsk_abc123\n", at: location)
+        XCTAssertEqual(KeychainStore.read(at: location), "gsk_abc123")
     }
 }

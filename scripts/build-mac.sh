@@ -7,6 +7,15 @@ cd "$(dirname "$0")/.."
 LAUNCH=false
 [[ "${1:-}" == "--launch" ]] && LAUNCH=true
 
+# Stamp the version so the menu bar menu says which build is installed: the
+# last release tag, and the commit count as the build number (the same number
+# release-macos.sh uses), so every new commit installs as a visibly new build.
+RELEASE_TAG="$(git describe --tags --abbrev=0 --match 'v[0-9]*')" \
+  || { echo "No release tag found to version this build from. Run: git fetch --tags"; exit 1; }
+MARKETING_VERSION="${RELEASE_TAG#v}"
+BUILD_NUMBER="$(git rev-list --count HEAD)"
+echo "Building $MARKETING_VERSION ($BUILD_NUMBER)"
+
 xcodegen generate
 
 xcodebuild \
@@ -15,6 +24,8 @@ xcodebuild \
   -configuration Release \
   -derivedDataPath build/DerivedData \
   -destination 'platform=macOS' \
+  MARKETING_VERSION="$MARKETING_VERSION" \
+  CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   build
 
 APP="build/DerivedData/Build/Products/Release/Dogball Whisper.app"

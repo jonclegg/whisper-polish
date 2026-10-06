@@ -3,68 +3,50 @@ import Foundation
 enum PolishError: LocalizedError, Equatable {
     case missingAPIKey
     case emptyResponse
-    case http(Int, String)
-    case requiresReasoning(String)
+    /// Status only. The response body is never kept: providers echo the
+    /// submitted text back in moderation rejections, and this description is
+    /// both logged and shown in Settings, so a body here would be a route
+    /// from a transcript to the system log and to the screen.
+    case http(Int)
 
-    /// Note what is missing: the response body. It is kept in the payload
-    /// because `disablingReasoningRejected` has to match on it, but it never
-    /// reaches a description that is logged or put on screen. Providers echo
-    /// the submitted text back in moderation rejections, so a body here is a
-    /// route from a transcript to the system log and to the settings window.
-    /// The status code plus a plain-English cause covers every failure a user
-    /// can act on anyway.
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "Add your OpenRouter API key in Settings."
+            return "Add your Groq API key in Settings."
         case .emptyResponse:
             return "The cleanup model returned nothing."
-        case let .http(code, _):
-            return "OpenRouter error \(code). \(Self.hint(forStatus: code))"
-        case let .requiresReasoning(model):
-            return "\(model) always thinks before answering, which is too slow for dictation. Choose another model in Settings."
+        case let .http(code):
+            return "Groq error \(code). \(Self.hint(forStatus: code))"
         }
     }
 
     private static func hint(forStatus code: Int) -> String {
         switch code {
         case 401, 403: return "Check that the API key is right."
-        case 402: return "The OpenRouter account is out of credit."
         case 404: return "Check the model ID."
-        case 429: return "OpenRouter is rate limiting this key. Try again in a moment."
-        case 500...599: return "OpenRouter is having trouble. Try again in a moment."
+        case 429: return "Groq is rate limiting this key. Try again in a moment."
+        case 500...599: return "Groq is having trouble. Try again in a moment."
         default: return "Check the model ID and the API key."
         }
     }
 }
 
-/// Strips disfluencies from a transcript via OpenRouter. The coordinator treats
-/// every error here as "insert the raw transcript", so this type is free to
-/// throw rather than paper over failures.
+/// Polishes a transcript through Groq, making the same call the Fixit app
+/// makes: the style prompt as the system message, the text as the user
+/// message, temperature 0.1, and no reasoning settings, so Groq applies the
+/// model's default effort exactly as it does for Fixit. The one deliberate
+/// difference is `frameTranscript`. The coordinator treats every error here
+/// as "insert the raw transcript", so this type is free to throw rather than
+/// paper over failures.
 final class PolishService: TextCleaning {
     private struct ChatRequest: Encodable {
         struct Message: Encodable {
             let role: String
             let content: String
         }
-        struct Reasoning: Encodable {
-            let enabled: Bool
-        }
         let model: String
         let messages: [Message]
         let temperature: Double
-        /// Cleanup needs no thinking tokens; they only add latency. Every
-        /// model this app offers accepts having it turned off — that is a
-        /// selection criterion, checked by measurement, not an assumption.
-        let reasoning: Reasoning
-    }
-
-    /// True for the 400 an endpoint returns when it mandates reasoning.
-    /// Matching on the message is unpleasant but there is no distinct code:
-    /// `google/gemini-3.5-flash` answers 400 with "Reasoning is mandatory for
-    /// this endpoint and cannot be disabled."
-    static func disablingReasoningRejected(status: Int, body: String) -> Bool {
-        status == 400 && body.lowercased().contains("reasoning")
     }
 
     private struct ChatResponse: Decodable {
@@ -75,7 +57,7 @@ final class PolishService: TextCleaning {
         let choices: [Choice]
     }
 
-    private let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
+    private let endpoint = URL(string: "https://api.groq.com/openai/v1/chat/completions")!
     private let session: URLSession
     private let keyProvider: @Sendable () -> String?
 
@@ -95,58 +77,32 @@ final class PolishService: TextCleaning {
             // no key is a perfectly ordinary configuration, so logging it at
             // notice level would write a durable timestamped record of every
             // dictation for anyone who simply never wanted cleanup.
-            Diagnostics.verbose("openrouter: no API key found in the keychain")
+            Diagnostics.verbose("groq: no API key found in the keychain")
             throw PolishError.missingAPIKey
         }
-        Diagnostics.verbose("openrouter: requesting \(model), key present (\(key.count) chars)")
+        Diagnostics.verbose("groq: requesting \(model), key present (\(key.count) chars)")
 
         // Delimiters mark the transcript as data, not as further instructions.
         // Without them, models sometimes treat imperative dictation ("write a
-        // two-paragraph reply to this") as a task instead of as words to clean.
+        // two-paragraph reply to this") as a task instead of as words to clean:
+        // with the Fixit "Sound native" prompt on gpt-oss-120b, unframed
+        // commands were carried out 4 times in 12, framed ones never.
         // Framing lives here so custom cleanup prompts get the same protection.
         let messages: [ChatRequest.Message] = [
             .init(role: "system", content: prompt),
             .init(role: "user", content: Self.frameTranscript(text)),
         ]
 
-        do {
-            return try await send(key: key, model: model, messages: messages)
-        } catch let PolishError.http(status, body)
-            where Self.disablingReasoningRejected(status: status, body: body)
-        {
-            // Deliberately not retried without the field. A model that
-            // mandates reasoning is too slow for this call regardless —
-            // measured at 3.0s against a 3.0s budget — so a retry would only
-            // convert a clear failure into a silent timeout, and the user
-            // would be left wondering why cleanup "sometimes" works. Say what
-            // is wrong instead.
-            Diagnostics.log("openrouter: \(model) mandates reasoning, which is too slow here")
-            throw PolishError.requiresReasoning(model)
-        }
-    }
-
-    private func send(
-        key: String,
-        model: String,
-        messages: [ChatRequest.Message]
-    ) async throws -> String {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(
-            ChatRequest(
-                model: model,
-                messages: messages,
-                temperature: 0,
-                reasoning: ChatRequest.Reasoning(enabled: false)
-            )
-        )
+            ChatRequest(model: model, messages: messages, temperature: 0.1))
 
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw PolishError.http(
-                http.statusCode, String(data: data.prefix(300), encoding: .utf8) ?? "")
+            throw PolishError.http(http.statusCode)
         }
 
         let decoded = try JSONDecoder().decode(ChatResponse.self, from: data)
@@ -166,9 +122,18 @@ final class PolishService: TextCleaning {
     }
 
     /// Models occasionally wrap their answer in quotes or a code fence even
-    /// when told not to.
+    /// when told not to, and gpt-oss-120b usually hands the `<transcript>`
+    /// tags back around its answer (10 times in 12, measured).
     static func unwrap(_ raw: String) -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if text.hasPrefix("<transcript>") {
+            text = String(text.dropFirst("<transcript>".count))
+        }
+        if text.hasSuffix("</transcript>") {
+            text = String(text.dropLast("</transcript>".count))
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if text.hasPrefix("```") {
             var lines = text.components(separatedBy: "\n")

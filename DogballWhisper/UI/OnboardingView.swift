@@ -180,8 +180,8 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Cleanup (optional)").font(.headline)
-                SecureField("OpenRouter API key", text: $apiKey)
-                Text("Removes ums and ahs and fixes punctuation. Only text is sent, never audio.")
+                SecureField("Groq API key", text: $apiKey)
+                Text("Polishes your wording so it reads like a native speaker wrote it. Only text is sent, never audio.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

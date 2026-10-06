@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Stores the OpenRouter API key in the login keychain. Never logged,
+/// Stores the Groq API key in the login keychain. Never logged,
 /// never written to UserDefaults.
 enum KeychainStore {
     /// Names one stored secret. Only the app's own key is ever stored under
@@ -11,8 +11,8 @@ enum KeychainStore {
         let service: String
         let account: String
 
-        static let openRouterAPIKey = Location(
-            service: "com.jonclegg.DogballWhisper", account: "openrouter-api-key")
+        static let groqAPIKey = Location(
+            service: "com.jonclegg.DogballWhisper", account: "groq-api-key")
     }
 
     private static func baseQuery(_ location: Location) -> [String: Any] {
@@ -33,7 +33,7 @@ enum KeychainStore {
     /// to `delete()` through `setKey(fromField:)`. Nothing else may treat an
     /// empty save as a revocation.
     @discardableResult
-    static func save(_ key: String, at location: Location = .openRouterAPIKey) -> Bool {
+    static func save(_ key: String, at location: Location = .groqAPIKey) -> Bool {
         guard !key.isEmpty else { return true }
         delete(at: location)
         var query = baseQuery(location)
@@ -42,7 +42,7 @@ enum KeychainStore {
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
-    static func read(at location: Location = .openRouterAPIKey) -> String? {
+    static func read(at location: Location = .groqAPIKey) -> String? {
         var query = baseQuery(location)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -58,7 +58,7 @@ enum KeychainStore {
     /// True when no key is stored afterwards, which includes there having
     /// been nothing to delete in the first place.
     @discardableResult
-    static func delete(at location: Location = .openRouterAPIKey) -> Bool {
+    static func delete(at location: Location = .groqAPIKey) -> Bool {
         let status = SecItemDelete(baseQuery(location) as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }
@@ -72,7 +72,7 @@ enum KeychainStore {
     /// it deleted, rather than an empty field over a key that is still stored
     /// and still used on every dictation.
     @discardableResult
-    static func setKey(fromField text: String, at location: Location = .openRouterAPIKey) -> Bool {
+    static func setKey(fromField text: String, at location: Location = .groqAPIKey) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? delete(at: location) : save(trimmed, at: location)
     }

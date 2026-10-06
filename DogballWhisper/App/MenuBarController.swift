@@ -45,11 +45,23 @@ final class MenuBarController: NSObject {
         menu.addItem(launchAtLoginItem)
 
         menu.addItem(.separator())
+        let version = NSMenuItem(title: Self.versionTitle, action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
         menu.addItem(
             withTitle: "Quit Dogball Whisper",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    /// "Version 0.1.3 (63)": the release it builds on, then the commit count,
+    /// which is what tells two local builds apart.
+    private static var versionTitle: String {
+        let info = Bundle.main.infoDictionary!
+        let version = info["CFBundleShortVersionString"] as! String
+        let build = info["CFBundleVersion"] as! String
+        return "Version \(version) (\(build))"
     }
 
     func update(state: DictationState) {

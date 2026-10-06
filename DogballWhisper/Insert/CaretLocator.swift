@@ -14,7 +14,7 @@ struct CaretLocation: Equatable {
     /// some app has secure event input engaged (a terminal password prompt,
     /// an authorization dialog).
     /// `DictationCoordinator` checks this before starting a recording:
-    /// dictated text is sent to OpenRouter for cleanup, so recording into a
+    /// dictated text is sent to Groq for cleanup, so recording into a
     /// password field would ship a password to a third party. This is kept
     /// distinct from `rectQuartz == nil` ("no caret found") on purpose —
     /// the two cases call for different behavior, not just different UI.

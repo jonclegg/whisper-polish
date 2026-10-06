@@ -16,6 +16,13 @@ final class PreferencesTests: XCTestCase {
         super.tearDown()
     }
 
+    // A model ID stored for OpenRouter is a 404 at Groq, so it must not be
+    // picked up as the cleanup model.
+    func testAModelStoredForOpenRouterIsNotUsedWithGroq() {
+        defaults.set("openai/gpt-4.1-nano", forKey: "cleanupModelID")
+        XCTAssertEqual(Preferences(defaults: defaults).cleanupModelID, "openai/gpt-oss-120b")
+    }
+
     func testDefaultsAreUsableOnFirstLaunch() {
         let prefs = Preferences(defaults: defaults)
         XCTAssertNil(prefs.activeModelID)

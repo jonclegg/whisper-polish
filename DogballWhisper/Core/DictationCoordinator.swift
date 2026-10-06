@@ -181,7 +181,7 @@ final class DictationCoordinator {
         // at the fallback position rather than wherever the last one landed.
         location = .unknown
 
-        // Dictated text is sent to OpenRouter for cleanup, so recording into
+        // Dictated text is sent to Groq for cleanup, so recording into
         // a password field would ship the password to a third party. The
         // cheap half of that gate — secure event input, which covers a sudo
         // or ssh prompt in a terminal and every macOS auth dialog — runs
@@ -391,11 +391,8 @@ final class DictationCoordinator {
             return text
         } catch {
             let elapsed = Date().timeIntervalSince(started)
-            // The error's shape and status, never its description.
-            // `PolishError.http` carries up to 300 bytes of the provider's
-            // response body, and providers echo the submitted text back in
-            // moderation rejections — so `localizedDescription` here would be
-            // a route from a transcript into the system log.
+            // The error's shape and status, never its description: see
+            // `Diagnostics.describe(_:)`.
             Diagnostics.log(
                 "cleanup FAILED after \(Int(elapsed * 1000))ms: \(Diagnostics.describe(error))")
             return text

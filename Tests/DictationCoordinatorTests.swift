@@ -258,7 +258,7 @@ final class DictationCoordinatorTests: XCTestCase {
     // MARK: - Password refusal
     //
     // The one failure mode that would leak a secret: dictated text is sent to
-    // OpenRouter for cleanup, so a dictation that starts at a password prompt
+    // Groq for cleanup, so a dictation that starts at a password prompt
     // ships the password to a third party. These test the promise itself —
     // nothing recorded, nothing cleaned, nothing inserted — not the mechanism.
 

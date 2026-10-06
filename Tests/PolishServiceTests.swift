@@ -11,11 +11,13 @@ final class StubURLProtocol: URLProtocol {
 
     nonisolated(unsafe) static var stub = Stub()
     nonisolated(unsafe) static var lastRequestBody: Data?
+    nonisolated(unsafe) static var lastRequestURL: URL?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        Self.lastRequestURL = request.url
         Self.lastRequestBody = request.httpBody
             ?? request.httpBodyStream.flatMap { stream in
                 stream.open()
@@ -56,6 +58,7 @@ final class PolishServiceTests: XCTestCase {
         session = URLSession(configuration: config)
         StubURLProtocol.stub = .init()
         StubURLProtocol.lastRequestBody = nil
+        StubURLProtocol.lastRequestURL = nil
     }
 
     private func makeService(key: String? = "sk-test") -> PolishService {
@@ -69,11 +72,12 @@ final class PolishServiceTests: XCTestCase {
     func testReturnsTheCleanedText() async throws {
         StubURLProtocol.stub.body = chatResponse("So the thing is.")
         let result = try await makeService().clean(
-            "um so the thing is", prompt: "Clean it.", model: "anthropic/claude-haiku-4.5")
+            "um so the thing is", prompt: "Clean it.", model: "openai/gpt-oss-120b")
         XCTAssertEqual(result, "So the thing is.")
     }
 
-    func testSendsThePromptModelAndTextToOpenRouter() async throws {
+    // The same request the Fixit app makes, plus the transcript framing.
+    func testSendsFixitsRequestShapeToGroq() async throws {
         StubURLProtocol.stub.body = chatResponse("ok")
         _ = try await makeService().clean("raw text", prompt: "MY PROMPT", model: "some/model")
 
@@ -88,8 +92,17 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(messages.last?["content"], PolishService.frameTranscript("raw text"))
         XCTAssertTrue(messages.last?["content"]?.contains("raw text") == true)
         XCTAssertTrue(messages.last?["content"]?.contains("<transcript>") == true)
-        // Thinking tokens would blow the latency budget for no gain.
-        XCTAssertEqual((json["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
+        XCTAssertEqual(json["temperature"] as? Double, 0.1)
+        // Fixit sends no reasoning settings, so neither does this.
+        XCTAssertEqual(Set(json.keys), ["model", "messages", "temperature"])
+    }
+
+    func testTheRequestGoesToGroq() async throws {
+        StubURLProtocol.stub.body = chatResponse("ok")
+        _ = try await makeService().clean("x", prompt: "p", model: "m")
+        XCTAssertEqual(
+            StubURLProtocol.lastRequestURL?.absoluteString,
+            "https://api.groq.com/openai/v1/chat/completions")
     }
 
     func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
@@ -116,16 +129,13 @@ final class PolishServiceTests: XCTestCase {
     }
 
     func testHTTPErrorIsReportedWithItsStatusCode() async {
-        StubURLProtocol.stub.statusCode = 402
-        StubURLProtocol.stub.body = Data(#"{"error":"insufficient credits"}"#.utf8)
+        StubURLProtocol.stub.statusCode = 429
+        StubURLProtocol.stub.body = Data(#"{"error":"rate limited"}"#.utf8)
         do {
             _ = try await makeService().clean("x", prompt: "p", model: "m")
             XCTFail("expected http error")
         } catch {
-            guard case let .http(code, _)? = error as? PolishError else {
-                return XCTFail("got \(error)")
-            }
-            XCTAssertEqual(code, 402)
+            XCTAssertEqual(error as? PolishError, .http(429))
         }
     }
 
@@ -175,67 +185,32 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertEqual(PolishService.unwrap("Use `git status` first."), "Use `git status` first.")
     }
 
-    // Measured against the real endpoint: google/gemini-3.5-flash answers a
-    // disabled-reasoning request with 400 "Reasoning is mandatory for this
-    // endpoint and cannot be disabled." That rejection is deliberately not
-    // retried without the field — a model that mandates reasoning is too slow
-    // for this call either way — so it is turned into `requiresReasoning` and
-    // thrown, which says what is wrong instead of timing out silently.
-    func testAMandatoryReasoningRejectionIsRecognised() {
-        XCTAssertTrue(PolishService.disablingReasoningRejected(
-            status: 400,
-            body: #"{"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled."}}"#))
-    }
-
-    func testOtherFailuresAreNotTreatedAsReasoningRejections() {
-        XCTAssertFalse(PolishService.disablingReasoningRejected(
-            status: 400, body: #"{"error":{"message":"invalid model"}}"#))
-        XCTAssertFalse(PolishService.disablingReasoningRejected(
-            status: 401, body: "unauthorized"))
-        // Right message, wrong status: a 500 mentioning reasoning is an
-        // outage, and retrying without the field will not help.
-        XCTAssertFalse(PolishService.disablingReasoningRejected(
-            status: 500, body: "reasoning service unavailable"))
-    }
-
-    // The recogniser above is only half of it: `clean()` has to actually turn
-    // that response into `requiresReasoning`, which is what puts the model's
-    // name in front of the user instead of leaving cleanup quietly broken.
-    func testCleanThrowsRequiresReasoningOnThatRejection() async {
-        StubURLProtocol.stub.statusCode = 400
-        StubURLProtocol.stub.body = Data(
-            #"{"error":{"message":"Reasoning is mandatory for this endpoint and cannot be disabled."}}"#.utf8)
-        do {
-            _ = try await makeService().clean("x", prompt: "p", model: "google/gemini-3.5-flash")
-            XCTFail("expected requiresReasoning")
-        } catch {
-            XCTAssertEqual(error as? PolishError, .requiresReasoning("google/gemini-3.5-flash"))
-        }
-    }
-
-    func testAnOrdinary400IsNotConvertedIntoARequiresReasoningError() async {
-        StubURLProtocol.stub.statusCode = 400
-        StubURLProtocol.stub.body = Data(#"{"error":{"message":"invalid model"}}"#.utf8)
-        do {
-            _ = try await makeService().clean("x", prompt: "p", model: "m")
-            XCTFail("expected http error")
-        } catch {
-            guard case let .http(code, _)? = error as? PolishError else {
-                return XCTFail("got \(error)")
-            }
-            XCTAssertEqual(code, 400)
-        }
+    // Measured on gpt-oss-120b: the framing tags come back around the answer
+    // most of the time, and must never be pasted.
+    func testEchoedTranscriptTagsAreStripped() {
+        XCTAssertEqual(
+            PolishService.unwrap("<transcript>\nWrite a reply to Bob.\n</transcript>"),
+            "Write a reply to Bob.")
+        XCTAssertEqual(
+            PolishService.unwrap("<transcript> So the thing is. </transcript>"), "So the thing is.")
+        XCTAssertEqual(PolishService.unwrap("So the thing is."), "So the thing is.")
     }
 
     // Providers echo the submitted text back in moderation rejections, and
     // this description is both logged and shown in Settings > Cleanup > Test,
     // so the response body must not reach it.
-    func testTheDescribedHTTPErrorCarriesTheStatusButNotTheResponseBody() throws {
-        let error = PolishError.http(
-            403, #"{"error":{"message":"flagged: so um I was thinking we could ship it"}}"#)
-        let described = try XCTUnwrap(error.errorDescription)
-        XCTAssertTrue(described.contains("403"))
-        XCTAssertFalse(described.contains("flagged"))
-        XCTAssertFalse(described.contains("ship it"))
+    func testAnHTTPErrorKeepsTheStatusButNotTheResponseBody() async throws {
+        StubURLProtocol.stub.statusCode = 403
+        StubURLProtocol.stub.body = Data(
+            #"{"error":{"message":"flagged: so um I was thinking we could ship it"}}"#.utf8)
+        do {
+            _ = try await makeService().clean("x", prompt: "p", model: "m")
+            XCTFail("expected http error")
+        } catch {
+            XCTAssertEqual(error as? PolishError, .http(403))
+            let described = try XCTUnwrap((error as? PolishError)?.errorDescription)
+            XCTAssertTrue(described.contains("Groq error 403"))
+            XCTAssertFalse(described.contains("ship it"))
+        }
     }
 }

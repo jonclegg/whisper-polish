@@ -86,7 +86,7 @@ rebuilding it for each one.
       own sign-in form works, or any macOS password prompt) and hold the
       dictation key. No "Recording" panel appears; the panel shows the
       notice "Not in a password field" instead. Confirm nothing is pasted
-      and no request is made to OpenRouter (this is the one case a leak
+      and no request is made to Groq (this is the one case a leak
       would mean shipping a password to a third party, so treat any
       deviation as a blocker, not a nit). Note that for a *web* password
       field the microphone does briefly open before the accessibility query
@@ -100,7 +100,7 @@ rebuilding it for each one.
       ordinary `AXTextArea` — nothing in the accessibility tree says it is
       secure — so this is entirely carried by `IsSecureEventInputEnabled()`,
       checked before any AX work. Repeat at an `ssh` password prompt. Same
-      blocker rule as above: a transcript here goes to OpenRouter
+      blocker rule as above: a transcript here goes to Groq
 - [ ] **(never verified)** Secure input left engaged: turn on Terminal >
       Secure Keyboard Entry (or focus a password field and ⌘-Tab away while
       it is still focused) and dictate into TextEdit. Expect a refusal, and
@@ -221,19 +221,24 @@ the same apps.
 - [ ] Focus never moves: the app you were typing in stays active (frontmost,
       cursor blinking) throughout every check above
 
-## 6. Cleanup (OpenRouter polish)
+## 6. Cleanup (Groq polish)
 
-- [ ] With a valid key: "so um I was uh thinking" inserts without the
-      fillers
+- [ ] With a valid Groq key: a dictated sentence inserts lightly edited
+      (punctuation, capitalization, native phrasing), with no `<transcript>`
+      tags, quotes, or code fences around it. The default prompt does not
+      target filler words, so a stray "um" surviving is not a failure
+- [ ] Dictate an instruction ("write a two paragraph reply to Bob saying
+      we'll ship Friday"): the words are inserted, edited, never a written
+      reply
 - [ ] Wrong key in Settings: raw transcript still inserts, panel shows no
       scary error
 - [ ] Wi-Fi off: raw transcript inserts within about 3 seconds (the hard
       cleanup timeout)
 - [ ] Cleanup toggled off: raw transcript inserts immediately
 - [ ] Settings > Cleanup > Test returns cleaned sample text
-- [ ] Test with a deliberately wrong model ID: the result line names the
-      status code and what to check, and does not paste back the provider's
-      raw response body
+- [ ] Test with a deliberately wrong model ID (pick "Custom…" in the model
+      picker and type one): the result line names the status code and what
+      to check, and does not paste back the provider's raw response body
 - [ ] "Use the developer prompt" fills the editor with the version that fixes
       technical terms, "Reset to default" puts the neutral one back, and the
       one showing when you close Settings is the one used on the next
@@ -247,9 +252,9 @@ treat a key that survives this as a blocker rather than a nit.
 - [ ] Settings > Cleanup, select the whole API key field and delete it, wait
       a second, then close Settings. Reopen Settings: the field is still
       empty. `security find-generic-password -s com.jonclegg.DogballWhisper
-      -a openrouter-api-key` reports "could not be found"
+      -a groq-api-key` reports "could not be found"
 - [ ] Dictate afterwards: the raw transcript inserts, and no request is made
-      to OpenRouter
+      to Groq
 - [ ] Paste a key back in and ⌘W the window immediately, without pausing:
       the key is saved anyway (the write is debounced, and closing the window
       flushes it). Reopen Settings and confirm it is there
@@ -321,6 +326,10 @@ their caret was.
       permission again. This is the stable bundle ID and signing identity
       property; if it ever fails, check that neither changed
 - [ ] No Dock icon and no window at launch once onboarding is done
+- [ ] The menu bar menu shows a greyed-out "Version X (N)" just above
+      "Quit Dogball Whisper", where X is the latest release tag. Commit
+      anything, rebuild with `./scripts/build-mac.sh --launch`, and N is
+      higher than before
 
 ## 9. Latency
 

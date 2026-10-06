@@ -6,7 +6,19 @@ final class SkeletonTests: XCTestCase {
     func testMenuBarControllerCreatesAStatusItemWithAMenu() {
         let controller = MenuBarController(onOpenSettings: {}, onFinishSetup: {})
         XCTAssertNotNil(controller.statusItem.button)
-        XCTAssertEqual(controller.statusItem.menu?.items.count, 8)
+        XCTAssertEqual(controller.statusItem.menu?.items.count, 9)
+    }
+
+    // The only way to tell from the app itself which build is installed.
+    func testTheMenuNamesTheInstalledVersionAboveQuit() throws {
+        let controller = MenuBarController(onOpenSettings: {}, onFinishSetup: {})
+        let items = try XCTUnwrap(controller.statusItem.menu?.items)
+        let info = try XCTUnwrap(Bundle.main.infoDictionary)
+        let version = try XCTUnwrap(info["CFBundleShortVersionString"] as? String)
+        let build = try XCTUnwrap(info["CFBundleVersion"] as? String)
+        XCTAssertEqual(items[items.count - 2].title, "Version \(version) (\(build))")
+        XCTAssertFalse(items[items.count - 2].isEnabled)
+        XCTAssertEqual(items.last?.title, "Quit Dogball Whisper")
     }
 
     func testFinishSetupItemOnlyShowsWhileSetupIsIncomplete() {
