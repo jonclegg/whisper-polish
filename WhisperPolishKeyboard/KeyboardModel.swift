@@ -602,7 +602,7 @@ final class KeyboardModel {
             if let preview {
                 loadedPasteboardChangeCount = changeCount
                 clipboardPreview = preview
-            } else if pasteboard.hasStrings || pasteboard.hasImages {
+            } else if pasteboard.hasStrings {
                 deniedPasteboardChangeCount = changeCount
                 UserDefaults.standard.set(changeCount, forKey: Self.deniedPasteboardChangeCountKey)
             }
@@ -615,9 +615,7 @@ final class KeyboardModel {
             dismissClipboardPreview()
             return
         }
-        if case .text(let text) = preview.kind {
-            insert(text)
-        }
+        insert(preview.text)
         dismissClipboardPreview()
         syncWithDocument()
     }
