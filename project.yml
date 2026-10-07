@@ -131,6 +131,8 @@ targets:
       - WhisperPolishKeyboard/Predictor.swift
       - WhisperPolishKeyboard/TouchDecoder.swift
       - WhisperPolishKeyboard/TypingContext.swift
+      - WhisperPolishKeyboard/PersonalModel.swift
+      - WhisperPolishKeyboard/WordModel.swift
     dependencies:
       - target: WhisperPolish
     settings:

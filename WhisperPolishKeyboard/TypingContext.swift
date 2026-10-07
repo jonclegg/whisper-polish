@@ -2,8 +2,13 @@ import Foundation
 
 /// The word being typed and the words before it in the current sentence.
 struct TypingContext {
+    /// How many words and sentence breaks of history the word model reads.
+    static let historyLength = 48
+
     let partialWord: String
     let previousWords: [String]
+    /// The words before the partial word, lowercased, with nil where a sentence ended.
+    let history: [String?]
 
     init(before: String) {
         let text = before.replacingOccurrences(of: "\u{2019}", with: "'")
@@ -14,14 +19,24 @@ struct TypingContext {
         previousWords = sentence
             .split { !($0.isLetter || $0 == "'") }
             .map { $0.lowercased() }
+        var history: [String?] = []
+        var word = ""
+        for character in head.suffix(Self.historyLength * 12) {
+            if character.isLetter || character == "'" {
+                word.append(character)
+                continue
+            }
+            if !word.isEmpty {
+                history.append(word.lowercased())
+                word = ""
+            }
+            if ".!?\n".contains(character), history.last.flatMap({ $0 }) != nil {
+                history.append(nil)
+            }
+        }
+        if !word.isEmpty { history.append(word.lowercased()) }
+        self.history = Array(history.suffix(Self.historyLength))
     }
 
     var startsSentence: Bool { previousWords.isEmpty }
-
-    /// Most specific context first, matching the keys in `next-words.txt`.
-    var lookupKeys: [String] {
-        let tokens = [Lexicon.sentenceStart] + previousWords.suffix(2)
-        if tokens.count == 1 { return tokens }
-        return [tokens.suffix(2).joined(separator: " "), tokens.last!]
-    }
 }

@@ -8,11 +8,28 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         CGPoint(x: centers[letter]!.x + dx, y: centers[letter]!.y + dy)
     }
 
-    private func decode(_ typed: String, _ touches: [CGPoint?]? = nil, likely: [String] = []) -> [String] {
-        WordDecoder(lexicon: lexicon)
-            .candidates(typed: typed, touches: touches ?? Array(repeating: nil, count: typed.count), likelyWords: likely)
+    /// Next-word odds from the word model after `context`.
+    private func odds(after context: String) -> [Float] {
+        let model = WordModel.repository
+        var state = model.start
+        model.advance(&state, with: WordModel.boundary)
+        for word in context.split(separator: " ") { model.advance(&state, with: model.id(of: String(word))) }
+        return model.probabilities(after: state)
+    }
+
+    private var decoder: WordDecoder {
+        WordDecoder(lexicon: lexicon) { WordModel.repository.ids[$0] }
+    }
+
+    private func decode(_ typed: String, _ touches: [CGPoint?]? = nil, after context: String = "I think") -> [String] {
+        decoder
+            .candidates(typed: typed, touches: touches ?? Array(repeating: nil, count: typed.count), odds: odds(after: context))
             .map(\.word)
     }
+
+    /// After "th", as the word model sees it: "the" and "that" lead.
+    private let afterTh: [Character: Double] = ["e": 0.5, "a": 0.2, "i": 0.12, "r": 0.08, "o": 0.06, "u": 0.04]
+    private let afterQ: [Character: Double] = ["u": 0.98, "a": 0.02]
 
     // MARK: - Geometry
 
@@ -54,23 +71,10 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertEqual(key(atUnit: 11, row: 0), .character("p"))
     }
 
-    // MARK: - Letter odds
-
-    func testNextLetterOddsFollowCommonWords() throws {
-        let odds = lexicon.nextLetterOdds(after: "th")
-        XCTAssertEqual(odds.values.reduce(0, +), 1, accuracy: 0.0001)
-        XCTAssertEqual(odds.max { $0.value < $1.value }?.key, "e")
-        XCTAssertGreaterThan(try XCTUnwrap(lexicon.nextLetterOdds(after: "q")["u"]), 0.9)
-    }
-
-    func testNoOddsAfterAPrefixNoWordStartsWith() {
-        XCTAssertTrue(lexicon.nextLetterOdds(after: "xqz").isEmpty)
-    }
-
     // MARK: - Key resolving
 
     func testEdgeTouchGoesToTheLetterThatFitsTheWord() {
-        let odds = lexicon.nextLetterOdds(after: "th")
+        let odds = afterTh
         let betweenWAndE = CGPoint(x: 2, y: 0.5)
         let betweenEAndR = CGPoint(x: 3, y: 0.5)
         XCTAssertEqual(KeyResolver.resolve(betweenWAndE, nearest: "w", odds: odds), "e")
@@ -79,18 +83,18 @@ final class KeyboardTouchDecoderTests: XCTestCase {
 
     func testEdgeTouchBetweenRowsGoesToTheLetterThatFitsTheWord() {
         // Low on "i", toward "k": after "q", only "u" makes sense.
-        let odds = lexicon.nextLetterOdds(after: "q")
+        let odds = afterQ
         XCTAssertEqual(KeyResolver.resolve(point("i", dx: -0.45, dy: 0.1), nearest: "i", odds: odds), "u")
     }
 
     func testCenterTouchAlwaysTypesTheTouchedKey() {
-        let odds = lexicon.nextLetterOdds(after: "th")
+        let odds = afterTh
         XCTAssertEqual(KeyResolver.resolve(point("w"), nearest: "w", odds: odds), "w")
         XCTAssertEqual(KeyResolver.resolve(point("r", dx: -0.2), nearest: "r", odds: odds), "r")
     }
 
     func testTouchJustOffCenterKeepsTheTouchedKey() {
-        let odds = lexicon.nextLetterOdds(after: "th")
+        let odds = afterTh
         XCTAssertEqual(KeyResolver.resolve(point("r", dx: -0.33), nearest: "r", odds: odds), "r")
     }
 
@@ -112,8 +116,8 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         // "gor" is one key from both "for" and "got".
         let towardF = [point("g", dx: -0.45), nil, nil]
         let towardT = [nil, nil, point("r", dx: 0.45)]
-        XCTAssertEqual(decode("gor", towardF).first, "for")
-        XCTAssertEqual(decode("gor", towardT).first, "got")
+        XCTAssertEqual(decode("gor", towardF, after: "").first, "for")
+        XCTAssertEqual(decode("gor", towardT, after: "").first, "got")
     }
 
     func testSwappedLettersAreCorrected() {
@@ -131,7 +135,7 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertEqual(decode("somthign").first, "something")
         XCTAssertEqual(decode("probly").first, "probably")
         XCTAssertEqual(decode("tomorow").first, "tomorrow")
-        XCTAssertEqual(decode("esl", likely: ["else"]).first, "else")
+        XCTAssertEqual(decode("esl", after: "or").first, "else")
     }
 
     func testListFragmentsAreNeverFixes() {
@@ -142,7 +146,7 @@ final class KeyboardTouchDecoderTests: XCTestCase {
 
     func testAStrayLetterBecomesAShortWord() {
         XCTAssertEqual(decode("o").first, "i")
-        XCTAssertEqual(decode("t").first, "to")
+        XCTAssertEqual(decode("t", after: "I want").first, "to")
         XCTAssertTrue(decode("z").isEmpty)
     }
 
@@ -176,11 +180,9 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertTrue(decode("dont'").isEmpty)
     }
 
-    func testLikelyNextWordsWinCloseCalls() {
-        let plain = WordDecoder(lexicon: lexicon).candidates(typed: "gor", touches: [nil, nil, nil], likelyWords: [])
-        let likely = WordDecoder(lexicon: lexicon).candidates(typed: "gor", touches: [nil, nil, nil], likelyWords: ["got"])
-        XCTAssertEqual(plain.first?.word, "for")
-        XCTAssertEqual(likely.first?.word, "got")
+    func testTheSentenceSettlesCloseCalls() {
+        XCTAssertEqual(decode("gor", after: "thanks").first, "for")
+        XCTAssertEqual(decode("gor", after: "I").first, "got")
     }
 
     func testFarAwayKeysAreNotCandidates() {
@@ -188,7 +190,7 @@ final class KeyboardTouchDecoderTests: XCTestCase {
     }
 
     func testMismatchedTouchesDecodeNothing() {
-        XCTAssertTrue(WordDecoder(lexicon: lexicon).candidates(typed: "thw", touches: [nil], likelyWords: []).isEmpty)
+        XCTAssertTrue(decoder.candidates(typed: "thw", touches: [nil], odds: odds(after: "")).isEmpty)
     }
 
     func testNeverSuggestsTheTypedWordItself() {

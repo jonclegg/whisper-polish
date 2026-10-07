@@ -43,6 +43,10 @@ final class KeyboardModel {
 
     @ObservationIgnored unowned let controller: KeyboardViewController
     @ObservationIgnored let predictor = Predictor()
+    /// What the keyboard has learned from your typing; it stays in the keyboard's own container.
+    private static let personalURL = FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("personal-typing.json")
     @ObservationIgnored private var polishTask: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var deleteRepeatTask: Task<Void, Never>?
@@ -72,7 +76,12 @@ final class KeyboardModel {
         dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
         deniedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.deniedPasteboardChangeCountKey)
         Task {
-            predictor.setLexicon(await Task.detached { Lexicon.load() }.value)
+            let (lexicon, wordModel, personal) = await Task.detached {
+                (Lexicon.load(),
+                 try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!),
+                 PersonalModel.load(from: Self.personalURL))
+            }.value
+            predictor.setLexicon(lexicon, wordModel: wordModel, personal: personal)
             updateSuggestions()
         }
     }
@@ -204,6 +213,7 @@ final class KeyboardModel {
             insert(" ")
         }
         replace(typed, with: suggestion.text)
+        learnFinishedWord()
         insert(" ")
         layout = .letters
         didType()
@@ -244,6 +254,7 @@ final class KeyboardModel {
                 return
             }
             applyPendingCorrection()
+            learnFinishedWord()
         }
         insert(text)
         if character == "'" { layout = .letters }
@@ -259,6 +270,7 @@ final class KeyboardModel {
             insert(". ")
         } else {
             correction = applyPendingCorrection()
+            learnFinishedWord()
             insert(" ")
         }
         layout = .letters
@@ -269,6 +281,7 @@ final class KeyboardModel {
     private func typeReturn() {
         guard returnKey.isEnabled else { return }
         applyPendingCorrection()
+        learnFinishedWord()
         insert("\n")
         didType()
     }
@@ -280,6 +293,18 @@ final class KeyboardModel {
         let typed = TypingContext(before: textBeforeCursor).partialWord
         replace(typed, with: correction)
         return (typed, correction)
+    }
+
+    func savePersonal() {
+        let personal = predictor.personalModel
+        Task.detached(priority: .utility) { personal.save(to: Self.personalURL) }
+    }
+
+    /// The word just before the cursor is done; the predictor learns it in its sentence.
+    private func learnFinishedWord() {
+        let context = TypingContext(before: textBeforeCursor)
+        guard !context.partialWord.isEmpty else { return }
+        predictor.learnTyped(context.partialWord, after: context.previousWords)
     }
 
     private func replace(_ typed: String, with text: String) {
