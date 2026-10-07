@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recorder: AudioRecorder?
     private var coordinator: DictationCoordinator?
     private var monitor: HotkeyMonitor?
+    private var fixController: FixController?
     private var settings: SettingsWindowController?
     private var onboarding: OnboardingWindowController?
 
@@ -36,10 +37,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         self.recorder = recorder
 
+        // One inserter for dictation and ⌘⇧1, so a paste from one never
+        // snapshots the other's text as the clipboard to restore.
+        let inserter = PasteboardTextInserter()
         let coordinator = DictationCoordinator(
             recorder: recorder,
             engineProvider: { [weak self] in self?.models.activeEngine },
-            inserter: PasteboardTextInserter(),
+            inserter: inserter,
             cleanerProvider: { [weak self] in
                 guard let self else { return nil }
                 switch self.preferences.cleanupEngine {
@@ -80,6 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { coordinator.handle(signal) }
         }
         monitor.onEscape = { MainActor.assumeIsolated { coordinator.abort() } }
+        let fixController = FixController(
+            selection: PasteboardSelection(inserter: inserter),
+            fixer: s1Mini.cleaner,
+            presenter: FixOverlayPanel())
+        self.fixController = fixController
+        monitor.onFixShortcut = { MainActor.assumeIsolated { fixController.trigger() } }
         self.monitor = monitor
 
         let readyToLaunch = preferences.hasCompletedOnboarding && Permissions.allRequiredGranted
@@ -95,12 +105,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await models.loadActiveEngine()
                 refreshActiveModelLabel()
             }
-            if preferences.cleanupEnabled, preferences.cleanupEngine == .s1Mini, S1Mini.isInstalled {
+            // ⌘⇧1 uses S1-mini whichever cleanup engine is chosen.
+            if S1Mini.isInstalled {
                 Task { await s1Mini.cleaner.prewarm() }
             }
         } else {
             showOnboarding()
         }
+    }
+
+    /// llama.cpp's Metal backend aborts in its exit-time teardown if a model
+    /// is still loaded, so Quit would end in a crash report. S1-mini stays
+    /// loaded for ⌘⇧1, so it is freed first.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task {
+            await s1Mini.cleaner.unload()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     private func showOnboarding() {

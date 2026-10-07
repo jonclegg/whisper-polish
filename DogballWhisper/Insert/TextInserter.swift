@@ -39,6 +39,7 @@ final class PasteboardTextInserter: TextInserting {
     static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
 
     private static let virtualKeyV: CGKeyCode = 9
+    static let virtualKeyC: CGKeyCode = 8
 
     /// The paste the clipboard is currently lent out to, if any.
     private var pending: PendingRestore?
@@ -180,6 +181,10 @@ final class PasteboardTextInserter: TextInserting {
     }
 
     static func postCommandV() {
+        postCommand(virtualKey: virtualKeyV)
+    }
+
+    static func postCommand(virtualKey: CGKeyCode) {
         let source = CGEventSource(stateID: .combinedSessionState)
         // Without this, keys the user is physically holding suppress our events.
         source?.setLocalEventsFilterDuringSuppressionState(
@@ -187,8 +192,8 @@ final class PasteboardTextInserter: TextInserting {
             state: .eventSuppressionStateSuppressionInterval
         )
 
-        let down = CGEvent(keyboardEventSource: source, virtualKey: virtualKeyV, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: virtualKeyV, keyDown: false)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
         // Set flags explicitly so a still-held modifier cannot turn this into
         // some other shortcut.
         down?.flags = .maskCommand

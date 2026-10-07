@@ -37,6 +37,11 @@ private struct GeneralSettingsTab: View {
             Section("Hold to talk") {
                 HotkeyPickerView(preferences: preferences, onHotkeyChange: onHotkeyChange)
             }
+            Section("Fix selected text") {
+                Text("Select text in any app and press ⌘⇧1, the Fixit shortcut. \(S1Mini.displayName) cleans it up on this Mac and shows the edit for you to Replace, Copy or Dismiss. With nothing selected, it fixes the clipboard. Download the model in Cleanup.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Insertion") {
                 Picker("When dictation finishes", selection: $insertionMode) {
                     Text("Paste into the focused app").tag(InsertionMode.paste)
@@ -223,13 +228,8 @@ private struct CleanupSettingsTab: View {
         .onChange(of: engine) { _, new in
             guard new != preferences.cleanupEngine else { return }
             preferences.cleanupEngine = new
-            // Hold the 0.5GB model in memory only while it is the engine in
-            // use, and have it loaded before the next dictation needs it.
-            switch new {
-            case .s1Mini where S1Mini.isInstalled: Task { await s1Mini.cleaner.prewarm() }
-            case .s1Mini: break
-            case .groq: Task { await s1Mini.cleaner.unload() }
-            }
+            // Stays loaded under Groq too, because ⌘⇧1 always uses it.
+            if new == .s1Mini, S1Mini.isInstalled { Task { await s1Mini.cleaner.prewarm() } }
         }
         .onChange(of: modelID) { _, new in
             guard new != preferences.cleanupModelID else { return }
@@ -290,7 +290,7 @@ private struct CleanupSettingsTab: View {
             if let error = s1Mini.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
-            Text("A small model built only for cleaning up dictation: it removes filler words and false starts, keeps your self-corrections, and fixes punctuation and capitalization. It has its own fixed instructions, so the Groq prompt is not used.")
+            Text("A small model built only for cleaning up dictation: it removes filler words and false starts, keeps your self-corrections, and fixes punctuation and capitalization. It has its own fixed instructions, so the Groq prompt is not used. It is also what ⌘⇧1 uses to fix selected text.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

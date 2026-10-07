@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import DogballWhisper
 
 final class S1MiniTests: XCTestCase {
@@ -81,6 +82,27 @@ final class S1MiniIntegrationTests: XCTestCase {
         // Well inside the coordinator's 3-second cleanup budget once loaded.
         XCTAssertLessThan(timings.max() ?? .infinity, 1.0, "timings: \(timings)")
         print("S1-mini timings (s):", timings.map { String(format: "%.3f", $0) })
+    }
+
+    // ⌘⇧1 runs the same model over typed text, streaming as it writes.
+    func testFixesTypedTextAndStreamsTheAnswer() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["RUN_S1MINI_IT"] == "1")
+        try XCTSkipUnless(S1Mini.isInstalled, "run testCleansRealDictationOnDeviceQuickly first")
+
+        let cleaner = S1MiniCleaner()
+        await cleaner.prewarm()
+        let partials = OSAllocatedUnfairLock(initialState: [String]())
+        let start = Date()
+        let fixed = try await cleaner.fix("Can you explain me how this function work? I don't understand it's purpose.") {
+            text in partials.withLock { $0.append(text) }
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertEqual(fixed, "Can you explain me how this function works? I don't understand its purpose.")
+        let seen = partials.withLock { $0 }
+        XCTAssertGreaterThan(seen.count, 5)
+        XCTAssertEqual(seen.last?.trimmingCharacters(in: .whitespacesAndNewlines), fixed)
+        XCTAssertLessThan(elapsed, 1.0)
+        print("S1-mini fix took \(String(format: "%.3f", elapsed))s over \(seen.count) tokens")
     }
 
     // The coordinator's timeout cancels the cleanup task; generation must stop

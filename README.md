@@ -138,6 +138,28 @@ To check it end to end (downloads the real model):
 
     RUN_S1MINI_IT=1 ./scripts/test.sh DogballWhisperTests/S1MiniIntegrationTests
 
+## Fix selected text (⌘⇧1)
+
+Select text in any app and press ⌘⇧1, the shortcut the
+[Fixit](https://github.com/ivanrvpereira/fixit) app uses. Dogball Whisper
+copies the selection, runs it through S1-mini on this Mac, and shows Fixit's
+review dialog: the edit as an inline diff (or the plain result), with Replace
+(Return), Copy, and Dismiss (Esc). Replace pastes the fix over the selection
+and gives your clipboard back. With nothing selected it fixes the clipboard
+instead, and the button becomes Copy to Clipboard. The dialog is ported from
+Fixit (MIT License, Copyright (c) 2026 Ivan Pereira).
+
+It always uses S1-mini, whichever cleanup engine is selected, so the model
+stays loaded once downloaded. S1-mini takes no prompt: it does what it does
+for dictation (punctuation, capitalization, fillers, stutters), not Fixit's
+"Sound native" rewrite, so it leaves grammar like "I am agree" alone. Quit
+Fixit, or change its shortcut, since only one app can own ⌘⇧1.
+
+To check it end to end (takes focus for a few seconds, needs Accessibility
+granted to the test build and S1-mini downloaded):
+
+    RUN_FIX_E2E=1 ./scripts/test.sh DogballWhisperTests/FixEndToEndTests
+
 ## Diagnostics
 
 Failures are always logged. Per-dictation detail (caret position, character
@@ -175,6 +197,7 @@ granularity, managed by `Transcribe/ModelManager.swift`.
 - `Transcribe/` - engine protocol, Parakeet (FluidAudio), Whisper (WhisperKit), model catalog
 - `Polish/` - the Groq cleanup call, and S1-mini on llama.cpp for on-device cleanup
 - `Insert/` - caret location and clipboard-preserving paste
+- `Fix/` - ⌘⇧1: copy the selection, fix it with S1-mini, Fixit's review dialog
 - `Core/DictationCoordinator.swift` - the state machine everything else hangs off
 - `UI/` - floating panel, settings, onboarding
 

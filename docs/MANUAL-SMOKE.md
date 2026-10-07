@@ -292,6 +292,16 @@ their caret was.
       cleaned (the model loads at launch), not pasted raw after a timeout
 - [ ] Switch the engine back to Groq: the next dictation goes to Groq
 
+- [ ] Select a sentence in TextEdit and press ⌘⇧1: "Fixing selected
+      text…" appears, then "Review the edit" with the diff. Return replaces
+      the selection, and ⌘V afterwards pastes what was on the clipboard before
+- [ ] ⌘⇧1 again, then Esc: the text is unchanged and TextEdit has focus
+- [ ] ⌘⇧1 with nothing selected: it fixes the clipboard, and the button
+      reads Copy to Clipboard
+- [ ] ⌘⇧1 in Slack or a browser text field: Replace lands there too
+- [ ] Quit from the menu bar with S1-mini downloaded: no crash report in
+      ~/Library/Logs/DiagnosticReports
+
 ## 7. Models
 
 - [ ] Install a Whisper model: progress advances, then it shows Installed

@@ -84,8 +84,10 @@ actor LlamaRunner {
     /// Continues the prompt until the model emits an end-of-generation token.
     ///
     /// Checks for cancellation between tokens, so the coordinator's cleanup
-    /// timeout actually stops the work instead of waiting it out.
-    func complete(_ segments: [Segment]) throws -> String {
+    /// timeout and the fix dialog's Cancel actually stop the work instead of
+    /// waiting it out. `onText`, if given, receives the whole answer so far
+    /// after every token, for showing it as it is written.
+    func complete(_ segments: [Segment], onText: (@Sendable (String) -> Void)? = nil) throws -> String {
         llama_memory_clear(llama_get_memory(context), true)
 
         var tokens: [llama_token] = []
@@ -108,6 +110,7 @@ actor LlamaRunner {
             var next = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, next) { break }
             output.append(piece(next))
+            onText?(String(decoding: output, as: UTF8.self))
             position += 1
             let status = llama_decode(context, llama_batch_get_one(&next, 1))
             guard status == 0 else { throw LlamaError.decodeFailed(status) }

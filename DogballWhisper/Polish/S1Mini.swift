@@ -77,9 +77,9 @@ enum S1MiniError: LocalizedError, Equatable {
     }
 }
 
-/// The on-device cleaner. `prompt` and `model` are ignored: S1-mini has one
-/// fixed prompt and is the model.
-final class S1MiniCleaner: TextCleaning {
+/// The on-device cleaner, for dictation and for ⌘⇧1. `prompt` and `model`
+/// are ignored: S1-mini has one fixed prompt and is the model.
+final class S1MiniCleaner: TextCleaning, TextFixing {
     private let loader = Loader()
 
     func clean(_ text: String, prompt: String, model: String) async throws -> String {
@@ -93,8 +93,18 @@ final class S1MiniCleaner: TextCleaning {
         return cleaned
     }
 
-    /// Loads and warms the model ahead of the first dictation, so the first
-    /// one is as fast as the rest.
+    /// The same cleanup, run over text selected for ⌘⇧1, reporting the
+    /// answer so far as it is written so the fix dialog can show it.
+    func fix(_ text: String, onText: @escaping @Sendable (String) -> Void) async throws -> String {
+        let runner = try await loader.runner()
+        let fixed = try await runner.complete(S1Mini.prompt(for: text), onText: onText)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fixed.isEmpty else { throw FixError.emptyResponse }
+        return fixed
+    }
+
+    /// Loads and warms the model ahead of the first dictation or fix, so the
+    /// first one is as fast as the rest.
     func prewarm() async {
         do {
             _ = try await loader.runner()
