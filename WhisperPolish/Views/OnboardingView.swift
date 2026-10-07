@@ -241,11 +241,6 @@ struct OnboardingView: View {
                 keyboardInstruction(1, "Tap Keyboards.")
                 keyboardInstruction(2, "Turn on Whisper Polish.")
                 keyboardInstruction(3, "Turn on Allow Full Access.")
-                keyboardInstruction(4, "Set Paste from Other Apps to Allow.")
-                // iOS asks before each clipboard read until this is set; Full Access doesn't cover it.
-                Text("This option appears after the keyboard first asks to paste. Until then, iOS asks each time you copy something.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
