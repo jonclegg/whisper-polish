@@ -1,5 +1,6 @@
 # Replays your most recent sent messages word by word and measures how often
 # each predictor puts the word you actually typed in the suggestion bar.
+# scripts/keyboard-model/bench.py scores the keyboard's shipping word model the same way.
 # Trains on everything older; the last two blocks of messages are dev and test.
 #
 # Usage (on the Mac, after extract_corpus.py; see run-evaluation.sh):
@@ -94,16 +95,8 @@ def unique(words):
 
 ###############################################################################
 
-def lookup_keys(previous):
-    tokens = [SENTENCE_START] + previous[-2:]
-    if len(tokens) == 1:
-        return tokens
-    return [" ".join(tokens[-2:]), tokens[-1]]
-
-###############################################################################
-
 class GenericLexicon:
-    """The keyboard's shipping words.txt and next-words.txt."""
+    """The keyboard's words.txt, by frequency."""
 
     def __init__(self):
         with open(f"{LEXICON_DIR}/words.txt") as source:
@@ -114,30 +107,6 @@ class GenericLexicon:
             if word.lower() not in self.rank:
                 self.rank[word.lower()] = rank
                 self.display[word.lower()] = word
-        self.sorted_words = sorted(self.rank)
-        self.followers = {}
-        with open(f"{LEXICON_DIR}/next-words.txt") as source:
-            for line in source.read().split("\n"):
-                if "\t" not in line:
-                    continue
-                key, rest = line.split("\t", 1)
-                self.followers[key] = [w.lower() for w in rest.split(" ")]
-
-    def context_followers(self, previous):
-        return unique([w for key in lookup_keys(previous) for w in self.followers.get(key, [])])
-
-    def completions(self, prefix, limit):
-        low = bisect.bisect_left(self.sorted_words, prefix)
-        high = bisect.bisect_left(self.sorted_words, prefix + "{")
-        return sorted(self.sorted_words[low:high], key=self.rank.get)[:limit]
-
-    def shipping_slots(self, previous, prefix):
-        """Mirrors Predictor.suggestions without autocorrection."""
-        followers = self.context_followers(previous)
-        if not prefix:
-            return followers[:3]
-        candidates = [w for w in followers if w.startswith(prefix)] + self.completions(prefix, 6)
-        return [w for w in unique(candidates) if w != prefix][:2]
 
 ###############################################################################
 
@@ -226,23 +195,15 @@ class PersonalNgram:
 ###############################################################################
 
 class GenericDistribution:
-    """The shipping tables as probabilities: Zipf unigram plus ranked context followers."""
+    """The word list as probabilities: a Zipf unigram by rank."""
 
     def __init__(self, lexicon, vocab):
-        self.lexicon = lexicon
-        self.vocab = vocab
         ranks = numpy.array([lexicon.rank.get(w, len(lexicon.rank)) for w in vocab.words], dtype=numpy.float64)
         weights = 1 / (ranks + 100)
         self.unigram = weights / weights.sum()
 
     def distribution(self, previous):
-        followers = [w for w in self.lexicon.context_followers(previous) if w in self.vocab.index]
-        if not followers:
-            return self.unigram
-        boost = numpy.zeros(len(self.vocab.words))
-        for position, word in enumerate(followers):
-            boost[self.vocab.index[word]] += 1 / (position + 1)
-        return FOLLOWER_SHARE * boost / boost.sum() + (1 - FOLLOWER_SHARE) * self.unigram
+        return self.unigram
 
 ###############################################################################
 
@@ -344,12 +305,6 @@ def offered_at(probabilities, word, vocab):
 
 ###############################################################################
 
-def offered_at_slots(slots_for, word):
-    for typed in range(len(word)):
-        if word in slots_for(word[:typed]):
-            return typed
-    return None
-
 ###############################################################################
 
 class Tally:
@@ -392,9 +347,9 @@ def evaluate(texts, lexicon, vocab, personal, generic, model, label):
         for word, previous, state in positions:
             word = word.lower()
             groups = ["all", "outside_generic_lexicon" if word not in lexicon.rank else "in_generic_lexicon"]
-            offered = {"shipping": offered_at_slots(lambda prefix: lexicon.shipping_slots(previous, prefix), word)}
+            offered = {}
             personal_now = personal.distribution(previous)
-            distributions = mixtures("personal_ngram+shipping", personal_now, generic.distribution(previous))
+            distributions = mixtures("personal_ngram+frequency", personal_now, generic.distribution(previous))
             if model:
                 lm_now = model.distribution(state)
                 distributions[label] = lm_now
