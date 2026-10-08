@@ -127,7 +127,7 @@ final class KeyboardTouchDecoderTests: XCTestCase {
 
     func testMissingAndExtraLettersAreCorrected() {
         XCTAssertEqual(decode("somthing").first, "something")
-        XCTAssertTrue(decode("helo").contains("hello"))
+        XCTAssertTrue(decode("helo", after: "").contains("hello"))
         XCTAssertEqual(decode("thhe").first, "the")
     }
 

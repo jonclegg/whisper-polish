@@ -58,8 +58,16 @@ final class KeyboardPredictorTests: XCTestCase {
     }
 
     func testLetterOddsFollowTheSentenceSoFar() {
-        // "Thanks" and "That's" open sentences far more often than "The".
-        let odds = predictor().letterOdds(for: TypingContext(before: "Th"))
-        XCTAssertEqual(odds.max { $0.value < $1.value }?.key, "a")
+        // On its own "m" could start anything; after "Thanks so" it's "much".
+        let odds = predictor().letterOdds(for: TypingContext(before: "Thanks so m"))
+        XCTAssertEqual(odds.max { $0.value < $1.value }?.key, "u")
+    }
+
+    func testANewFieldDoesNotInheritTheLastOnesSentence() {
+        let predictor = predictor()
+        let fresh = predictor.suggestions(for: TypingContext(before: ""), touches: [], allowsCorrection: true, revert: nil).suggestions
+        _ = predictor.suggestions(for: TypingContext(before: "Thanks so much for the"), touches: [], allowsCorrection: true, revert: nil)
+        let again = predictor.suggestions(for: TypingContext(before: ""), touches: [], allowsCorrection: true, revert: nil).suggestions
+        XCTAssertEqual(again, fresh)
     }
 }

@@ -199,14 +199,17 @@ final class Predictor {
         return odds
     }
 
-    /// Feeds the model only what's new since last time, unless the history changed underneath.
+    /// Feeds the model only what's new since last time: up to a few words added to
+    /// the history it last saw, which may have slid past the history's length limit.
+    /// Anything else, like a different text field, starts over.
     private func modelState(after history: [String?], model: WordModel) -> WordModel.State {
         if let memory = modelMemory {
-            for added in 0...min(3, history.count) where memory.fed.count >= history.count - added
+            for added in 0...min(3, history.count)
+            where history.count == min(memory.fed.count + added, TypingContext.historyLength)
                 && Array(memory.fed.suffix(history.count - added)) == Array(history.dropLast(added)) {
                 var state = memory.state
                 for token in history.suffix(added) { model.advance(&state, with: token.map(model.id(of:)) ?? WordModel.boundary) }
-                modelMemory = (memory.fed + history.suffix(added), state)
+                modelMemory = (Array((memory.fed + history.suffix(added)).suffix(TypingContext.historyLength)), state)
                 return state
             }
         }
