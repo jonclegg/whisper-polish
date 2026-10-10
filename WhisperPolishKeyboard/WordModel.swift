@@ -16,6 +16,10 @@ final class WordModel: @unchecked Sendable {
     /// Lowercased words by id; 0 is the sentence boundary and 1 an unknown word.
     let words: [String]
     let ids: [String: Int]
+    /// Every real word (not the boundary or unknown) as lowercase bytes with its id, sorted, for prefix lookups.
+    let sortedWords: [(bytes: [UInt8], id: Int)]
+    /// Words with an apostrophe by how they're typed without it: "youve" to "you've".
+    let apostropheForms: [String: String]
     let embeddingSize: Int
     let hiddenSize: Int
 
@@ -47,6 +51,13 @@ final class WordModel: @unchecked Sendable {
         words = String(decoding: data[offset..<offset + vocabularyBytes], as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard words.count == vocabularySize else { throw ModelError.notAModel }
         ids = Dictionary(words.enumerated().map { ($1, $0) }) { first, _ in first }
+        sortedWords = words.enumerated().dropFirst(2).map { (Array($1.utf8), $0) }.sorted { $0.bytes.lexicographicallyPrecedes($1.bytes) }
+        var apostropheForms: [String: String] = [:]
+        for word in words where word.contains("'") {
+            let stripped = word.replacingOccurrences(of: "'", with: "")
+            if apostropheForms[stripped] == nil { apostropheForms[stripped] = word }
+        }
+        self.apostropheForms = apostropheForms
         offset = Self.aligned(offset + vocabularyBytes)
         func take(_ count: Int, bytes: Int) -> Int {
             defer { offset = Self.aligned(offset + count * bytes) }

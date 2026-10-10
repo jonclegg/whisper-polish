@@ -29,6 +29,11 @@ final class Predictor {
     static let personalRamp: Float = 10_000
 
     private let checker = UITextChecker()
+
+    /// The spell checker loads its dictionaries on first use, long enough to stall a keystroke.
+    nonisolated static func warmUpSpellChecker() {
+        _ = UITextChecker().rangeOfMisspelledWord(in: "warm", range: NSRange(location: 0, length: 4), startingAt: 0, wrap: false, language: language)
+    }
     private var lexicon: Lexicon?
     private var wordModel: WordModel?
     private var personal = PersonalModel()
@@ -45,7 +50,7 @@ final class Predictor {
     /// Every word the bar can offer: the word model's, then names and words you've taught it.
     private var vocabulary: [String: Int] = [:]
     private var vocabularyWords: [String] = []
-    private var sortedVocabulary: [(word: String, id: Int)] = []
+    private var sortedVocabulary: [(bytes: [UInt8], id: Int)] = []
     /// The word model's memory of the history it was last fed, so each new word costs one step.
     private var modelMemory: (fed: [String?], state: WordModel.State)?
     private var cachedOdds: (history: [String?], odds: [Float])?
@@ -64,12 +69,8 @@ final class Predictor {
         cachedDecoder = nil
         vocabulary = wordModel.ids
         vocabularyWords = wordModel.words
-        sortedVocabulary = wordModel.words.enumerated().dropFirst(2).map { ($1, $0) }.sorted { $0.word < $1.word }
-        apostropheForms = [:]
-        for word in wordModel.words where word.contains("'") {
-            let stripped = word.replacingOccurrences(of: "'", with: "")
-            if apostropheForms[stripped] == nil { apostropheForms[stripped] = word }
-        }
+        sortedVocabulary = wordModel.sortedWords
+        apostropheForms = wordModel.apostropheForms
         for word in Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(personal.isLearned) {
             addToVocabulary(word)
         }
@@ -121,8 +122,9 @@ final class Predictor {
         let id = vocabularyWords.count
         vocabulary[lower] = id
         vocabularyWords.append(lower)
-        let position = sortedVocabulary.firstIndex { $0.word > lower } ?? sortedVocabulary.count
-        sortedVocabulary.insert((lower, id), at: position)
+        let bytes = Array(lower.utf8)
+        let position = sortedVocabulary.firstIndex { bytes.lexicographicallyPrecedes($0.bytes) } ?? sortedVocabulary.count
+        sortedVocabulary.insert((bytes, id), at: position)
         cachedOdds = nil
     }
 
@@ -130,15 +132,19 @@ final class Predictor {
     /// next-word odds of every word that continues it, by its next letter.
     func letterOdds(for context: TypingContext) -> [Character: Double] {
         guard let odds = nextWordOdds(for: context) else { return [:] }
-        let prefix = context.partialWord.lowercased()
-        var byLetter: [Character: Double] = [:]
+        let prefix = Array(context.partialWord.lowercased().utf8)
+        var byLetter = [Double](repeating: 0, count: 26)
         for index in prefixMatches(of: prefix) {
             let (word, id) = sortedVocabulary[index]
             guard word.count > prefix.count else { continue }
-            let letter = word[word.index(word.startIndex, offsetBy: prefix.count)]
-            if letter.isLetter { byLetter[letter, default: 0] += Double(odds[id]) }
+            let letter = Int(word[prefix.count]) - Int(UInt8(ascii: "a"))
+            if letter >= 0, letter < 26 { byLetter[letter] += Double(odds[id]) }
         }
-        return Lexicon.normalized(byLetter)
+        var result: [Character: Double] = [:]
+        for (letter, odds) in byLetter.enumerated() where odds > 0 {
+            result[Character(Unicode.Scalar(UInt8(ascii: "a") + UInt8(letter)))] = odds
+        }
+        return Lexicon.normalized(result)
     }
 
     /// `touches[i]` is where the i-th letter of the word being typed was touched, if known.
@@ -222,20 +228,20 @@ final class Predictor {
 
     /// Ids of vocabulary words that start with `typed`, other than `typed` itself.
     private func completionRange(of typed: String) -> [Int] {
-        let prefix = typed.lowercased()
-        return prefixMatches(of: prefix).compactMap { sortedVocabulary[$0].word == prefix ? nil : sortedVocabulary[$0].id }
+        let prefix = Array(typed.lowercased().utf8)
+        return prefixMatches(of: prefix).compactMap { sortedVocabulary[$0].bytes == prefix ? nil : sortedVocabulary[$0].id }
     }
 
     /// Positions in `sortedVocabulary` of the words starting with `prefix`.
-    private func prefixMatches(of prefix: String) -> Range<Int> {
+    private func prefixMatches(of prefix: [UInt8]) -> Range<Int> {
         var low = 0
         var high = sortedVocabulary.count
         while low < high {
             let middle = (low + high) / 2
-            if sortedVocabulary[middle].word < prefix { low = middle + 1 } else { high = middle }
+            if sortedVocabulary[middle].bytes.lexicographicallyPrecedes(prefix) { low = middle + 1 } else { high = middle }
         }
         var end = low
-        while end < sortedVocabulary.count, sortedVocabulary[end].word.hasPrefix(prefix) { end += 1 }
+        while end < sortedVocabulary.count, sortedVocabulary[end].bytes.starts(with: prefix) { end += 1 }
         return low..<end
     }
 

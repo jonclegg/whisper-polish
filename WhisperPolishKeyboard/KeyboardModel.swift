@@ -77,7 +77,8 @@ final class KeyboardModel {
         deniedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.deniedPasteboardChangeCountKey)
         Task {
             let (lexicon, wordModel, personal) = await Task.detached {
-                (Lexicon.load(),
+                Predictor.warmUpSpellChecker()
+                return (Lexicon.load(),
                  try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!),
                  PersonalModel.load(from: Self.personalURL))
             }.value
