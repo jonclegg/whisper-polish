@@ -12,7 +12,6 @@ final class KeyboardViewController: UIInputViewController {
     private lazy var keyGrid = KeyGridView(model: model)
     private var dictationTimer: Timer?
     private var pasteboardObserver: NSObjectProtocol?
-    private var keyboardHeightConstraint: NSLayoutConstraint?
     private var isSyncScheduled = false
 
     override func loadView() {
@@ -33,32 +32,24 @@ final class KeyboardViewController: UIInputViewController {
         // recognizers can never delay or cancel their touches.
         keyGrid.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyGrid)
-        let keyboardHeight = host.view.heightAnchor.constraint(
-            equalToConstant: KeyboardView.height(showingPastePreview: false)
-        )
-        keyboardHeightConstraint = keyboardHeight
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
             host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            keyboardHeight,
+            host.view.heightAnchor.constraint(equalToConstant: KeyboardView.height),
             keyGrid.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             keyGrid.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             keyGrid.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             keyGrid.heightAnchor.constraint(equalToConstant: KeyboardView.keysHeight),
         ])
         host.didMove(toParent: self)
+        pasteConfiguration = UIPasteConfiguration(forAccepting: NSString.self)
         observeModel()
     }
 
     private func observeModel() {
         withObservationTracking {
-            let height = KeyboardView.height(showingPastePreview: model.clipboardPreview != nil)
-            if keyboardHeightConstraint?.constant != height {
-                keyboardHeightConstraint?.constant = height
-                UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
-            }
             keyGrid.apply(KeyGridView.Configuration(
                 layout: model.layout,
                 bottomRow: model.bottomRow,
@@ -98,7 +89,7 @@ final class KeyboardViewController: UIInputViewController {
             object: UIPasteboard.general,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.updateClipboardPreview() }
+            MainActor.assumeIsolated { self?.model.updatePasteOffer() }
         }
         // The app hands dictation back through the app group, possibly
         // after the keyboard is already showing again.
@@ -106,6 +97,15 @@ final class KeyboardViewController: UIInputViewController {
             MainActor.assumeIsolated { self?.model.insertPendingDictation() }
         }
         model.insertPendingDictation()
+    }
+
+    /// The bar's paste control delivers the pasteboard here once the user taps it.
+    override func paste(itemProviders: [NSItemProvider]) {
+        guard let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return }
+        _ = provider.loadObject(ofClass: NSString.self) { [weak self] object, _ in
+            guard let text = object as? NSString else { return }
+            Task { @MainActor in self?.model.paste(text as String) }
+        }
     }
 
     override func textDidChange(_ textInput: UITextInput?) {

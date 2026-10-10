@@ -8,32 +8,24 @@ extension Color {
 
 struct KeyboardView: View {
     static let toolbarHeight: CGFloat = 40
-    /// Taller so a two-line clipboard preview fits the way it does on the system keyboard.
-    static let pasteBarHeight: CGFloat = 56
     static let keysHeight: CGFloat = 54 * 4
+    static let height = toolbarHeight + keysHeight
 
     let model: KeyboardModel
-
-    static func height(showingPastePreview: Bool) -> CGFloat {
-        (showingPastePreview ? pasteBarHeight : toolbarHeight) + keysHeight
-    }
-
-    private var showsPastePreview: Bool { model.clipboardPreview != nil }
 
     /// The keys are a UIKit sibling laid over the bottom; this view supplies the bar and the style picker.
     var body: some View {
         VStack(spacing: 0) {
             SuggestionBar(model: model)
-                .frame(height: showsPastePreview ? Self.pasteBarHeight : Self.toolbarHeight)
+                .frame(height: Self.toolbarHeight)
             if model.isPickingStyle {
                 StylePickerView(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .frame(height: Self.height(showingPastePreview: showsPastePreview), alignment: .top)
+        .frame(height: Self.height, alignment: .top)
         .animation(.snappy(duration: 0.25), value: model.isPickingStyle)
         .animation(.snappy(duration: 0.25), value: model.notice)
-        .animation(.snappy(duration: 0.25), value: showsPastePreview)
     }
 }
 
@@ -49,8 +41,8 @@ private struct SuggestionBar: View {
             Group {
                 if let notice = model.notice {
                     noticeContent(notice)
-                } else if model.clipboardPreview != nil {
-                    clipboardPreview
+                } else if model.offeredPasteboardChangeCount != nil {
+                    pasteControl
                 } else {
                     suggestionSlots
                 }
@@ -80,33 +72,9 @@ private struct SuggestionBar: View {
             .accessibilityHint("Hold to choose a style")
     }
 
-    private var clipboardPreview: some View {
-        HStack {
-            Spacer(minLength: 0)
-            clipboardPreviewControl
-                .accessibilityLabel(model.clipboardPreview?.accessibilityLabel ?? "Paste")
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var clipboardPreviewControl: some View {
-        Button(action: model.pasteClipboard) {
-            Text(ClipboardPreview.displayText(model.clipboardPreview?.text ?? ""))
-                .font(.system(size: 16))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: 240, alignment: .leading)
-                .padding(.leading, 8)
-                .padding(.trailing, 12)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.keyFill)
-                        .shadow(color: .black.opacity(0.16), radius: 1.5, y: 1)
-                )
-        }
-        .buttonStyle(PressableButtonStyle())
+    private var pasteControl: some View {
+        PasteControl(target: model.controller)
+            .frame(width: 110, height: 32)
     }
 
     private var suggestionSlots: some View {
@@ -278,4 +246,23 @@ private extension View {
             self
         }
     }
+}
+
+/// The system's paste button. Pasting through it hands over the text without iOS's paste prompt,
+/// which reading the pasteboard directly raises on every new copy.
+private struct PasteControl: UIViewRepresentable {
+    let target: KeyboardViewController
+
+    func makeUIView(context: Context) -> UIPasteControl {
+        let configuration = UIPasteControl.Configuration()
+        configuration.displayMode = .iconAndLabel
+        configuration.cornerStyle = .capsule
+        configuration.baseBackgroundColor = .keyFill
+        configuration.baseForegroundColor = .label
+        let control = UIPasteControl(configuration: configuration)
+        control.target = target
+        return control
+    }
+
+    func updateUIView(_ control: UIPasteControl, context: Context) {}
 }
