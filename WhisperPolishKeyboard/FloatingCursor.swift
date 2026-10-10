@@ -69,19 +69,14 @@ final class EstimatedTextLayout {
 /// Holding space steers an invisible cursor through the estimated layout and
 /// the real cursor jumps to the insertion point nearest it, like the system
 /// keyboard's trackpad. Hosts only share the sentence or paragraph around the
-/// cursor, so as the finger nears the edge of the known text the cursor
-/// briefly visits that edge to read the next piece, which joins the layout.
+/// cursor, and reading more means moving the host's cursor to the edge of the
+/// known text. So reading waits until the finger has reached that edge: the
+/// cursor is then already on the edge's row, and a read only slides it along
+/// that row or steps it one row on, the way the finger is going.
 @MainActor
 final class FloatingCursor {
-    /// Rows read above the cursor before it starts following the finger, about
-    /// a drag from the space bar to the top of the keyboard. Reading moves the
-    /// host's cursor, so it's done up front while the keys fade instead of mid-drag.
-    private static let prefetchRowsAbove: CGFloat = 25
-    private static let prefetchRowsBelow: CGFloat = 8
     /// The cursor travels farther than the finger so one drag covers a screenful.
     private static let gain: CGFloat = 1.5
-    /// Rows of known text kept ahead of the finger once it's moving.
-    private static let lookahead: CGFloat = 5
     /// How long the host gets to show a move within the known text.
     private static let moveTimeout: TimeInterval = 0.3
     /// A step past the known text the host doesn't show by then means the cursor is at the document's edge.
@@ -98,6 +93,10 @@ final class FloatingCursor {
     private var point: CGPoint
     private var reachedStart = false
     private var reachedEnd = false
+    /// Whether the known text is known to start or end a paragraph, so the
+    /// estimate's first or last line is a real line and sideways moves stop there.
+    private var startsParagraph = false
+    private var endsParagraph = false
     private var isReading = false
     private var isEnded = false
     private var direction = CGVector.zero
@@ -111,8 +110,6 @@ final class FloatingCursor {
         cursor = before.utf16.count
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: cursor)
-        // With nothing after the cursor it's usually at the document's end, where looking further only waits out a step.
-        prefetch(below: !after.isEmpty)
     }
 
     func move(by delta: CGVector) {
@@ -139,37 +136,31 @@ final class FloatingCursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
         }
-        readAheadIfNeeded()
+        readIfAtEdge()
     }
 
-    private var rowsAbove: CGFloat { (point.y - layout.bounds.minY) / layout.lineHeight }
-    private var rowsBelow: CGFloat { (layout.bounds.maxY - point.y) / layout.lineHeight }
-
-    private func prefetch(below: Bool) {
-        isReading = true
-        Task {
-            while !isEnded && !reachedStart && rowsAbove < Self.prefetchRowsAbove { await readUp() }
-            while !isEnded && below && !reachedEnd && rowsBelow < Self.prefetchRowsBelow { await readDown() }
-            isReading = false
-            follow()
-        }
-    }
-
-    private func readAheadIfNeeded() {
+    /// Reads past the known text once the finger has gone past it: above or
+    /// below it, or sideways off its first or last character where that isn't
+    /// a paragraph's edge, since the host's line goes on there.
+    private func readIfAtEdge() {
         guard !isEnded else { return }
-        let up = !reachedStart && rowsAbove < Self.lookahead && (direction.dy < 0 || direction.dx < 0)
-        let down = !reachedEnd && rowsBelow < Self.lookahead && (direction.dy > 0 || direction.dx > 0)
+        let bounds = layout.bounds
+        let up = !reachedStart && (point.y < bounds.minY || (cursor == 0 && !startsParagraph && direction.dx < 0))
+        let down = !reachedEnd && (point.y > bounds.maxY || (cursor == layout.length && !endsParagraph && direction.dx > 0))
         guard up || down else { return }
+        let crossesLine = up ? point.y < bounds.minY : point.y > bounds.maxY
         isReading = true
         Task {
-            if up { await readUp() } else { await readDown() }
+            if up { await readUp(crossingLine: crossesLine) } else { await readDown(crossingLine: crossesLine) }
             isReading = false
             follow()
         }
     }
 
-    /// Reads the text before the known text and puts it in front.
-    private func readUp() async {
+    /// Reads the text before the known text and puts it in front. At a
+    /// paragraph's start that means stepping over its line break, which only
+    /// happens when the finger has gone up a line.
+    private func readUp(crossingLine: Bool) async {
         let offset = point - layout.caretPoint(at: cursor)
         let anchor = cursor
         guard await moveHost(to: 0) else {
@@ -180,6 +171,10 @@ final class FloatingCursor {
         var joint = ""
         if before.isEmpty {
             // The host's context stopped at a sentence or paragraph boundary, so step over it.
+            guard crossingLine else {
+                startsParagraph = true
+                return
+            }
             let known = text
             let stepped = await stepHost(by: -1) { _, after in
                 let rest = after.isEmpty ? "" : (after as NSString).substring(from: 1)
@@ -194,12 +189,13 @@ final class FloatingCursor {
         }
         text = before + joint + text
         cursor = before.utf16.count
+        startsParagraph = false
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: anchor + cursor + joint.utf16.count) + offset
     }
 
     /// Reads the text after the known text and puts it behind.
-    private func readDown() async {
+    private func readDown(crossingLine: Bool) async {
         let offset = point - layout.caretPoint(at: cursor)
         let anchor = cursor
         let length = text.utf16.count
@@ -210,6 +206,10 @@ final class FloatingCursor {
         var after = proxy.documentContextAfterInput ?? ""
         var joint = ""
         if after.isEmpty {
+            guard crossingLine else {
+                endsParagraph = true
+                return
+            }
             let known = text
             let stepped = await stepHost(by: 1) { before, _ in
                 let rest = before.isEmpty ? "" : (before as NSString).substring(to: before.utf16.count - 1)
@@ -224,6 +224,7 @@ final class FloatingCursor {
         }
         text = text + joint + after
         cursor = length + joint.utf16.count
+        endsParagraph = false
         layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
         point = layout.caretPoint(at: anchor) + offset
     }
