@@ -133,6 +133,7 @@ targets:
       - WhisperPolishKeyboard/TypingContext.swift
       - WhisperPolishKeyboard/PersonalModel.swift
       - WhisperPolishKeyboard/WordModel.swift
+      - WhisperPolishKeyboard/FloatingCursor.swift
     dependencies:
       - target: WhisperPolish
     settings:

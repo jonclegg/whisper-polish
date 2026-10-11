@@ -36,12 +36,14 @@ final class KeyGridView: UIView {
         let origin: CGPoint
         /// Where the touch landed in key units, while it's still on the key it landed on.
         var landing: CGPoint?
-        var trackpadPoint = CGPoint.zero
+        /// Where the finger was at its last move.
+        var location: CGPoint
         var holdTimer: Timer?
 
         init(cap: KeyCapView, origin: CGPoint, landing: CGPoint?) {
             self.cap = cap
             self.origin = origin
+            location = origin
             self.landing = landing
         }
     }
@@ -163,6 +165,7 @@ final class KeyGridView: UIView {
         for touch in touches {
             guard let tracker = trackers[touch] else { continue }
             let point = touch.location(in: self)
+            defer { tracker.location = point }
             switch tracker.mode {
             case .trackpad:
                 moveCursor(tracker, to: point)
@@ -287,7 +290,6 @@ final class KeyGridView: UIView {
     private func startTrackpad(_ tracker: Tracker) {
         tracker.holdTimer?.invalidate()
         tracker.mode = .trackpad
-        tracker.trackpadPoint = tracker.origin
         if let cap = tracker.cap { release(cap) }
         UIView.animate(withDuration: 0.15) {
             self.rows.joined().forEach { $0.setLabelHidden(true) }
@@ -296,8 +298,7 @@ final class KeyGridView: UIView {
     }
 
     private func moveCursor(_ tracker: Tracker, to point: CGPoint) {
-        model.moveCursor(by: CGVector(dx: point.x - tracker.trackpadPoint.x, dy: point.y - tracker.trackpadPoint.y))
-        tracker.trackpadPoint = point
+        model.moveCursor(by: CGVector(dx: point.x - tracker.location.x, dy: point.y - tracker.location.y))
     }
 
     private func endTrackpad() {

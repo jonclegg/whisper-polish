@@ -1,15 +1,13 @@
 import UIKit
 
-/// Keyboards never learn how the app lays out its text, so the floating cursor
-/// steers through an estimate: the known text around the cursor wrapped the
-/// way a full-width field in the body font would wrap it. Indexes are UTF-16
-/// offsets, the unit `adjustTextPosition(byCharacterOffset:)` counts in.
+/// One way the host might lay out the known text: the body font wrapped at a
+/// given width, with the first line starting `indent` in, since the known
+/// text can begin partway along a line. Indexes are UTF-16 offsets, the unit
+/// `adjustTextPosition(byCharacterOffset:)` counts in.
 @MainActor
 final class EstimatedTextLayout {
-    /// A full-width text view's margins plus its text container's padding.
-    private static let fieldInset: CGFloat = 21
-
     let length: Int
+    private let indent: CGFloat
     private let text: NSString
     private let storage: NSTextStorage
     private let layoutManager = NSLayoutManager()
@@ -17,12 +15,17 @@ final class EstimatedTextLayout {
     /// Each visual line, plus an empty last line after a trailing line break.
     private var lines: [(range: NSRange, rect: CGRect)] = []
 
-    init(text: String, screenWidth: CGFloat) {
+    init(text: String, width: CGFloat, indent: CGFloat) {
         self.text = text as NSString
+        self.indent = indent
         length = self.text.length
         let font = UIFont.preferredFont(forTextStyle: .body)
         storage = NSTextStorage(string: text, attributes: [.font: font])
-        container = NSTextContainer(size: CGSize(width: screenWidth - 2 * Self.fieldInset, height: .greatestFiniteMagnitude))
+        let firstParagraph = self.text.paragraphRange(for: NSRange(location: 0, length: 0))
+        let style = NSMutableParagraphStyle()
+        style.firstLineHeadIndent = indent
+        storage.addAttribute(.paragraphStyle, value: style, range: firstParagraph)
+        container = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
         layoutManager.addTextContainer(container)
         storage.addLayoutManager(layoutManager)
@@ -32,31 +35,39 @@ final class EstimatedTextLayout {
         }
         let extra = layoutManager.extraLineFragmentRect
         if extra.height > 0 || lines.isEmpty {
-            let rect = extra.height > 0 ? extra : CGRect(x: 0, y: 0, width: container.size.width, height: font.lineHeight)
+            let rect = extra.height > 0 ? extra : CGRect(x: 0, y: 0, width: width, height: font.lineHeight)
             lines.append((NSRange(location: length, length: 0), rect))
         }
     }
 
-    var lineHeight: CGFloat { lines[0].rect.height }
+    var lineCount: Int { lines.count }
 
-    var bounds: CGRect {
-        CGRect(x: 0, y: lines[0].rect.minY, width: container.size.width, height: lines[lines.count - 1].rect.maxY - lines[0].rect.minY)
+    var width: CGFloat { container.size.width }
+
+    func line(of index: Int) -> Int {
+        // The last line whose range starts at or before the index; a wrapped line's end belongs to the next line.
+        var low = 0
+        var high = lines.count - 1
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if lines[middle].range.location <= index { low = middle } else { high = middle - 1 }
+        }
+        return low
     }
 
-    func caretPoint(at index: Int) -> CGPoint {
-        let line = lines.first { NSLocationInRange(index, $0.range) } ?? lines[lines.count - 1]
+    func caretX(at index: Int) -> CGFloat {
+        let line = lines[line(of: index)]
         let start = line.range.location
-        guard index > start else { return CGPoint(x: 0, y: line.rect.midY) }
+        guard index > start else { return start == 0 ? indent : 0 }
         let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: start, length: index - start), actualCharacterRange: nil)
-        return CGPoint(x: layoutManager.boundingRect(forGlyphRange: glyphs, in: container).maxX, y: line.rect.midY)
+        return layoutManager.boundingRect(forGlyphRange: glyphs, in: container).maxX
     }
 
-    /// The insertion point nearest `point`, kept on the line under it.
-    func index(nearest point: CGPoint) -> Int {
-        let lineIndex = lines.firstIndex { point.y < $0.rect.maxY } ?? lines.count - 1
+    /// The insertion point on `line` nearest `x`.
+    func index(onLine lineIndex: Int, nearestX x: CGFloat) -> Int {
         let line = lines[lineIndex]
         var fraction: CGFloat = 0
-        let hit = layoutManager.characterIndex(for: CGPoint(x: point.x, y: line.rect.midY), in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        let hit = layoutManager.characterIndex(for: CGPoint(x: x, y: line.rect.midY), in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
         let index = fraction > 0.5 && hit < length ? NSMaxRange(text.rangeOfComposedCharacterSequence(at: hit)) : hit
         // A wrapped line's last offset belongs to the next line, so stop before its final character.
         let lineEnd = lineIndex == lines.count - 1 || line.range.length == 0
@@ -66,17 +77,33 @@ final class EstimatedTextLayout {
     }
 }
 
-/// Holding space steers an invisible cursor through the estimated layout and
-/// the real cursor jumps to the insertion point nearest it, like the system
-/// keyboard's trackpad. Hosts only share the sentence or paragraph around the
-/// cursor, and reading more means moving the host's cursor to the edge of the
-/// known text. So reading waits until the finger has reached that edge: the
-/// cursor is then already on the edge's row, and a read only slides it along
-/// that row or steps it one row on, the way the finger is going.
+/// Holding space steers an invisible cursor like a mouse: it starts on the
+/// real cursor and travels with the finger, and the real cursor goes to the
+/// character under it. Keyboards never learn how the app lays out its text,
+/// and hosts only share the sentence or paragraph around the cursor, so where
+/// the lines wrap is a guess. Rather than trust one guess, the cursor follows
+/// a range of them, fields from a chat box's width to the screen's with the
+/// known text starting anywhere along its first line, and goes to the
+/// character most of them put on the invisible cursor's line. A single guess
+/// is wrong often enough that a small move can land two lines away.
+///
+/// Reading past the known text means moving the host's cursor to its edge, so
+/// it waits until the invisible cursor goes past that edge in most guesses.
 @MainActor
 final class FloatingCursor {
-    /// The cursor travels farther than the finger so one drag covers a screenful.
-    private static let gain: CGFloat = 1.5
+    /// The cursor travels farther than the finger sideways so one drag covers
+    /// a line, and as far as the finger up and down so each line takes a full
+    /// line's travel.
+    private static let gain = CGVector(dx: 1.5, dy: 1)
+    /// How far past a line's edge, in lines, the finger goes before the cursor
+    /// leaves it, so a finger resting near the edge doesn't flip between lines.
+    private static let lineMargin: CGFloat = 0.3
+    /// How far in from each screen edge the host's text might sit: a full-width
+    /// editor like Notes at the low end, a chat box beside its buttons like
+    /// Messages at the high end.
+    private static let fieldInsets: [CGFloat] = [21, 30, 40, 50, 60]
+    /// Where along its first line the known text might start, as fractions of the line.
+    private static let indents: [CGFloat] = [0, 0.25, 0.5, 0.75]
     /// How long the host gets to show a move within the known text.
     private static let moveTimeout: TimeInterval = 0.3
     /// A step past the known text the host doesn't show by then means the cursor is at the document's edge.
@@ -86,20 +113,25 @@ final class FloatingCursor {
 
     private let proxy: UITextDocumentProxy
     private let screenWidth: CGFloat
+    private let lineHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
     private var text: String
-    private var layout: EstimatedTextLayout
+    private var layouts: [EstimatedTextLayout] = []
     /// Where the host's cursor is in `text`.
     private var cursor: Int
-    private var point: CGPoint
+    /// The character the invisible cursor last reached a line at, straight
+    /// above or below where it was; it's measured from here.
+    private var origin: Int
+    /// The finger's travel since the invisible cursor reached the origin, scaled
+    /// by `gain`. Up and down, it's from the middle of the origin's line.
+    private var travel = CGVector.zero
     private var reachedStart = false
     private var reachedEnd = false
-    /// Whether the known text is known to start or end a paragraph, so the
-    /// estimate's first or last line is a real line and sideways moves stop there.
+    /// Whether the known text is known to start or end a paragraph, so its
+    /// first or last line is a real line and sideways moves stop there.
     private var startsParagraph = false
     private var endsParagraph = false
     private var isReading = false
     private var isEnded = false
-    private var direction = CGVector.zero
 
     init(proxy: UITextDocumentProxy, screenWidth: CGFloat) {
         self.proxy = proxy
@@ -108,50 +140,113 @@ final class FloatingCursor {
         let after = proxy.documentContextAfterInput ?? ""
         text = before + after
         cursor = before.utf16.count
-        layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
-        point = layout.caretPoint(at: cursor)
+        origin = cursor
+        // Hosts share the text back to the start of the paragraph or the sentence before, so nothing before the cursor means it starts a paragraph.
+        startsParagraph = before.isEmpty
+        layOut()
     }
 
     func move(by delta: CGVector) {
-        point.x += delta.dx * Self.gain
-        point.y += delta.dy * Self.gain
-        direction = delta
+        travel.dx += delta.dx * Self.gain.dx
+        travel.dy += delta.dy * Self.gain.dy
         guard !isReading else { return }
         follow()
     }
 
-    /// A read in progress still finishes and puts the cursor back under the finger.
+    /// A read in progress still finishes and puts the cursor under the finger.
     func end() {
         isEnded = true
     }
 
+    private func layOut() {
+        let indents = startsParagraph ? [0] : Self.indents
+        layouts = Self.fieldInsets.flatMap { inset in
+            indents.map { EstimatedTextLayout(text: text, width: screenWidth - 2 * inset, indent: $0 * (screenWidth - 2 * inset)) }
+        }
+    }
+
     private func follow() {
-        let bounds = layout.bounds
-        if reachedStart { point.y = max(point.y, bounds.minY) }
-        if reachedEnd { point.y = min(point.y, bounds.maxY) }
-        let target = layout.index(nearest: point)
-        let maxX = reachedEnd && target == layout.length ? layout.caretPoint(at: target).x : bounds.maxX
-        point.x = min(max(point.x, bounds.minX), maxX)
+        let threshold = lineHeight * (0.5 + Self.lineMargin)
+        let most = layouts.count / 2 + 1
+        while abs(travel.dy) > threshold {
+            let up = travel.dy < 0
+            let atEdge = layouts.filter { up ? $0.line(of: origin) == 0 : $0.line(of: origin) == $0.lineCount - 1 }.count
+            if atEdge >= most {
+                guard up ? reachedStart || isEnded : reachedEnd || isEnded else { return read(up: up, crossingLine: up ? startsParagraph : endsParagraph) }
+                // Like a pointer at the screen's edge, the invisible cursor stops there so turning back answers at once.
+                travel.dy = up ? -threshold : threshold
+                break
+            }
+            origin = character(onNextLine: up)
+            travel.dy += up ? lineHeight : -lineHeight
+        }
+        travel.dx = min(max(travel.dx, -layouts.map { $0.caretX(at: origin) }.max()!), layouts.map { $0.width - $0.caretX(at: origin) }.max()!)
+        // Sideways the invisible cursor goes with the finger; the guesses agree on
+        // how far along a line that is and only differ on where lines end.
+        var underFinger: [Int] = []
+        var before: [CGFloat] = []
+        var after: [CGFloat] = []
+        for layout in layouts {
+            let line = layout.line(of: origin)
+            let x = layout.caretX(at: origin) + travel.dx
+            underFinger.append(layout.index(onLine: line, nearestX: x))
+            if line == 0, x < layout.caretX(at: 0) { before.append(layout.caretX(at: 0) - x) }
+            if line == layout.lineCount - 1, x > layout.caretX(at: layout.length) { after.append(x - layout.caretX(at: layout.length)) }
+        }
+        if before.count >= most {
+            guard startsParagraph || isEnded else { return read(up: true, crossingLine: false) }
+            travel.dx += median(before)
+        }
+        if after.count >= most {
+            guard endsParagraph || isEnded else { return read(up: false, crossingLine: false) }
+            travel.dx -= median(after)
+        }
+        let units = text as NSString
+        let middle = underFinger.sorted()[underFinger.count / 2]
+        let target = middle < units.length ? units.rangeOfComposedCharacterSequence(at: middle).location : middle
         if target != cursor {
             proxy.adjustTextPosition(byCharacterOffset: target - cursor)
             cursor = target
         }
-        readIfAtEdge()
     }
 
-    /// Reads past the known text once the finger has gone past it: above or
-    /// below it, or sideways off its first or last character where that isn't
-    /// a paragraph's edge, since the host's line goes on there.
-    private func readIfAtEdge() {
-        guard !isEnded else { return }
-        let bounds = layout.bounds
-        let up = !reachedStart && (point.y < bounds.minY || (cursor == 0 && !startsParagraph && direction.dx < 0))
-        let down = !reachedEnd && (point.y > bounds.maxY || (cursor == layout.length && !endsParagraph && direction.dx > 0))
-        guard up || down else { return }
-        let crossesLine = up ? point.y < bounds.minY : point.y > bounds.maxY
+    /// The character straight above or below the origin on the next line: the
+    /// one the most guesses put on that line, nearest the middle guess.
+    /// Trusting any one guess, or even the middle one, lands two lines away far
+    /// more often.
+    private func character(onNextLine up: Bool) -> Int {
+        let step = up ? -1 : 1
+        var straight: [Int] = []
+        for layout in layouts {
+            let line = layout.line(of: origin) + step
+            guard line >= 0 && line < layout.lineCount else { continue }
+            straight.append(layout.index(onLine: line, nearestX: layout.caretX(at: origin)))
+        }
+        straight.sort()
+        let median = straight[straight.count / 2]
+        var best = median
+        var bestVotes = -1
+        for candidate in straight[0]...straight[straight.count - 1] {
+            let votes = layouts.reduce(0) { $0 + ($1.line(of: candidate) == $1.line(of: origin) + step ? 1 : 0) }
+            if votes > bestVotes || (votes == bestVotes && abs(candidate - median) < abs(best - median)) {
+                best = candidate
+                bestVotes = votes
+            }
+        }
+        return best
+    }
+
+    private func median(_ values: [CGFloat]) -> CGFloat {
+        values.sorted()[values.count / 2]
+    }
+
+    // MARK: - Reading
+
+    private func read(up: Bool, crossingLine: Bool) {
         isReading = true
         Task {
-            if up { await readUp(crossingLine: crossesLine) } else { await readDown(crossingLine: crossesLine) }
+            if up { await readUp(crossingLine: crossingLine) } else { await readDown(crossingLine: crossingLine) }
+            layOut()
             isReading = false
             follow()
         }
@@ -161,10 +256,9 @@ final class FloatingCursor {
     /// paragraph's start that means stepping over its line break, which only
     /// happens when the finger has gone up a line.
     private func readUp(crossingLine: Bool) async {
-        let offset = point - layout.caretPoint(at: cursor)
-        let anchor = cursor
         guard await moveHost(to: 0) else {
             reachedStart = true
+            startsParagraph = true
             return
         }
         var before = proxy.documentContextBeforeInput ?? ""
@@ -182,6 +276,7 @@ final class FloatingCursor {
             }
             guard stepped else {
                 reachedStart = true
+                startsParagraph = true
                 return
             }
             before = proxy.documentContextBeforeInput ?? ""
@@ -189,18 +284,16 @@ final class FloatingCursor {
         }
         text = before + joint + text
         cursor = before.utf16.count
+        origin += before.utf16.count + joint.utf16.count
         startsParagraph = false
-        layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
-        point = layout.caretPoint(at: anchor + cursor + joint.utf16.count) + offset
     }
 
     /// Reads the text after the known text and puts it behind.
     private func readDown(crossingLine: Bool) async {
-        let offset = point - layout.caretPoint(at: cursor)
-        let anchor = cursor
         let length = text.utf16.count
         guard await moveHost(to: length) else {
             reachedEnd = true
+            endsParagraph = true
             return
         }
         var after = proxy.documentContextAfterInput ?? ""
@@ -217,6 +310,7 @@ final class FloatingCursor {
             }
             guard stepped else {
                 reachedEnd = true
+                endsParagraph = true
                 return
             }
             after = proxy.documentContextAfterInput ?? ""
@@ -225,8 +319,6 @@ final class FloatingCursor {
         text = text + joint + after
         cursor = length + joint.utf16.count
         endsParagraph = false
-        layout = EstimatedTextLayout(text: text, screenWidth: screenWidth)
-        point = layout.caretPoint(at: anchor) + offset
     }
 
     /// The character a one-unit step crossed, as the context on its far side shows it.
@@ -285,9 +377,4 @@ final class FloatingCursor {
             try? await Task.sleep(for: .milliseconds(5))
         }
     }
-}
-
-private extension CGPoint {
-    static func - (lhs: CGPoint, rhs: CGPoint) -> CGVector { CGVector(dx: lhs.x - rhs.x, dy: lhs.y - rhs.y) }
-    static func + (lhs: CGPoint, rhs: CGVector) -> CGPoint { CGPoint(x: lhs.x + rhs.dx, y: lhs.y + rhs.dy) }
 }
