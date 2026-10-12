@@ -66,14 +66,45 @@ final class Predictor {
         self.wordModel = wordModel
         self.personal = personal
         self.personal.addNames(Array(names.values))
+        apostropheForms = wordModel.apostropheForms
+        rebuildVocabulary()
+    }
+
+    var isLoaded: Bool { wordModel != nil }
+
+    /// The word model's words, then names and words you've taught it.
+    private func rebuildVocabulary() {
+        guard let wordModel else { return }
         cachedDecoder = nil
+        cachedOdds = nil
         vocabulary = wordModel.ids
         vocabularyWords = wordModel.words
         sortedVocabulary = wordModel.sortedWords
-        apostropheForms = wordModel.apostropheForms
         for word in Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(personal.isLearned) {
             addToVocabulary(word)
         }
+    }
+
+    /// Words the keyboard added to its dictionary on its own: ones you kept from
+    /// the bar, and made-up words you typed often enough. Not real words or names.
+    var learnedWords: [String] {
+        guard let wordModel, let lexicon else { return [] }
+        let typed = personal.typed.keys.filter {
+            personal.isLearned($0) && wordModel.ids[$0] == nil && !lexicon.isWord($0) && learned[$0] == nil
+        }
+        return Array(learned.values) + typed.filter { names[$0] == nil }
+    }
+
+    /// Forgets words you removed in the app. Needs earlier sessions' learning loaded, or it would come back.
+    func forget(_ words: [String]) {
+        precondition(isLoaded, "Forgetting before the personal model loads would be undone when it does")
+        guard !words.isEmpty else { return }
+        for word in words {
+            learned[word.lowercased()] = nil
+            personal.forget(word)
+        }
+        UserDefaults.standard.set(Array(learned.values), forKey: Self.learnedKey)
+        rebuildVocabulary()
     }
 
     /// Contact names become known words; text replacements expand like autocorrections.

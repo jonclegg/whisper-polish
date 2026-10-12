@@ -140,6 +140,19 @@ struct SettingsView: View {
                     Text("A style is just an instruction telling the model how to shape your text. Built-in styles can't be edited — make your own version instead.")
                 }
 
+                Section("Keyboard") {
+                    NavigationLink {
+                        AutofillProfileView()
+                    } label: {
+                        Label("AutoFill", systemImage: "person.text.rectangle")
+                    }
+                    NavigationLink {
+                        LearnedWordsView()
+                    } label: {
+                        Label("Learned words", systemImage: "character.book.closed")
+                    }
+                }
+
                 Section("About") {
                     Link("Privacy Policy", destination: AppLinks.privacyPolicy)
                     Link("Terms of Use", destination: AppLinks.termsOfUse)

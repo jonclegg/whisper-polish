@@ -109,6 +109,9 @@ targets:
       - WhisperPolish/Models/CloudAccess.swift
       - WhisperPolish/Models/PolishModel.swift
       - WhisperPolish/Models/PolishStyle.swift
+      - WhisperPolish/Models/AutofillProfile.swift
+      - WhisperPolish/Models/AutofillSession.swift
+      - WhisperPolish/Models/LearnedWords.swift
       - WhisperPolish/Services/CloudPolishService.swift
       - WhisperPolish/Services/PolishService.swift
       - WhisperPolish/Services/Polisher.swift

@@ -41,6 +41,8 @@ private struct SuggestionBar: View {
             Group {
                 if let notice = model.notice {
                     noticeContent(notice)
+                } else if !model.autofillCandidates.isEmpty {
+                    autofillSlots
                 } else if model.offeredPasteboardChangeCount != nil {
                     pasteControl
                 } else {
@@ -86,6 +88,34 @@ private struct SuggestionBar: View {
                         .frame(width: 0.5, height: 22)
                 }
                 slot(index < model.suggestions.count ? model.suggestions[index] : nil)
+            }
+        }
+    }
+
+    /// Profile values for the focused form field, in place of word suggestions.
+    private var autofillSlots: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(model.autofillCandidates.enumerated()), id: \.element.id) { index, value in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.35))
+                        .frame(width: 0.5, height: 22)
+                }
+                Button {
+                    model.fill(value)
+                } label: {
+                    Label(value.text, systemImage: "person.crop.circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity, maxHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(SuggestionButtonStyle())
+                .accessibilityLabel("Fill \(value.field.title): \(value.text)")
             }
         }
     }
@@ -137,6 +167,28 @@ private struct SuggestionBar: View {
             }
         case .dictated:
             noticeLabel("Dictation inserted", systemImage: "mic.fill")
+        case .saveToProfile(let field, let text):
+            HStack(spacing: 6) {
+                Text("Save \(field.title.lowercased()) \u{201C}\(text)\u{201D}?")
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: model.saveOfferedValue) {
+                    Text("Save")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(Capsule().fill(Color.polishTeal))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel("Save to AutoFill")
+            }
+            .padding(.horizontal, 4)
+        case .savedToProfile:
+            noticeLabel("Saved to AutoFill", systemImage: "checkmark")
         case .message(let message):
             Text(message)
                 .font(.caption2)

@@ -21,4 +21,11 @@ enum SettingsKeys {
     /// App-group keys shared with the keyboard extension.
     static let cloudEntitlementJWS = "cloudEntitlementJWS"
     static let pendingDictation = "pendingDictation"
+    /// JSON-encoded `AutofillProfile`.
+    static let autofillProfile = "autofillProfile"
+    static let autofillOffersToSave = "autofillOffersToSave"
+    /// Words the keyboard learned, published for the app to list (see `LearnedWords`).
+    static let learnedWords = "learnedWords"
+    /// Learned words the user removed in the app, for the keyboard to forget.
+    static let forgottenWords = "forgottenWords"
 }
