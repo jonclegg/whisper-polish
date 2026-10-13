@@ -151,6 +151,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Learned words", systemImage: "character.book.closed")
                     }
+                    NavigationLink {
+                        KeyboardOptionsView()
+                    } label: {
+                        Label("Keyboard options", systemImage: "slider.horizontal.3")
+                    }
                 }
 
                 Section("About") {

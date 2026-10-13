@@ -43,6 +43,7 @@ final class KeyboardModel {
     private(set) var offeredPasteboardChangeCount: Int?
     /// Profile values the focused form field could take.
     private(set) var autofillCandidates: [AutofillProfile.Value] = []
+    private(set) var options = KeyboardOptions()
     var isPickingStyle = false
 
     @ObservationIgnored unowned let controller: KeyboardViewController
@@ -73,16 +74,21 @@ final class KeyboardModel {
 
     private static let dismissedPasteboardChangeCountKey = "dismissedPasteboardChangeCount"
 
+    /// The word list and model load once per keyboard process. iOS makes a new
+    /// keyboard each time one is shown, and loading them again each time cost
+    /// memory and kept the bar empty while they loaded.
+    private static let sharedModels = Task.detached {
+        Predictor.warmUpSpellChecker()
+        return (Lexicon.load(), try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!))
+    }
+
     init(controller: KeyboardViewController) {
         self.controller = controller
         dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
         Task {
-            let (lexicon, wordModel, personal) = await Task.detached {
-                Predictor.warmUpSpellChecker()
-                return (Lexicon.load(),
-                 try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!),
-                 PersonalModel.load(from: Self.personalURL))
-            }.value
+            let (lexicon, wordModel) = await Self.sharedModels.value
+            // What was learned is saved each time the keyboard closes, so it's read fresh.
+            let personal = await Task.detached { PersonalModel.load(from: Self.personalURL) }.value
             predictor.setLexicon(lexicon, wordModel: wordModel, personal: personal)
             syncLearnedWords()
             updateSuggestions()
@@ -132,6 +138,7 @@ final class KeyboardModel {
 
     func refresh() {
         hasFullAccess = controller.hasFullAccess
+        options = KeyboardOptions.load()
         needsInputModeSwitchKey = controller.needsInputModeSwitchKey
         layout = proxy.keyboardType == .numbersAndPunctuation ? .numbers : .letters
         isPickingStyle = false
@@ -181,7 +188,7 @@ final class KeyboardModel {
     /// The letter a touch at `point` (in key units) most likely meant, which near
     /// a key's edge can be the neighbor that fits the word being typed.
     func resolveLetter(at point: CGPoint, nearest: String) -> String {
-        guard layout == .letters, nearest.count == 1, let letter = nearest.first,
+        guard options.predictions, layout == .letters, nearest.count == 1, let letter = nearest.first,
               (proxy.selectedText ?? "").isEmpty else { return nearest }
         let odds = predictor.letterOdds(for: predictionContext)
         return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
@@ -218,8 +225,24 @@ final class KeyboardModel {
         layout = layoutBeforeSwitch
     }
 
+    /// A tap on the bar's `index`th slot, from `SuggestionTapView`.
+    func tapBarSlot(_ index: Int) {
+        if !autofillCandidates.isEmpty {
+            if index < autofillCandidates.count { fill(autofillCandidates[index]) }
+        } else if index < suggestions.count {
+            apply(suggestions[index])
+        }
+    }
+
+    /// How many slots `SuggestionTapView` splits the bar into; none while the bar shows something else.
+    var barSlotCount: Int {
+        guard options.barTapLayer, !isPickingStyle, notice == nil else { return 0 }
+        if !autofillCandidates.isEmpty { return autofillCandidates.count }
+        return offeredPasteboardChangeCount == nil ? 3 : 0
+    }
+
     func apply(_ suggestion: Suggestion) {
-        UIDevice.current.playInputClick()
+        if options.suggestionClick { UIDevice.current.playInputClick() }
         let before = textBeforeCursor
         let typed = TypingContext(before: before).partialWord
         if suggestion.learns { predictor.learn(suggestion.text) }
@@ -425,14 +448,19 @@ final class KeyboardModel {
     }
 
     /// What predictions read: the text before the cursor, back past the sentence the host reports.
-    private var predictionContext: TypingContext { TypingContext(before: contextMemory.text) }
+    private var predictionContext: TypingContext {
+        TypingContext(before: options.wholeMessage ? contextMemory.text : textBeforeCursor)
+    }
 
     private func syncWithDocument() {
         lastSyncedState = documentState
-        _ = contextMemory.extend(textBeforeCursor, after: proxy.documentContextAfterInput ?? "", document: documentIdentifier)
+        // Each read asks the host app, so the text after the cursor and the document are read once here.
+        let after = proxy.documentContextAfterInput ?? ""
+        let document = documentIdentifier
+        if options.wholeMessage { _ = contextMemory.extend(textBeforeCursor, after: after, document: document) }
         updateAutoCapitalization()
-        updateTraits()
-        updateAutofill()
+        updateTraits(after: after)
+        updateAutofill(after: after, document: document)
         scheduleSuggestions()
     }
 
@@ -449,7 +477,7 @@ final class KeyboardModel {
 
     private func updateSuggestions() {
         suggestionsScheduled = false
-        guard (proxy.selectedText ?? "").isEmpty else {
+        guard options.predictions, (proxy.selectedText ?? "").isEmpty else {
             if !suggestions.isEmpty { suggestions = [] }
             pendingCorrection = nil
             return
@@ -458,7 +486,7 @@ final class KeyboardModel {
         let result = predictor.suggestions(
             for: context,
             touches: touches(for: context.partialWord),
-            allowsCorrection: proxy.autocorrectionType != .no,
+            allowsCorrection: options.autocorrect && proxy.autocorrectionType != .no,
             revert: revertCandidate
         )
         if suggestions != result.suggestions { suggestions = result.suggestions }
@@ -475,7 +503,7 @@ final class KeyboardModel {
         return recent.map { $0.point }
     }
 
-    private func updateTraits() {
+    private func updateTraits(after: String) {
         let newBottomRow: BottomRowStyle = switch proxy.keyboardType ?? .default {
         case .emailAddress: .email
         case .URL: .url
@@ -486,7 +514,7 @@ final class KeyboardModel {
         if bottomRow != newBottomRow { bottomRow = newBottomRow }
 
         let type = proxy.returnKeyType ?? .default
-        let isEmpty = textBeforeCursor.isEmpty && (proxy.documentContextAfterInput ?? "").isEmpty
+        let isEmpty = textBeforeCursor.isEmpty && after.isEmpty
         let newReturnKey = ReturnKey(
             label: Self.returnLabel(type),
             isPrimary: type != .default && type != .next,
@@ -497,11 +525,14 @@ final class KeyboardModel {
 
     // MARK: - AutoFill
 
-    private func updateAutofill() {
+    private func updateAutofill(after: String, document: UUID?) {
+        guard options.autofill else {
+            if !autofillCandidates.isEmpty { autofillCandidates = [] }
+            return
+        }
         let field = hasFullAccess ? ProfileField(contentType: proxy.textContentType, keyboardType: proxy.keyboardType) : nil
         let before = textBeforeCursor
-        let after = proxy.documentContextAfterInput ?? ""
-        if let offer = autofill.observe(field: field, document: documentIdentifier, text: before + after, profile: profile),
+        if let offer = autofill.observe(field: field, document: document, text: before + after, profile: profile),
            AutofillProfile.offersToSaveTyping() {
             show(.saveToProfile(offer.field, offer.text))
         }
@@ -526,7 +557,7 @@ final class KeyboardModel {
         profile.add(text, for: field, source: .typed)
         profile.save()
         show(.savedToProfile)
-        updateAutofill()
+        updateAutofill(after: proxy.documentContextAfterInput ?? "", document: documentIdentifier)
     }
 
     private static func returnLabel(_ type: UIReturnKeyType) -> String {

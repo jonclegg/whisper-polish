@@ -10,6 +10,7 @@ final class ClickingInputView: UIInputView, UIInputViewAudioFeedback {
 final class KeyboardViewController: UIInputViewController {
     private lazy var model = KeyboardModel(controller: self)
     private lazy var keyGrid = KeyGridView(model: model)
+    private lazy var suggestionTaps = SuggestionTapView(model: model)
     private var dictationTimer: Timer?
     private var pasteboardObserver: NSObjectProtocol?
     private var isSyncScheduled = false
@@ -32,6 +33,10 @@ final class KeyboardViewController: UIInputViewController {
         // recognizers can never delay or cancel their touches.
         keyGrid.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyGrid)
+        // Like the keys, the bar's slots take their taps outside SwiftUI. They sit
+        // between the Polish and Record buttons: 6 pt of padding, 32 pt, 4 pt of spacing.
+        suggestionTaps.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(suggestionTaps)
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -42,6 +47,10 @@ final class KeyboardViewController: UIInputViewController {
             keyGrid.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             keyGrid.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             keyGrid.heightAnchor.constraint(equalToConstant: KeyboardView.keysHeight),
+            suggestionTaps.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 42),
+            suggestionTaps.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -42),
+            suggestionTaps.topAnchor.constraint(equalTo: view.topAnchor),
+            suggestionTaps.heightAnchor.constraint(equalToConstant: KeyboardView.toolbarHeight),
         ])
         host.didMove(toParent: self)
         pasteConfiguration = UIPasteConfiguration(forAccepting: NSString.self)
@@ -57,6 +66,7 @@ final class KeyboardViewController: UIInputViewController {
                 returnKey: model.returnKey,
                 showsNextKeyboard: model.needsInputModeSwitchKey
             ))
+            suggestionTaps.slotCount = model.barSlotCount
             let isPicking = model.isPickingStyle
             if keyGrid.isUserInteractionEnabled == isPicking {
                 keyGrid.isUserInteractionEnabled = !isPicking

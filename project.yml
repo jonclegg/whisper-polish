@@ -112,6 +112,7 @@ targets:
       - WhisperPolish/Models/AutofillProfile.swift
       - WhisperPolish/Models/AutofillSession.swift
       - WhisperPolish/Models/LearnedWords.swift
+      - WhisperPolish/Models/KeyboardOptions.swift
       - WhisperPolish/Services/CloudPolishService.swift
       - WhisperPolish/Services/PolishService.swift
       - WhisperPolish/Services/Polisher.swift
