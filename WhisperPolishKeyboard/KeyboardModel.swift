@@ -15,6 +15,8 @@ final class KeyboardModel {
         case polishing
         case polished
         case dictated
+        case saveToProfile(ProfileField, String)
+        case savedToProfile
         case message(String)
     }
 
@@ -39,6 +41,8 @@ final class KeyboardModel {
     private(set) var suggestions: [Suggestion] = []
     private(set) var notice: Notice?
     private(set) var offeredPasteboardChangeCount: Int?
+    /// Profile values the focused form field could take.
+    private(set) var autofillCandidates: [AutofillProfile.Value] = []
     var isPickingStyle = false
 
     @ObservationIgnored unowned let controller: KeyboardViewController
@@ -64,6 +68,8 @@ final class KeyboardModel {
     /// can tell a near miss on a neighboring key from a deliberate letter.
     @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
     @ObservationIgnored private var dismissedPasteboardChangeCount: Int
+    @ObservationIgnored private var profile = AutofillProfile.empty
+    @ObservationIgnored private var autofill = AutofillSession()
 
     private static let dismissedPasteboardChangeCountKey = "dismissedPasteboardChangeCount"
 
@@ -78,11 +84,17 @@ final class KeyboardModel {
                  PersonalModel.load(from: Self.personalURL))
             }.value
             predictor.setLexicon(lexicon, wordModel: wordModel, personal: personal)
+            syncLearnedWords()
             updateSuggestions()
         }
     }
 
     private var proxy: UITextDocumentProxy { controller.textDocumentProxy }
+    /// Safari reports no document while focus moves between form fields, which
+    /// `proxy.documentIdentifier`'s non-optional import traps on.
+    private var documentIdentifier: UUID? {
+        (proxy as? NSObject)?.value(forKey: "documentIdentifier") as? UUID
+    }
     private var textBeforeCursor: String { hostText.textBefore(reported: proxy.documentContextBeforeInput) }
 
     // MARK: - Editing
@@ -92,13 +104,13 @@ final class KeyboardModel {
     @ObservationIgnored private var suggestionsScheduled = false
 
     private func insert(_ text: String) {
-        hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: proxy.documentIdentifier)
+        hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: documentIdentifier)
         proxy.insertText(text)
     }
 
     private func delete(count: Int) {
         guard count > 0 else { return }
-        hostText.willDelete(count, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: proxy.documentIdentifier)
+        hostText.willDelete(count, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: documentIdentifier)
         for _ in 0..<count { proxy.deleteBackward() }
     }
 
@@ -112,6 +124,8 @@ final class KeyboardModel {
             proxy.documentContextAfterInput ?? "",
             proxy.selectedText ?? "",
             "\(proxy.keyboardType?.rawValue ?? -1) \(proxy.returnKeyType?.rawValue ?? -1) \(proxy.autocapitalizationType?.rawValue ?? -1)",
+            proxy.textContentType?.rawValue ?? "",
+            documentIdentifier?.uuidString ?? "",
         ].joined(separator: "\u{1}")
     }
 
@@ -123,9 +137,11 @@ final class KeyboardModel {
         letterTouches = []
         forgetLocalEdits()
         resetTypingState()
+        profile = hasFullAccess ? AutofillProfile.load() : .empty
         syncWithDocument()
         updatePasteOffer()
         guard hasFullAccess else { return }
+        syncLearnedWords()
         let customJSON = AppGroup.defaults.string(forKey: SettingsKeys.customStyles) ?? ""
         styles = PolishStyle.all(customJSON: customJSON)
         let defaultID = AppGroup.defaults.string(forKey: SettingsKeys.defaultStyle) ?? PolishStyle.email.id
@@ -137,7 +153,7 @@ final class KeyboardModel {
         hostText.reconcile(
             reported: proxy.documentContextBeforeInput,
             after: proxy.documentContextAfterInput,
-            document: proxy.documentIdentifier
+            document: documentIdentifier
         )
         guard hostText.local == nil, documentState != lastSyncedState else { return }
         syncWithDocument()
@@ -294,6 +310,20 @@ final class KeyboardModel {
     func savePersonal() {
         let personal = predictor.personalModel
         Task.detached(priority: .utility) { personal.save(to: Self.personalURL) }
+        if hasFullAccess, predictor.isLoaded { LearnedWords.publish(predictor.learnedWords) }
+    }
+
+    /// Forgets the learned words removed in the app, then lists what's left there.
+    private func syncLearnedWords() {
+        guard hasFullAccess, predictor.isLoaded else { return }
+        let removals = LearnedWords.takeRemovals()
+        predictor.forget(removals)
+        if removals.isEmpty {
+            LearnedWords.publish(predictor.learnedWords)
+        } else {
+            savePersonal()
+            updateSuggestions()
+        }
     }
 
     /// The word just before the cursor is done; the predictor learns it in its sentence.
@@ -395,6 +425,7 @@ final class KeyboardModel {
         lastSyncedState = documentState
         updateAutoCapitalization()
         updateTraits()
+        updateAutofill()
         scheduleSuggestions()
     }
 
@@ -455,6 +486,40 @@ final class KeyboardModel {
             isEnabled: !(proxy.enablesReturnKeyAutomatically ?? false) || !isEmpty
         )
         if returnKey != newReturnKey { returnKey = newReturnKey }
+    }
+
+    // MARK: - AutoFill
+
+    private func updateAutofill() {
+        let field = hasFullAccess ? ProfileField(contentType: proxy.textContentType, keyboardType: proxy.keyboardType) : nil
+        let before = textBeforeCursor
+        let after = proxy.documentContextAfterInput ?? ""
+        if let offer = autofill.observe(field: field, document: documentIdentifier, text: before + after, profile: profile),
+           AutofillProfile.offersToSaveTyping() {
+            show(.saveToProfile(offer.field, offer.text))
+        }
+        let candidates = autofill.candidates(before: before, after: after, profile: profile)
+        if autofillCandidates != candidates { autofillCandidates = candidates }
+    }
+
+    /// Replaces what's typed in the field with `value`.
+    func fill(_ value: AutofillProfile.Value) {
+        replace(textBeforeCursor, with: value.text)
+        autofill.didFill(value)
+        profile = AutofillProfile.load()
+        profile.markUsed(value.id)
+        profile.save()
+        didType()
+    }
+
+    func saveOfferedValue() {
+        guard case .saveToProfile(let field, let text) = notice else { return }
+        // The app may have changed the profile since the keyboard opened.
+        profile = AutofillProfile.load()
+        profile.add(text, for: field, source: .typed)
+        profile.save()
+        show(.savedToProfile)
+        updateAutofill()
     }
 
     private static func returnLabel(_ type: UIReturnKeyType) -> String {

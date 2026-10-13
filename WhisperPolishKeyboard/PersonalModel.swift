@@ -43,6 +43,21 @@ struct PersonalModel: Codable {
         }
     }
 
+    /// Drops everything learned about `word`, so it stops being suggested until it's typed often again.
+    mutating func forget(_ word: String) {
+        let word = word.lowercased()
+        typed[word] = nil
+        if let count = continuation.removeValue(forKey: word) { continuationTotal -= count }
+        // Each word that followed this one was counted once for it.
+        for follower in (bigrams.removeValue(forKey: word) ?? [:]).keys where follower != word {
+            continuation[follower, default: 0] -= 1
+            continuationTotal -= 1
+        }
+        for previous in bigrams.keys { bigrams[previous]?[word] = nil }
+        trigrams = trigrams.filter { !$0.key.split(separator: " ").contains(Substring(word)) }
+        for previous in trigrams.keys { trigrams[previous]?[word] = nil }
+    }
+
     static func load(from url: URL) -> PersonalModel {
         guard let data = try? Data(contentsOf: url) else { return PersonalModel() }
         return try! JSONDecoder().decode(PersonalModel.self, from: data)
