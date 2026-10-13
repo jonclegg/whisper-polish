@@ -25,14 +25,37 @@ private final class FakeHost: NSObject, UITextDocumentProxy {
         layoutManager.ensureLayout(for: container)
     }
 
-    /// The visual line the cursor shows on: a wrapped line's end shows at the next line's start.
-    func line(of index: Int) -> Int {
+    private var lineStarts: [Int] {
         var starts: [Int] = []
         layoutManager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layoutManager.numberOfGlyphs)) { _, _, _, glyphs, _ in
             starts.append(self.layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil).location)
         }
+        return starts
+    }
+
+    /// The visual line the cursor shows on: a wrapped line's end shows at the next line's start.
+    func line(of index: Int) -> Int {
+        let starts = lineStarts
         if index == text.length, index > 0, text.character(at: index - 1) == 10 { return starts.count }
         return (starts.lastIndex { $0 <= index } ?? 0)
+    }
+
+    /// How far along its line the cursor shows.
+    func x(of index: Int) -> CGFloat {
+        let starts = lineStarts
+        let line = line(of: index)
+        guard line < starts.count, index > starts[line] else { return 0 }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: starts[line], length: index - starts[line]), actualCharacterRange: nil)
+        return layoutManager.boundingRect(forGlyphRange: glyphs, in: container).maxX
+    }
+
+    /// How far the line's text reaches, short of a trailing space or line break.
+    func width(ofLine line: Int) -> CGFloat {
+        let starts = lineStarts
+        guard line < starts.count else { return 0 }
+        var end = line + 1 < starts.count ? starts[line + 1] : text.length
+        while end > starts[line], [10, 32].contains(text.character(at: end - 1)) { end -= 1 }
+        return x(of: end)
     }
 
     private func isSentenceStart(_ index: Int) -> Bool {
@@ -129,6 +152,9 @@ final class FloatingCursorTests: XCTestCase {
         var exact = 0
         var offByOne = 0
         var offByMore = 0
+        /// How far sideways the cursor ended from where it started, on drags
+        /// that reached the right line where that line reaches that far.
+        var shifts: [CGFloat] = []
         var count: Int { exact + offByOne + offByMore }
         mutating func add(_ error: Int) {
             switch abs(error) {
@@ -138,7 +164,10 @@ final class FloatingCursorTests: XCTestCase {
             }
         }
         var summary: String {
-            String(format: "%d drags: %.0f%% exact, %.0f%% off by one, %.0f%% off by two or more", count, 100 * Double(exact) / Double(count), 100 * Double(offByOne) / Double(count), 100 * Double(offByMore) / Double(count))
+            let sorted = shifts.sorted()
+            let median = sorted.isEmpty ? 0 : sorted[sorted.count / 2]
+            let wide = Double(shifts.filter { $0 > 16 }.count) / Double(max(shifts.count, 1))
+            return String(format: "%d drags: %.0f%% exact, %.0f%% off by one, %.0f%% off by two or more; sideways median %.0fpt, %.0f%% over 16pt", count, 100 * Double(exact) / Double(count), 100 * Double(offByOne) / Double(count), 100 * Double(offByMore) / Double(count), median, 100 * wide)
         }
     }
 
@@ -161,6 +190,12 @@ final class FloatingCursorTests: XCTestCase {
                         let error = host.line(of: host.cursor) - reachable
                         tallies["\(name) \(Int(width)) \(Int(distance))", default: Tally()].add(error)
                         tallies["all \(Int(distance))", default: Tally()].add(error)
+                        let startX = host.x(of: start)
+                        if error == 0, reachable == target, host.width(ofLine: target) >= startX + 8 {
+                            let shift = abs(host.x(of: host.cursor) - startX)
+                            tallies["\(name) \(Int(width)) \(Int(distance))"]!.shifts.append(shift)
+                            tallies["all \(Int(distance))"]!.shifts.append(shift)
+                        }
                     }
                 }
             }
@@ -181,7 +216,8 @@ final class FloatingCursorTests: XCTestCase {
     /// Dragging a line or two lands that many lines away most of the time, and
     /// never two lines off, whatever the field's width.
     func testLineDragsNeverLandTwoLinesOff() async {
-        let tallies = await measure([-26, 26, -48, 48], every: 67)
+        let tallies = await measure([-26, 26, -48, 48, -90, 90], every: 67)
+        for key in tallies.keys.sorted() { print("FLOATING \(key): \(tallies[key]!.summary)") }
         for distance in [-26, 26, -48, 48] {
             let tally = tallies["all \(distance)"]!
             XCTAssertEqual(tally.offByMore, 0, "\(distance)pt: \(tally.summary)")
