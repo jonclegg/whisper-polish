@@ -218,15 +218,14 @@ final class KeyboardModel {
     }
 
     func apply(_ suggestion: Suggestion) {
+        UIDevice.current.playInputClick()
         let before = textBeforeCursor
         let typed = TypingContext(before: before).partialWord
         if suggestion.learns { predictor.learn(suggestion.text) }
-        if typed.isEmpty, let last = before.last, !last.isWhitespace {
-            insert(" ")
-        }
-        replace(typed, with: suggestion.text)
-        learnFinishedWord()
-        insert(" ")
+        let separator = typed.isEmpty && before.last.map { !$0.isWhitespace } == true ? " " : ""
+        learnFinishedWord(before: String(before.dropLast(typed.count)) + separator + suggestion.text)
+        // The word and the space after it reach the host as one edit.
+        replace(typed, with: separator + suggestion.text + " ")
         layout = .letters
         didType()
         insertedSuggestionSpace = true
@@ -327,16 +326,19 @@ final class KeyboardModel {
     }
 
     /// The word just before the cursor is done; the predictor learns it in its sentence.
-    private func learnFinishedWord() {
-        let context = TypingContext(before: textBeforeCursor)
+    /// `before` is the text before the cursor, when it's about to be different from the host's.
+    private func learnFinishedWord(before: String? = nil) {
+        let context = TypingContext(before: before ?? textBeforeCursor)
         guard !context.partialWord.isEmpty else { return }
         predictor.learnTyped(context.partialWord, after: context.previousWords)
     }
 
+    /// Keeps what already matches: every deleted character and insert is a round
+    /// trip the host lays out, which shows as lag on a long word.
     private func replace(_ typed: String, with text: String) {
-        guard typed != text else { return }
-        delete(count: typed.count)
-        insert(text)
+        let kept = zip(typed, text).prefix { $0 == $1 }.count
+        delete(count: typed.count - kept)
+        if kept < text.count { insert(String(text.dropFirst(kept))) }
     }
 
     // MARK: - Delete
