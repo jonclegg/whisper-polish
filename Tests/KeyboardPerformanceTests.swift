@@ -42,6 +42,12 @@ final class KeyboardPerformanceTests: XCTestCase {
         time("bar, long typo") { _ in
             _ = predictor.suggestions(for: TypingContext(before: "Thanks so much for the somthign"), touches: Array(repeating: nil, count: 8), allowsCorrection: true, revert: nil)
         }
+        var memory = ContextMemory()
+        let document = UUID()
+        let message = String(repeating: "Thanks so much for the help with dinner. ", count: 12)
+        time("context memory, per keystroke", repeats: message.count) { n in
+            _ = memory.extend(sentenceHostReport(String(message.prefix(n + 1))), after: "", document: document)
+        }
         time("save personal", repeats: 3) { _ in
             _ = try! JSONEncoder().encode(predictor.personalModel)
         }
