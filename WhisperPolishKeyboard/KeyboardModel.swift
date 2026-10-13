@@ -100,6 +100,7 @@ final class KeyboardModel {
     // MARK: - Editing
 
     @ObservationIgnored private var hostText = HostTextTracker()
+    @ObservationIgnored private var contextMemory = ContextMemory()
     @ObservationIgnored private var lastSyncedState = ""
     @ObservationIgnored private var suggestionsScheduled = false
 
@@ -182,7 +183,7 @@ final class KeyboardModel {
     func resolveLetter(at point: CGPoint, nearest: String) -> String {
         guard layout == .letters, nearest.count == 1, let letter = nearest.first,
               (proxy.selectedText ?? "").isEmpty else { return nearest }
-        let odds = predictor.letterOdds(for: TypingContext(before: textBeforeCursor))
+        let odds = predictor.letterOdds(for: predictionContext)
         return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
     }
 
@@ -423,8 +424,12 @@ final class KeyboardModel {
         revertCandidate = nil
     }
 
+    /// What predictions read: the text before the cursor, back past the sentence the host reports.
+    private var predictionContext: TypingContext { TypingContext(before: contextMemory.text) }
+
     private func syncWithDocument() {
         lastSyncedState = documentState
+        _ = contextMemory.extend(textBeforeCursor, after: proxy.documentContextAfterInput ?? "", document: documentIdentifier)
         updateAutoCapitalization()
         updateTraits()
         updateAutofill()
@@ -449,7 +454,7 @@ final class KeyboardModel {
             pendingCorrection = nil
             return
         }
-        let context = TypingContext(before: textBeforeCursor)
+        let context = predictionContext
         let result = predictor.suggestions(
             for: context,
             touches: touches(for: context.partialWord),

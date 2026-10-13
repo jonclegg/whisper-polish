@@ -137,6 +137,7 @@ targets:
       - WhisperPolishKeyboard/PersonalModel.swift
       - WhisperPolishKeyboard/WordModel.swift
       - WhisperPolishKeyboard/FloatingCursor.swift
+      - WhisperPolishKeyboard/ContextMemory.swift
     dependencies:
       - target: WhisperPolish
     settings:
