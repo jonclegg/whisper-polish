@@ -184,7 +184,7 @@ final class Predictor {
         let typed = context.partialWord
         guard !typed.isEmpty else {
             let predictions = top(odds, among: 2..<vocabularyWords.count, limit: 3).map {
-                Suggestion(text: context.startsSentence ? Self.capitalizingFirst(display($0)) : display($0))
+                Suggestion(text: context.startsSentence ? Self.capitalizingFirst(display($0, after: nil)) : display($0, after: context.previousWords.last))
             }
             return Result(suggestions: predictions, correction: nil)
         }
@@ -205,7 +205,9 @@ final class Predictor {
             if known { decoded = [] }
         }
         // Words that finish what's typed come before other fixes for it: a partial word usually isn't a typo.
-        let completions = top(odds, among: completionRange(of: typed), limit: 3).map { Self.matchingCase(of: typed, display($0)) }
+        let completions = top(odds, among: completionRange(of: typed), limit: 3).map {
+            Self.matchingCase(of: typed, display($0, after: context.previousWords.last))
+        }
         for text in completions + decoded.map({ Self.matchingCase(of: typed, $0.word) }) where suggestions.count < 3 {
             if !suggestions.contains(where: { $0.text.lowercased() == text.lowercased() }) {
                 suggestions.append(Suggestion(text: text))
@@ -290,10 +292,22 @@ final class Predictor {
         return best
     }
 
-    /// How a vocabulary word is usually written: "I", "Monday", a contact's name.
-    private func display(_ id: Int) -> String {
-        let word = vocabularyWords[id]
-        return names[word] ?? learned[word] ?? lexicon?.displayForm(of: word) ?? word
+    private func display(_ id: Int, after previous: String?) -> String {
+        written(vocabularyWords[id], after: previous)
+    }
+
+    /// How the bar writes `word` (lowercased) mid-sentence after `previous`: capitalized where
+    /// that word makes it a name ("in May"), else the way you write it, else a word you
+    /// taught it, else the word list's form ("I", "Monday"). A contact's capitals only
+    /// count for words that aren't everyday words, since contacts are split into words
+    /// and business names turn "for" or "time" into names.
+    func written(_ word: String, after previous: String?) -> String {
+        if let previous, let named = lexicon?.capitalizedForm(of: word, after: previous) { return named }
+        if let written = personal.writtenForm(of: word) { return written }
+        if let learned = learned[word] { return learned }
+        let listed = lexicon?.displayForm(of: word)
+        if let name = names[word], listed == nil || listed != word { return name }
+        return listed ?? word
     }
 
     private func isKnown(_ word: String) -> Bool {

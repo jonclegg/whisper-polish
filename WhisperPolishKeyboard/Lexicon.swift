@@ -4,16 +4,28 @@ import Foundation
 /// The word model's vocabulary is this list, so changing it means retraining the model.
 struct Lexicon: Sendable {
     private let displayForms: [String]
+    /// Words written lowercase that are capitalized after a particular word, by "previous word".
+    private let capitalizedAfter: [String: String]
     private let ranks: [String: Int]
     /// Plain a–z words as bytes with their ranks, grouped by length, for matching touches key by key.
     private let wordsByLength: [Int: (words: [[UInt8]], ranks: [Int])]
 
     static func load() -> Lexicon {
-        Lexicon(words: try! String(contentsOf: Bundle.main.url(forResource: "words", withExtension: "txt")!, encoding: .utf8))
+        Lexicon(
+            words: try! String(contentsOf: Bundle.main.url(forResource: "words", withExtension: "txt")!, encoding: .utf8),
+            casedAfter: try! String(contentsOf: Bundle.main.url(forResource: "cased-after", withExtension: "txt")!, encoding: .utf8)
+        )
     }
 
-    init(words: String) {
+    /// `casedAfter` holds "previous Word" lines, like "united States" or "in May".
+    init(words: String, casedAfter: String) {
         displayForms = words.split(separator: "\n").map(String.init)
+        var capitalizedAfter: [String: String] = [:]
+        for line in casedAfter.split(separator: "\n") {
+            let parts = line.split(separator: " ")
+            capitalizedAfter["\(parts[0]) \(parts[1].lowercased())"] = String(parts[1])
+        }
+        self.capitalizedAfter = capitalizedAfter
         var ranks: [String: Int] = [:]
         var wordsByLength: [Int: (words: [[UInt8]], ranks: [Int])] = [:]
         for (rank, word) in displayForms.enumerated() {
@@ -61,6 +73,11 @@ struct Lexicon: Sendable {
     /// How the word is usually written, like "I" or "Monday".
     func displayForm(of word: String) -> String? {
         ranks[word.lowercased()].map { displayForms[$0] }
+    }
+
+    /// How the word is written after `previous` (lowercased), when that makes it a name: "united States", "in May".
+    func capitalizedForm(of word: String, after previous: String) -> String? {
+        capitalizedAfter["\(previous) \(word.lowercased())"]
     }
 
     /// 0 is the most common word; nil for words outside the list.

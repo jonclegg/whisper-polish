@@ -112,6 +112,7 @@ targets:
       - WhisperPolish/Models/AutofillProfile.swift
       - WhisperPolish/Models/AutofillSession.swift
       - WhisperPolish/Models/LearnedWords.swift
+      - WhisperPolish/Models/KeyboardOptions.swift
       - WhisperPolish/Services/CloudPolishService.swift
       - WhisperPolish/Services/PolishService.swift
       - WhisperPolish/Services/Polisher.swift
@@ -137,6 +138,7 @@ targets:
       - WhisperPolishKeyboard/PersonalModel.swift
       - WhisperPolishKeyboard/WordModel.swift
       - WhisperPolishKeyboard/FloatingCursor.swift
+      - WhisperPolishKeyboard/ContextMemory.swift
     dependencies:
       - target: WhisperPolish
     settings:

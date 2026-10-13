@@ -10,6 +10,10 @@ struct PersonalModel: Codable {
     static let uniformShare: Float = 0.01
     /// A word you made up becomes a suggestion once you've typed it this often.
     static let timesToLearn = 2
+    /// How far your writing a word one way outweighs the other before the bar follows it,
+    /// and how much it can build up, so a change of habit shows within a few uses.
+    static let casingMargin = 2
+    static let casingVotes = 6
 
     /// Lowercased word to times typed.
     private(set) var typed: [String: Int] = [:]
@@ -21,6 +25,11 @@ struct PersonalModel: Codable {
     private var trigrams: [String: [String: Int]] = [:]
     /// Names already counted as following a sentence start, which have no bigram of their own.
     private var names: Set<String> = []
+    /// How you write each word away from a sentence start: up for a capital, down for none.
+    /// Optional so models saved before casing was learned still load.
+    private var capitalVotes: [String: Int]?
+    /// The capitalized way you write words, like "Rena" or "iPhone".
+    private var capitalForms: [String: String]?
 
     /// Names count as known words that can start a sentence.
     mutating func addNames(_ names: [String]) {
@@ -32,7 +41,19 @@ struct PersonalModel: Codable {
 
     /// Learns `word` as typed after `previous` (the sentence so far, lowercased).
     mutating func learn(_ word: String, after previous: [String]) {
+        let written = word
         let word = word.lowercased()
+        // A sentence start says nothing about how you write a word.
+        if !previous.isEmpty {
+            let isCapitalized = written.first?.isUppercase == true
+            let votes = capitalVotes?[word, default: 0] ?? 0
+            capitalVotes = capitalVotes ?? [:]
+            capitalVotes![word] = min(max(votes + (isCapitalized ? 1 : -1), -Self.casingVotes), Self.casingVotes)
+            if isCapitalized {
+                capitalForms = capitalForms ?? [:]
+                capitalForms![word] = written
+            }
+        }
         let context = [Self.sentenceStart] + previous.suffix(2)
         typed[word, default: 0] += 1
         wordsTyped += 1
@@ -47,6 +68,8 @@ struct PersonalModel: Codable {
     mutating func forget(_ word: String) {
         let word = word.lowercased()
         typed[word] = nil
+        capitalVotes?[word] = nil
+        capitalForms?[word] = nil
         if let count = continuation.removeValue(forKey: word) { continuationTotal -= count }
         // Each word that followed this one was counted once for it.
         for follower in (bigrams.removeValue(forKey: word) ?? [:]).keys where follower != word {
@@ -66,6 +89,15 @@ struct PersonalModel: Codable {
     func save(to url: URL) {
         try! FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try! JSONEncoder().encode(self).write(to: url, options: .atomic)
+    }
+
+    /// How you write `word` mid-sentence, once you've shown a habit: a capitalized form, or the lowercase word.
+    func writtenForm(of word: String) -> String? {
+        let word = word.lowercased()
+        let votes = capitalVotes?[word] ?? 0
+        if votes >= Self.casingMargin { return capitalForms?[word] }
+        if votes <= -Self.casingMargin { return word }
+        return nil
     }
 
     func isLearned(_ word: String) -> Bool {
