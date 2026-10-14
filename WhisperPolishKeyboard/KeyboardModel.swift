@@ -639,20 +639,22 @@ final class KeyboardModel {
         forgetLocalEdits()
         show(.polishing)
         polishTask = Task {
-            let selected = proxy.selectedText ?? ""
-            let text = if selected.isEmpty { await DocumentReader(proxy: proxy).readWholeDocument() } else { selected }
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                show(.message("Type or select some text to polish."))
-                return
-            }
             do {
+                let selected = proxy.selectedText ?? ""
+                let reader = DocumentReader(proxy: proxy)
+                let text = selected.isEmpty ? try await reader.readWholeDocument() : selected
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    show(.message("Type or select some text to polish."))
+                    return
+                }
                 let result = try await Polisher.polish(text: text, style: style, transactionJWS: jws).result
                 try Task.checkCancellation()
                 // Without a selection the reader left the cursor at the end of the field.
                 if selected.isEmpty {
-                    for _ in 0..<text.count { proxy.deleteBackward() }
+                    try reader.replace(text, with: result.text)
+                } else {
+                    proxy.insertText(result.text)
                 }
-                proxy.insertText(result.text)
                 forgetLocalEdits()
                 undo = (text, result.text)
                 show(.polished)
