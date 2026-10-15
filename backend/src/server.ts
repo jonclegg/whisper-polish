@@ -4,6 +4,8 @@ import { Pool } from "pg";
 import { z } from "zod";
 import { AppleEntitlementVerifier } from "./apple-entitlement-verifier.js";
 import { OpenRouterPolisher } from "./openrouter-polisher.js";
+import { OpenRouterIncidentReporter } from "./openrouter-incident-reporter.js";
+import { SESAlertSender } from "./ses-alert-sender.js";
 import {
   AllowanceExhaustedError,
   InputTooLongError,
@@ -19,6 +21,11 @@ const environmentSchema = z.object({
   APP_BUNDLE_ID: z.string().default("com.jonclegg.WhisperPolish"),
   APP_APPLE_ID: z.coerce.number().int().positive(),
   APPLE_ROOT_CERTIFICATES_DIR: z.string().min(1),
+  ALERT_EMAIL_TO: z.email(),
+  ALERT_EMAIL_FROM: z.email(),
+  AWS_REGION: z.string().min(1).default("us-east-1"),
+  OPENROUTER_LOW_ALLOWANCE_DOLLARS: z.coerce.number().positive().default(25),
+  OPENROUTER_HEALTH_CHECK_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
   PORT: z.coerce.number().int().positive().default(8080),
 });
 
@@ -33,6 +40,18 @@ const polishBodySchema = z.object({
 const env = environmentSchema.parse(process.env);
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 await initializeSchema(pool);
+const incidents = new OpenRouterIncidentReporter(new SESAlertSender(
+  env.AWS_REGION,
+  env.ALERT_EMAIL_FROM,
+  env.ALERT_EMAIL_TO,
+));
+const openRouter = new OpenRouterPolisher(
+  env.OPENROUTER_API_KEY,
+  undefined,
+  undefined,
+  undefined,
+  incidents,
+);
 
 const application = new PolishApplication(
   new AppleEntitlementVerifier({
@@ -41,7 +60,7 @@ const application = new PolishApplication(
     rootCertificatesDirectory: env.APPLE_ROOT_CERTIFICATES_DIR,
   }),
   new PostgresUsageLedger(pool),
-  new OpenRouterPolisher(env.OPENROUTER_API_KEY),
+  openRouter,
 );
 
 const server = Fastify({
@@ -104,10 +123,25 @@ server.setErrorHandler((error, _request, reply) => {
 });
 
 server.addHook("onClose", async () => {
+  clearInterval(openRouterHealthTimer);
   await pool.end();
 });
 
 await server.listen({ port: env.PORT, host: "0.0.0.0" });
+
+const checkOpenRouter = async () => {
+  try {
+    await openRouter.checkHealth(env.OPENROUTER_LOW_ALLOWANCE_DOLLARS);
+  } catch (error) {
+    server.log.error(error, "OpenRouter health check failed");
+  }
+};
+const openRouterHealthTimer = setInterval(
+  () => void checkOpenRouter(),
+  env.OPENROUTER_HEALTH_CHECK_INTERVAL_MS,
+);
+openRouterHealthTimer.unref();
+void checkOpenRouter();
 
 function errorBody(code: string, message: string) {
   return { error: { code, message } };
