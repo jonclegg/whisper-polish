@@ -255,9 +255,10 @@ final class KeyboardModel {
         insertedSuggestionSpace = true
     }
 
-    func cursorMoveBegan() {
+    /// `show` draws the panel the cursor moves through, whenever its text or the cursor changes.
+    func cursorMoveBegan(width: CGFloat, show: @escaping (TrackpadLayout, Int) -> Void) {
         forgetLocalEdits()
-        floatingCursor = FloatingCursor(proxy: proxy, screenWidth: controller.view.bounds.width)
+        floatingCursor = FloatingCursor(proxy: proxy, width: width, onChange: show)
     }
 
     func moveCursor(by delta: CGVector) {

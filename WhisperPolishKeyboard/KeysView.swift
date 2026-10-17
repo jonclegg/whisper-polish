@@ -61,6 +61,7 @@ final class KeyGridView: UIView {
     private var trackers: [UITouch: Tracker] = [:]
     private let popup = KeyPopupView()
     private let accents = AccentPopupView()
+    private let trackpadText = TrackpadTextView()
 
     init(model: KeyboardModel) {
         self.model = model
@@ -72,6 +73,8 @@ final class KeyGridView: UIView {
         clipsToBounds = false
         popup.isHidden = true
         accents.isHidden = true
+        trackpadText.alpha = 0
+        addSubview(trackpadText)
         addSubview(popup)
         addSubview(accents)
     }
@@ -105,6 +108,7 @@ final class KeyGridView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        trackpadText.frame = bounds.inset(by: Self.capInsets)
         guard !rows.isEmpty else { return }
         let unit = bounds.width / KeySpec.rowUnits
         let rowHeight = bounds.height / CGFloat(rows.count)
@@ -286,15 +290,19 @@ final class KeyGridView: UIView {
 
     // MARK: - Trackpad
 
-    /// Holding the space bar turns the keys into a trackpad that moves the cursor.
+    /// Holding the space bar turns the keys into a trackpad that moves the
+    /// cursor through the text, shown where the keys were.
     private func startTrackpad(_ tracker: Tracker) {
         tracker.holdTimer?.invalidate()
         tracker.mode = .trackpad
         if let cap = tracker.cap { release(cap) }
-        UIView.animate(withDuration: 0.15) {
-            self.rows.joined().forEach { $0.setLabelHidden(true) }
+        model.cursorMoveBegan(width: trackpadText.textWidth) { [trackpadText] layout, caret in
+            trackpadText.show(layout, caret: caret)
         }
-        model.cursorMoveBegan()
+        UIView.animate(withDuration: 0.15) {
+            self.rows.joined().forEach { $0.alpha = 0 }
+            self.trackpadText.alpha = 1
+        }
     }
 
     private func moveCursor(_ tracker: Tracker, to point: CGPoint) {
@@ -303,7 +311,8 @@ final class KeyGridView: UIView {
 
     private func endTrackpad() {
         UIView.animate(withDuration: 0.15) {
-            self.rows.joined().forEach { $0.setLabelHidden(false) }
+            self.rows.joined().forEach { $0.alpha = 1 }
+            self.trackpadText.alpha = 0
         }
         model.cursorMoveEnded()
     }
@@ -422,11 +431,6 @@ final class KeyCapView: UIView {
             break
         }
         updateFill()
-    }
-
-    func setLabelHidden(_ hidden: Bool) {
-        label.alpha = hidden ? 0 : 1
-        icon.alpha = hidden ? 0 : 1
     }
 
     override func layoutSubviews() {
