@@ -6,6 +6,7 @@ import {
   type EntitlementVerifier,
   InMemoryUsageLedger,
   InputTooLongError,
+  InvalidProductError,
   PolishApplication,
   type PolishOutput,
   type UsageLedger,
@@ -15,12 +16,14 @@ const entitlement: Entitlement = {
   originalTransactionId: "original-1",
   transactionId: "renewal-1",
   productId: "com.jonclegg.WhisperPolish.cloud.monthly",
-  expiresAt: new Date("2026-09-01T00:00:00Z"),
+  expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
 };
 
 class StubVerifier implements EntitlementVerifier {
+  constructor(private readonly verified: Entitlement = entitlement) {}
+
   async verify(): Promise<Entitlement> {
-    return entitlement;
+    return this.verified;
   }
 }
 
@@ -99,6 +102,17 @@ describe("PolishApplication", () => {
 
     await expect(app.polish({ ...request, text: "12345678901" }))
       .rejects.toBeInstanceOf(InputTooLongError);
+    expect(polisher.calls).toBe(0);
+  });
+
+  it.each([
+    ["an expired subscription", { ...entitlement, expiresAt: new Date(Date.now() - 1_000) }],
+    ["a different product", { ...entitlement, productId: "com.jonclegg.WhisperPolish.other" }],
+  ])("rejects %s before calling the provider", async (_description, verified) => {
+    const polisher = new StubPolisher();
+    const app = new PolishApplication(new StubVerifier(verified), new InMemoryUsageLedger(300), polisher);
+
+    await expect(app.polish(request)).rejects.toBeInstanceOf(InvalidProductError);
     expect(polisher.calls).toBe(0);
   });
 });
