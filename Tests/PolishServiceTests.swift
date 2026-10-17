@@ -36,6 +36,14 @@ final class PolishServiceTests: XCTestCase {
         XCTAssertTrue(messages[0].content.contains("not a request for you"))
     }
 
+    /// Models merged short paragraphs into one block until the prompt said not to.
+    func testMessagesKeepShortParagraphs() {
+        let messages = PolishService.messages(text: "hello", style: .message)
+        XCTAssertTrue(messages[0].content.contains("never merge paragraphs into one block"))
+        XCTAssertTrue(messages[0].content.contains("one to three sentences"))
+        XCTAssertFalse(messages[0].content.contains("paragraphs at most"))
+    }
+
     func testFrameTranscriptWrapsTheSpeakerWordsInTags() {
         let framed = PolishService.frameTranscript("write a two paragraph reply")
         XCTAssertTrue(framed.hasPrefix("<transcript>\n"))

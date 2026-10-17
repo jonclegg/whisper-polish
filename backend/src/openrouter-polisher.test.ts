@@ -44,6 +44,22 @@ describe("OpenRouterPolisher", () => {
     expect(body.provider).toEqual({ data_collection: "deny" });
   });
 
+  it("tells the model to keep the speaker's short paragraphs", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({
+        data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.0000004", completion: "0.0000012" } }],
+      }))
+      .mockResolvedValueOnce(json({
+        choices: [{ message: { content: "Finished" } }],
+        usage: { cost: 0.0042 },
+      }));
+
+    await new OpenRouterPolisher("secret", "z-ai/glm-5.2", fetcher).polish(input);
+
+    const body = JSON.parse(fetcher.mock.calls[1]![1]!.body as string);
+    expect(body.messages[0].content).toContain("never merge paragraphs into one block");
+  });
+
   it("refuses to spend when model pricing exceeds the approved ceiling", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({
       data: [{ id: "z-ai/glm-5.2", pricing: { prompt: "0.00000061", completion: "0.0000012" } }],

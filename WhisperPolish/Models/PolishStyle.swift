@@ -30,7 +30,7 @@ extension PolishStyle {
     static let message = PolishStyle(
         id: "message",
         name: "Text message",
-        instruction: "Shape it into a text message: casual, brief, contractions everywhere. One or two short paragraphs at most."
+        instruction: "Shape it into a text message: casual, brief, contractions everywhere, in short paragraphs."
     )
     static let cleanup = PolishStyle(
         id: "cleanup",
