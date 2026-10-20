@@ -141,6 +141,7 @@ final class KeyboardModel {
     @ObservationIgnored private var lastSyncedState = ""
     @ObservationIgnored private var suggestionsScheduled = false
     @ObservationIgnored private var keptWords = KeptWords()
+    @ObservationIgnored private var emoji = EmojiReplacer()
     /// The field the held words were typed in.
     @ObservationIgnored private var keptWordsDocument: UUID?
 
@@ -289,7 +290,7 @@ final class KeyboardModel {
     func apply(_ suggestion: Suggestion) {
         if options.suggestionClick { UIDevice.current.playInputClick() }
         let before = textBeforeCursor
-        let typed = TypingContext(before: before).partialWord
+        let typed = suggestion.replaces ?? TypingContext(before: before).partialWord
         if suggestion.learns { prediction.perform { $0.learn(suggestion.text) } }
         let separator = typed.isEmpty && before.last.map { !$0.isWhitespace } == true ? " " : ""
         // The word and the space after it reach the host as one edit.
@@ -328,6 +329,7 @@ final class KeyboardModel {
             letterTouches = []
         }
         let text = shift == .off ? character : character.uppercased()
+        var swap: EmojiReplacer.Swap?
         if Self.attachingPunctuation.contains(character) {
             if insertedSuggestionSpace, textBeforeCursor.hasSuffix(" ") {
                 delete(count: 1)
@@ -335,29 +337,42 @@ final class KeyboardModel {
                 didType()
                 return
             }
-            applyPendingCorrection()
+            swap = swapShortcut()
+            if swap == nil { applyPendingCorrection() }
             learnFinishedWord()
         }
         insert(text)
         if character == "'" { layout = .letters }
         didType()
+        if let swap { emoji.swapped(swap, separator: text) }
+    }
+
+    /// A finished shortcut becomes its emoji, unless that's turned off or the field isn't writing.
+    private func swapShortcut() -> EmojiReplacer.Swap? {
+        let allowed = options.emojiAutoReplace && WritingField.holdsWriting(proxy)
+        guard let swap = emoji.finish(before: textBeforeCursor, allowed: allowed) else { return nil }
+        replace(swap.original, with: swap.emoji)
+        return swap
     }
 
     /// Two spaces after a word become ". ", like the system keyboard.
     private func typeSpace() {
         let before = textBeforeCursor
         var correction: Predictor.Autocorrection?
+        var swap: EmojiReplacer.Swap?
         if before.hasSuffix(" "), let previous = before.dropLast().last, previous.isLetter || previous.isNumber {
             delete(count: 1)
             insert(". ")
         } else {
-            correction = applyPendingCorrection()
+            swap = swapShortcut()
+            if swap == nil { correction = applyPendingCorrection() }
             learnFinishedWord()
             insert(" ")
         }
         layout = .letters
         didType()
         lastAutocorrection = correction
+        if let swap { emoji.swapped(swap, separator: " ") }
     }
 
     private func typeReturn() {
@@ -487,6 +502,14 @@ final class KeyboardModel {
     }
 
     private func deleteBackward() {
+        // Right after a shortcut became an emoji, a backspace brings the shortcut back.
+        if let undo = emoji.backspace(before: textBeforeCursor) {
+            delete(count: undo.delete)
+            insert(undo.insert)
+            letterTouches = []
+            didType()
+            return
+        }
         let autocorrection = lastAutocorrection
         if !letterTouches.isEmpty { letterTouches.removeLast() }
         if textBeforeCursor.isEmpty {
@@ -538,6 +561,7 @@ final class KeyboardModel {
     }
 
     private func resetTypingState() {
+        emoji.keyTyped()
         insertedSuggestionSpace = false
         lastAutocorrection = nil
         revertCandidate = nil
@@ -621,7 +645,11 @@ final class KeyboardModel {
     private func receive(_ result: Predictor.Result, letterOdds odds: [Character: Double], after text: String, for number: Int) {
         guard number == requestNumber else { return }
         letterOdds = (text, odds)
-        if suggestions != result.suggestions { suggestions = result.suggestions }
+        let before = textBeforeCursor
+        let shown = WritingField.holdsWriting(proxy)
+            ? EmojiReplacer.bar(result.suggestions, before: before, partialWord: TypingContext(before: before).partialWord, swapsShortcuts: options.emojiAutoReplace)
+            : result.suggestions
+        if suggestions != shown { suggestions = shown }
         latestCorrection = (number, result.correction)
     }
 

@@ -9,7 +9,7 @@
 set -euo pipefail
 W=$1; P=$(cd "$(dirname "$0")" && pwd)
 mkdir -p $P/Tests/Bench $P/Tests/WhisperPolishKeyboard && rm -f $P/Tests/Bench/*.swift
-for f in Lexicon Predictor PersonalModel TypingContext TouchDecoder TouchAdaptation KeyLayout WordModel HostTextTracker; do
+for f in Lexicon Predictor PersonalModel TypingContext TouchDecoder TouchAdaptation KeyLayout WordModel HostTextTracker EmojiShortcuts EmojiReplacer; do
   sed '/^import UIKit$/d' $W/WhisperPolishKeyboard/$f.swift > $P/Tests/Bench/$f.swift
 done
 for f in $W/WhisperPolishKeyboard/ContextMemory.swift; do [ -f $f ] && cp $f $P/Tests/Bench/; done

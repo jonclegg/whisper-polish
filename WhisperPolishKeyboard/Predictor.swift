@@ -6,6 +6,9 @@ struct Suggestion: Hashable {
     var isQuoted = false
     var isAutocorrection = false
     var learns = false
+    /// The text before the cursor a tap replaces when it's more than the word being typed,
+    /// like the ":)" or "thumbs up" an emoji stands for.
+    var replaces: String?
 
     var title: String { isQuoted ? "\u{201C}\(text)\u{201D}" : text }
 }

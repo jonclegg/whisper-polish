@@ -56,7 +56,11 @@ final class PredictionBenchmarkTests: XCTestCase {
                     default: break
                     }
                     let context = TypingContext(before: before)
-                    let shown = predictor.suggestions(for: context, touches: Array(repeating: nil, count: prefix.count), allowsCorrection: ProcessInfo.processInfo.environment["KEYBOARD_BENCH_CORRECTION"] != "off", revert: nil).suggestions
+                    var shown = predictor.suggestions(for: context, touches: Array(repeating: nil, count: prefix.count), allowsCorrection: ProcessInfo.processInfo.environment["KEYBOARD_BENCH_CORRECTION"] != "off", revert: nil).suggestions
+                    // KEYBOARD_BENCH_EMOJI scores the bar with its emoji, which take a slot from words.
+                    if ProcessInfo.processInfo.environment["KEYBOARD_BENCH_EMOJI"] != nil {
+                        shown = EmojiReplacer.bar(shown, before: before, partialWord: context.partialWord, swapsShortcuts: true)
+                    }
                     // Once letters are typed, the first slot is what's typed, not a suggestion.
                     let offeredText = (typed == 0 ? shown : Array(shown.dropFirst())).map(\.text)
                     if let match = offeredText.first(where: { $0.lowercased() == lower }) {

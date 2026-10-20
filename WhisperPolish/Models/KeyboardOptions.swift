@@ -14,6 +14,8 @@ struct KeyboardOptions: Equatable {
     var wholeMessage = true
     /// A key click when a suggestion is tapped.
     var suggestionClick = true
+    /// Shortcuts like "lol" and ":)" become emoji when finished (`EmojiShortcuts`).
+    var emojiAutoReplace = true
 
     static let all: [(key: String, title: String, detail: String, path: WritableKeyPath<KeyboardOptions, Bool>)] = [
         ("keyboardBarTapLayer", "Fast suggestion taps", "Suggestion taps are handled the way key taps are, instead of by SwiftUI.", \.barTapLayer),
@@ -22,6 +24,7 @@ struct KeyboardOptions: Equatable {
         ("keyboardAutofill", "AutoFill", "Offers your details in form fields.", \.autofill),
         ("keyboardWholeMessage", "Whole-message context", "Predicts from the whole message, not just the current sentence.", \.wholeMessage),
         ("keyboardSuggestionClick", "Click on suggestion taps", "Plays the key click when you tap a suggestion.", \.suggestionClick),
+        ("keyboardEmojiAutoReplace", "Emoji auto-replace", "Turns shortcuts like lol and :) into emoji when you finish them. Backspace right after to undo.", \.emojiAutoReplace),
     ]
 
     static func load(from defaults: UserDefaults = AppGroup.defaults) -> KeyboardOptions {
