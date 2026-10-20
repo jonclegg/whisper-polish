@@ -17,9 +17,7 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         return model.probabilities(after: state)
     }
 
-    private var decoder: WordDecoder {
-        WordDecoder(lexicon: lexicon) { WordModel.repository.ids[$0] }
-    }
+    private var decoder: WordDecoder { .repository }
 
     private func decode(_ typed: String, _ touches: [CGPoint?]? = nil, after context: String = "I think") -> [String] {
         decoder

@@ -82,19 +82,29 @@ final class KeyboardModel {
     /// memory and kept the bar empty while they loaded.
     private static let sharedModels = Task.detached {
         Predictor.warmUpSpellChecker()
-        return (Lexicon.load(), try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!))
+        let lexicon = Lexicon.load()
+        let wordModel = try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!)
+        return (lexicon, wordModel, WordDecoder(lexicon: lexicon, oddsIds: wordModel.ids))
     }
+    /// What this process last saved, which is what the file holds: only the keyboard writes
+    /// it, so a keyboard opening in the same process skips decoding it again.
+    private static var savedPersonal: PersonalModel?
 
     init(controller: KeyboardViewController) {
         self.controller = controller
         dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
         let opening = Self.signposter.beginInterval("Open", id: Self.signposter.makeSignpostID())
         Task {
-            let (lexicon, wordModel) = await Self.sharedModels.value
-            // What was learned is saved each time the keyboard closes, so it's read fresh.
-            let personal = await Task.detached { PersonalModel.load(from: Self.personalURL) }.value
+            let (lexicon, wordModel, decoder) = await Self.sharedModels.value
+            // What was learned is saved each time the keyboard closes; a new process reads it back.
+            let personal: PersonalModel
+            if let saved = Self.savedPersonal {
+                personal = saved
+            } else {
+                personal = await Task.detached { PersonalModel.load(from: Self.personalURL) }.value
+            }
             Self.signposter.withIntervalSignpost("setLexicon") {
-                predictor.setLexicon(lexicon, wordModel: wordModel, personal: personal)
+                predictor.setLexicon(lexicon, wordModel: wordModel, decoder: decoder, personal: personal)
             }
             syncLearnedWords()
             updateSuggestions()
@@ -346,9 +356,12 @@ final class KeyboardModel {
     }
 
     func savePersonal() {
+        // Before earlier sessions' learning loads there's only an empty model, which would overwrite it.
+        guard predictor.isLoaded else { return }
         let personal = predictor.personalModel
+        Self.savedPersonal = personal
         Task.detached(priority: .utility) { personal.save(to: Self.personalURL) }
-        if hasFullAccess, predictor.isLoaded { LearnedWords.publish(predictor.learnedWords) }
+        if hasFullAccess { LearnedWords.publish(predictor.learnedWords) }
     }
 
     /// Forgets the learned words removed in the app, then lists what's left there.

@@ -11,7 +11,7 @@ final class KeyboardPerformanceTests: XCTestCase {
 
     func testKeystrokeCosts() throws {
         let predictor = Predictor()
-        predictor.setLexicon(.repository, wordModel: .repository)
+        predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository)
         if let path = ProcessInfo.processInfo.environment["KEYBOARD_BENCH"] {
             let bench = try JSONDecoder().decode(Bench.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
             for text in bench.personal {
@@ -84,7 +84,7 @@ final class KeyboardPerformanceTests: XCTestCase {
     /// A predictor that has learned a year of typing, when TEST_RUNNER_KEYBOARD_BENCH is set.
     private func loadedPredictor() throws -> Predictor {
         let predictor = Predictor()
-        predictor.setLexicon(.repository, wordModel: .repository, personal: try learnedPersonal())
+        predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository, personal: try learnedPersonal())
         return predictor
     }
 
@@ -136,8 +136,10 @@ final class KeyboardPerformanceTests: XCTestCase {
             let context = TypingContext(before: before)
             _ = predictor.suggestions(for: context, touches: Array(repeating: nil, count: context.partialWord.count), allowsCorrection: true, revert: nil)
         }
-        var backspace = Timings()
         let words = typed.split(separator: " ")
+        // Typed word by word first, as a person would have.
+        for end in 1...words.count { bar(words[..<end].joined(separator: " ") + " ") }
+        var backspace = Timings()
         for end in stride(from: words.count - 20, to: words.count, by: 1) {
             let sentence = words[..<end].joined(separator: " ")
             bar(sentence + " ")
@@ -154,13 +156,20 @@ final class KeyboardPerformanceTests: XCTestCase {
         }
         deleteWords.report("delete held, word by word")
 
+        var cursorBack = Timings()
+        for n in 0..<20 {
+            bar(typed)
+            cursorBack.time { bar(String(typed.dropLast(20 + 7 * n))) }
+        }
+        cursorBack.report("cursor moved back in the message")
+
         var cursorMove = Timings()
         let other = String(Self.paragraph.suffix(400))
         for n in 0..<20 {
             let before = n % 2 == 0 ? other : typed
             cursorMove.time { bar(String(before.dropLast(n))) }
         }
-        cursorMove.report("cursor moved to another sentence")
+        cursorMove.report("cursor moved to text never typed here")
     }
 
     /// What a keyboard opening costs, from reading what was learned to a bar mid-word.
@@ -185,7 +194,7 @@ final class KeyboardPerformanceTests: XCTestCase {
             let start = ContinuousClock.now
             let loaded = load.time { PersonalModel.load(from: url) }
             let predictor = Predictor()
-            setLexicon.time { predictor.setLexicon(.repository, wordModel: .repository, personal: loaded) }
+            setLexicon.time { predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository, personal: loaded) }
             names.time { predictor.addNames(contacts) }
             firstBar.time { _ = predictor.suggestions(for: TypingContext(before: "Do you want to "), touches: [], allowsCorrection: true, revert: nil) }
             firstMidWord.time { _ = predictor.suggestions(for: TypingContext(before: "Do you want to comr"), touches: Array(repeating: nil, count: 4), allowsCorrection: true, revert: nil) }

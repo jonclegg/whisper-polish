@@ -55,7 +55,7 @@ final class TypingSimulationTests: XCTestCase {
         for (name, settings) in Self.variants() where only == nil || only == name {
             for level in Self.levels where onlyLevel == nil || onlyLevel == level.name {
                 let predictor = Predictor()
-                predictor.setLexicon(.repository, wordModel: .repository)
+                predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository)
                 predictor.decoderSettings = settings
                 predictor.addNames(bench.contacts)
                 for text in bench.personal { learn(text, into: predictor) }

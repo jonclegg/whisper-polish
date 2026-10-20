@@ -4,7 +4,7 @@ import XCTest
 final class KeyboardPredictorTests: XCTestCase {
     private func predictor() -> Predictor {
         let predictor = Predictor()
-        predictor.setLexicon(.repository, wordModel: .repository)
+        predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository)
         return predictor
     }
 

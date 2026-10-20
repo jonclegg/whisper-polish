@@ -22,6 +22,11 @@ extension WordModel {
     }()
 }
 
+extension WordDecoder {
+    /// Built once, like the keyboard does, over the repository's lexicon and word model.
+    static let repository = WordDecoder(lexicon: .repository, oddsIds: WordModel.repository.ids)
+}
+
 /// What a host like Messages reports before the cursor: back to the start of the
 /// sentence holding the character before the cursor.
 func sentenceHostReport(_ before: String) -> String {

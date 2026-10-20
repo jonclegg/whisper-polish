@@ -41,9 +41,9 @@ final class Predictor {
     private var names: [String: String] = [:]
     private var replacements: [String: String] = [:]
     private var spellCheckedWords: [String: Bool] = [:]
-    private var cachedDecoder: WordDecoder?
+    private var decoder: WordDecoder?
     var decoderSettings = WordDecoder.Settings() {
-        didSet { cachedDecoder = nil }
+        didSet { decoder?.settings = decoderSettings }
     }
     /// Words with an apostrophe by how they're typed without it: "youve" to "you've".
     private var apostropheForms: [String: String] = [:]
@@ -62,10 +62,13 @@ final class Predictor {
         learned = Dictionary(words.map { ($0.lowercased(), $0) }) { _, latest in latest }
     }
 
-    /// `personal` is what was learned from your typing in earlier sessions.
-    func setLexicon(_ lexicon: Lexicon, wordModel: WordModel, personal: PersonalModel = PersonalModel()) {
+    /// `personal` is what was learned from your typing in earlier sessions. `decoder`
+    /// reads only the lexicon and the word model, so it's built once per process.
+    func setLexicon(_ lexicon: Lexicon, wordModel: WordModel, decoder: WordDecoder, personal: PersonalModel = PersonalModel()) {
         self.lexicon = lexicon
         self.wordModel = wordModel
+        self.decoder = decoder
+        self.decoder!.settings = decoderSettings
         self.personal = personal
         self.personal.addNames(Array(names.values))
         apostropheForms = wordModel.apostropheForms
@@ -77,14 +80,11 @@ final class Predictor {
     /// The word model's words, then names and words you've taught it.
     private func rebuildVocabulary() {
         guard let wordModel else { return }
-        cachedDecoder = nil
         cachedOdds = nil
         vocabulary = wordModel.ids
         vocabularyWords = wordModel.words
         sortedVocabulary = wordModel.sortedWords
-        for word in Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(personal.isLearned) {
-            addToVocabulary(word)
-        }
+        addToVocabulary(Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(personal.isLearned))
     }
 
     /// Words the keyboard added to its dictionary on its own: ones you kept from
@@ -123,10 +123,8 @@ final class Predictor {
     }
 
     func addNames(_ names: [String]) {
-        for name in names {
-            self.names[name.lowercased()] = name
-            addToVocabulary(name)
-        }
+        for name in names { self.names[name.lowercased()] = name }
+        addToVocabulary(names)
         personal.addNames(names)
         cachedOdds = nil
     }
@@ -134,7 +132,7 @@ final class Predictor {
     func learn(_ word: String) {
         learned[word.lowercased()] = word
         UserDefaults.standard.set(Array(learned.values), forKey: Self.learnedKey)
-        addToVocabulary(word)
+        addToVocabulary([word])
     }
 
     /// Counts `word` as typed after the sentence so far; words you keep typing become suggestions.
@@ -142,22 +140,40 @@ final class Predictor {
     func learnTyped(_ word: String, after previous: [String]) {
         guard wordModel != nil else { return }
         personal.learn(word, after: previous)
-        if personal.isLearned(word) { addToVocabulary(word) }
+        if personal.isLearned(word) { addToVocabulary([word]) }
         cachedOdds = nil
     }
 
     /// What's been learned from your typing, to save between sessions.
     var personalModel: PersonalModel { personal }
 
-    private func addToVocabulary(_ word: String) {
-        let lower = word.lowercased()
-        guard wordModel != nil, vocabulary[lower] == nil else { return }
-        let id = vocabularyWords.count
-        vocabulary[lower] = id
-        vocabularyWords.append(lower)
-        let bytes = Array(lower.utf8)
-        let position = sortedVocabulary.firstIndex { bytes.lexicographicallyPrecedes($0.bytes) } ?? sortedVocabulary.count
-        sortedVocabulary.insert((bytes, id), at: position)
+    /// New words are sorted among themselves and merged in, one pass however many
+    /// there are: a keyboard opening adds every name and learned word.
+    private func addToVocabulary(_ words: [String]) {
+        guard wordModel != nil else { return }
+        var added: [(bytes: [UInt8], id: Int)] = []
+        for word in words {
+            let lower = word.lowercased()
+            guard vocabulary[lower] == nil else { continue }
+            let id = vocabularyWords.count
+            vocabulary[lower] = id
+            vocabularyWords.append(lower)
+            added.append((Array(lower.utf8), id))
+        }
+        guard !added.isEmpty else { return }
+        added.sort { $0.bytes.lexicographicallyPrecedes($1.bytes) }
+        var merged: [(bytes: [UInt8], id: Int)] = []
+        merged.reserveCapacity(sortedVocabulary.count + added.count)
+        var next = 0
+        for entry in sortedVocabulary {
+            while next < added.count, added[next].bytes.lexicographicallyPrecedes(entry.bytes) {
+                merged.append(added[next])
+                next += 1
+            }
+            merged.append(entry)
+        }
+        merged += added[next...]
+        sortedVocabulary = merged
         cachedOdds = nil
     }
 
@@ -344,14 +360,14 @@ final class Predictor {
         // Words only the spell checker knows ("inly", "sas") are fixed when a word clearly fits better.
         if let lexicon, !lexicon.isWord(lower), learned[lower] == nil, names[lower] == nil, !personal.isLearned(lower) {
             guard let best = decoded.first,
-                  let spatial = decoder(lexicon).spatialScore(typed: typed, touches: touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)),
+                  let spatial = decoder!.spatialScore(typed: typed, touches: touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)),
                   best.score - (spatial + decoderSettings.oddsWeight * decoderSettings.spellCheckedLogOdds) > decoderSettings.realWordMargin else { return nil }
             return Self.matchingCase(of: typed, best.word)
         }
         // A slip that made another real word: fix it only when the touches and the sentence clearly prefer another.
         guard let lexicon, lexicon.isWord(lower),
               let best = decoded.first, !best.word.contains(" "),
-              let literal = decoder(lexicon).literalScore(typed: typed, touches: touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count), odds: odds),
+              let literal = decoder!.literalScore(typed: typed, touches: touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count), oddsId: vocabulary[lower], odds: odds),
               best.score - literal > decoderSettings.realWordMargin else { return nil }
         return Self.matchingCase(of: typed, best.word)
     }
@@ -360,17 +376,10 @@ final class Predictor {
     /// and words that fit the previous ones.
     private func decode(_ typed: String, touches: [CGPoint?], odds: [Float], lexicon: Lexicon) -> [WordDecoder.Candidate] {
         let touches = touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)
-        return decoder(lexicon).candidates(typed: typed, touches: touches, odds: odds).map { candidate in
+        return decoder!.candidates(typed: typed, touches: touches, odds: odds).map { candidate in
             let words = candidate.word.split(separator: " ").map { lexicon.displayForm(of: String($0)) ?? String($0) }
             return WordDecoder.Candidate(word: words.joined(separator: " "), score: candidate.score)
         }
-    }
-
-    private func decoder(_ lexicon: Lexicon) -> WordDecoder {
-        if let cachedDecoder { return cachedDecoder }
-        let decoder = WordDecoder(lexicon: lexicon, settings: decoderSettings) { [vocabulary] in vocabulary[$0] }
-        cachedDecoder = decoder
-        return decoder
     }
 
     private static func matchingCase(of typed: String, _ word: String) -> String {

@@ -73,14 +73,14 @@ enum KeyResolver {
 
 /// Finds the words a sequence of touches most likely spelled, scoring each
 /// word by how close its keys are to the touches plus how likely it is to come next.
-struct WordDecoder {
+struct WordDecoder: Sendable {
     struct Candidate: Equatable {
         let word: String
         let score: Double
     }
 
     /// Tuned with `TypingSimulationTests`, which types real messages with simulated sloppy taps.
-    struct Settings {
+    struct Settings: Sendable {
         /// Cost of a guess that adds or drops a letter instead of mistyping one.
         var editPenalty = 6.0
         /// Cost of two letters typed in the wrong order, the usual slip when two thumbs roll.
@@ -105,27 +105,26 @@ struct WordDecoder {
     private static let a = UInt8(ascii: "a")
 
     let lexicon: Lexicon
-    let settings: Settings
+    var settings: Settings
     /// Key centers indexed by letter, a = 0.
     private let centers: [CGPoint]
     /// Each length bucket's words as next-word odds ids, -1 for none.
     private let oddsIds: [Int: [Int]]
-    private let oddsId: (String) -> Int?
 
-    /// `oddsId` finds a word's place in the next-word odds passed to `candidates`.
-    init(lexicon: Lexicon, settings: Settings = Settings(), geometry: KeyGeometry = .letters, oddsId: @escaping (String) -> Int?) {
+    /// `oddsIds` finds a word's place in the next-word odds passed to `candidates`. Every
+    /// lexicon word is a word model word, so the ids never change once the two are loaded.
+    init(lexicon: Lexicon, oddsIds: [String: Int], settings: Settings = Settings(), geometry: KeyGeometry = .letters) {
         self.lexicon = lexicon
         self.settings = settings
         centers = (0..<26).map { offset in
             geometry.centers[Character(Unicode.Scalar(Self.a + UInt8(offset)))] ?? CGPoint(x: -100, y: -100)
         }
-        var oddsIds: [Int: [Int]] = [:]
+        var bucketIds: [Int: [Int]] = [:]
         for length in 1...32 {
             let words = lexicon.words(ofLength: length).words
-            if !words.isEmpty { oddsIds[length] = words.map { oddsId(String(decoding: $0, as: UTF8.self)) ?? -1 } }
+            if !words.isEmpty { bucketIds[length] = words.map { oddsIds[String(decoding: $0, as: UTF8.self)] ?? -1 } }
         }
-        self.oddsIds = oddsIds
-        self.oddsId = oddsId
+        self.oddsIds = bucketIds
     }
 
     /// How well the touches fit the letters exactly as typed.
@@ -136,9 +135,9 @@ struct WordDecoder {
     }
 
     /// How well the touches and the context fit the word exactly as typed, on the candidates' scale.
-    func literalScore(typed: String, touches: [CGPoint?], odds: [Float]) -> Double? {
+    func literalScore(typed: String, touches: [CGPoint?], oddsId: Int?, odds: [Float]) -> Double? {
         guard let spatial = spatialScore(typed: typed, touches: touches) else { return nil }
-        return spatial + prior(oddsId(typed.lowercased()), odds: odds)
+        return spatial + prior(oddsId, odds: odds)
     }
 
     /// `touches[i]` is where the i-th letter of `typed` was touched, or nil to

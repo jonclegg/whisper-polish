@@ -19,7 +19,7 @@ final class PredictionBenchmarkTests: XCTestCase {
         }
         let bench = try JSONDecoder().decode(Bench.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let predictor = Predictor()
-        predictor.setLexicon(.repository, wordModel: .repository)
+        predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository)
         predictor.addNames(bench.contacts)
         for text in bench.personal { learn(text, into: predictor) }
 
@@ -88,7 +88,7 @@ final class PredictionBenchmarkTests: XCTestCase {
         let bench = try JSONDecoder().decode(Bench.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let spread = Double(ProcessInfo.processInfo.environment["KEYBOARD_BENCH_SPREAD"] ?? "0.3")!
         let predictor = Predictor()
-        predictor.setLexicon(.repository, wordModel: .repository)
+        predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository)
         predictor.addNames(bench.contacts)
         for text in bench.personal { learn(text, into: predictor) }
 
