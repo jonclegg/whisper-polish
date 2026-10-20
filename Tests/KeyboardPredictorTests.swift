@@ -70,4 +70,43 @@ final class KeyboardPredictorTests: XCTestCase {
         let again = predictor.suggestions(for: TypingContext(before: ""), touches: [], allowsCorrection: true, revert: nil).suggestions
         XCTAssertEqual(again, fresh)
     }
+
+    private func bar(_ predictor: Predictor, _ before: String) -> [Suggestion] {
+        let context = TypingContext(before: before)
+        return predictor.suggestions(for: context, touches: Array(repeating: nil, count: context.partialWord.count), allowsCorrection: true, revert: nil).suggestions
+    }
+
+    func testBackspacingAcrossASpaceFeedsTheModelNothing() {
+        let predictor = predictor()
+        _ = bar(predictor, "I want to go to the store and buy ")
+        _ = bar(predictor, "I want to go to the store and buy")
+        XCTAssertEqual(predictor.lastModelSteps, 0)
+        _ = bar(predictor, "I want to go to ")
+        XCTAssertEqual(predictor.lastModelSteps, 0)
+    }
+
+    func testPickingUpWhereTheModelWasMatchesStartingOver() {
+        let typing = predictor()
+        let sentence = "I want to go to the store and buy some milk "
+        for end in sentence.indices { _ = bar(typing, String(sentence[...end])) }
+        let back = "I want to go to the st"
+        XCTAssertEqual(bar(typing, back), bar(predictor(), back))
+    }
+
+    func testAWindowOnLongTextPicksUpWhereItLeftOff() {
+        let predictor = predictor()
+        let long = """
+            We should get dinner on Friday if you are free. I was thinking about the new place downtown that \
+            everyone keeps talking about. My sister went last week and said the pasta was amazing but the wait \
+            was really long. Maybe we can book a table for seven so we beat the crowd. Let me know what works \
+            and I will call them tomorrow morning before work.
+            """
+        for (index, character) in zip(long.indices, long) where character == " " { _ = bar(predictor, String(long[...index])) }
+        XCTAssertGreaterThan(TypingContext(before: long).history.count, TypingContext.historyLength - 1)
+        _ = bar(predictor, String(long.dropLast(6)))
+        XCTAssertEqual(predictor.lastModelSteps, 0)
+        // Moving the cursor back a sentence is still text it was fed.
+        _ = bar(predictor, String(long.dropLast(47)))
+        XCTAssertEqual(predictor.lastModelSteps, 0)
+    }
 }

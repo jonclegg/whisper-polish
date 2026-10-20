@@ -81,8 +81,16 @@ final class KeyboardPerformanceTests: XCTestCase {
         }
     }
 
+    /// Unoptimized, the word model takes seconds a step, which says nothing about the phone.
+    private func requireOptimized() throws {
+        #if DEBUG
+        throw XCTSkip("Time the keyboard in an optimized build, like `swift test -c release` in scripts/keyboard-bench-linux.")
+        #endif
+    }
+
     /// A predictor that has learned a year of typing, when TEST_RUNNER_KEYBOARD_BENCH is set.
     private func loadedPredictor() throws -> Predictor {
+        try requireOptimized()
         let predictor = Predictor()
         predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository, personal: try learnedPersonal())
         return predictor
@@ -174,6 +182,7 @@ final class KeyboardPerformanceTests: XCTestCase {
 
     /// What a keyboard opening costs, from reading what was learned to a bar mid-word.
     func testOpenCosts() throws {
+        try requireOptimized()
         let personal = try learnedPersonal()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("perf-personal-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: url) }

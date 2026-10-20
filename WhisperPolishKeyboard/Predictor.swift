@@ -51,8 +51,12 @@ final class Predictor {
     private var vocabulary: [String: Int] = [:]
     private var vocabularyWords: [String] = []
     private var sortedVocabulary: [(bytes: [UInt8], id: Int)] = []
-    /// The word model's memory of the history it was last fed, so each new word costs one step.
-    private var modelMemory: (fed: [String?], state: WordModel.State)?
+    /// The word model's state after each word it was fed, `states[i]` following `fed[..<i]`, so a
+    /// new word costs one step and going back (a backspace across a space, a cursor move) costs
+    /// none. `fresh` while `fed` still starts where the model started, at a sentence boundary.
+    private var modelMemory: (fed: [String?], states: [WordModel.State], fresh: Bool)?
+    /// About 8 KB each.
+    private static let rememberedStates = 2 * TypingContext.historyLength
     private var cachedOdds: (history: [String?], odds: [Float])?
     /// Words the last call fed the word model: none or one while typing, the whole history after a jump.
     private(set) var lastModelSteps = 0
@@ -257,27 +261,56 @@ final class Predictor {
         return odds
     }
 
-    /// Feeds the model only what's new since last time: up to a few words added to
-    /// the history it last saw, which may have slid past the history's length limit.
-    /// Anything else, like a different text field, starts over.
+    /// Feeds the model only what it hasn't seen: it resumes from the longest stretch of
+    /// `history` it was already fed. Anything else, like a different text field, starts over.
     private func modelState(after history: [String?], model: WordModel) -> WordModel.State {
-        if let memory = modelMemory {
-            for added in 0...min(3, history.count)
-            where history.count == min(memory.fed.count + added, TypingContext.historyLength)
-                && Array(memory.fed.suffix(history.count - added)) == Array(history.dropLast(added)) {
-                var state = memory.state
-                for token in history.suffix(added) { model.advance(&state, with: token.map(model.id(of:)) ?? WordModel.boundary) }
-                lastModelSteps = added
-                modelMemory = (Array((memory.fed + history.suffix(added)).suffix(TypingContext.historyLength)), state)
-                return state
-            }
+        var fed: [String?] = []
+        var states: [WordModel.State]
+        var fresh = true
+        var matched = 0
+        if let memory = modelMemory, let resume = Self.resumePoint(of: history, in: memory.fed, fresh: memory.fresh) {
+            fed = Array(memory.fed[..<resume.end])
+            states = Array(memory.states[...resume.end])
+            fresh = memory.fresh
+            matched = resume.matched
+            lastModelSteps = history.count - matched
+        } else {
+            var state = model.start
+            model.advance(&state, with: WordModel.boundary)
+            states = [state]
+            lastModelSteps = history.count + 1
         }
-        var state = model.start
-        model.advance(&state, with: WordModel.boundary)
-        for token in history { model.advance(&state, with: token.map(model.id(of:)) ?? WordModel.boundary) }
-        lastModelSteps = history.count + 1
-        modelMemory = (history, state)
-        return state
+        for token in history[matched...] {
+            var state = states[states.count - 1]
+            model.advance(&state, with: token.map(model.id(of:)) ?? WordModel.boundary)
+            fed.append(token)
+            states.append(state)
+        }
+        if fed.count > Self.rememberedStates {
+            fed.removeFirst(fed.count - Self.rememberedStates)
+            states.removeFirst(states.count - Self.rememberedStates - 1)
+            fresh = false
+        }
+        modelMemory = (fed, states, fresh)
+        return states[states.count - 1]
+    }
+
+    /// Where in `fed` to pick `history` up: `matched` of its words were fed, ending at `fed[end - 1]`.
+    /// A history shorter than the limit is the whole text, so it lines up only with the start
+    /// of what was fed; a full one is a window on longer text, so it can line up anywhere,
+    /// as long as most of it was fed.
+    private static func resumePoint(of history: [String?], in fed: [String?], fresh: Bool) -> (end: Int, matched: Int)? {
+        guard history.count == TypingContext.historyLength else {
+            guard fresh else { return nil }
+            let matched = zip(fed, history).prefix { $0 == $1 }.count
+            return (matched, matched)
+        }
+        var best: (end: Int, matched: Int)?
+        for offset in fed.indices {
+            let matched = zip(fed[offset...], history).prefix { $0 == $1 }.count
+            if matched >= history.count / 2, matched >= best?.matched ?? 0 { best = (offset + matched, matched) }
+        }
+        return best
     }
 
     /// Ids of vocabulary words that start with `typed`, other than `typed` itself.
