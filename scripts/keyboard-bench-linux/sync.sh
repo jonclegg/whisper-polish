@@ -13,7 +13,7 @@ for f in Lexicon Predictor PersonalModel TypingContext TouchDecoder KeyLayout Wo
   sed '/^import UIKit$/d' $W/WhisperPolishKeyboard/$f.swift > $P/Tests/Bench/$f.swift
 done
 for f in $W/WhisperPolishKeyboard/ContextMemory.swift; do [ -f $f ] && cp $f $P/Tests/Bench/; done
-for t in KeyboardTestSupport KeyboardCasingTests PredictionBenchmarkTests TypingSimulationTests KeyboardPerformanceTests KeyboardPredictorTests KeyboardLearnedWordsTests HostTextTrackerTests ContextMemoryTests; do
+for t in KeyboardTestSupport KeyboardCasingTests PredictionBenchmarkTests TypingSimulationTests KeyboardPerformanceTests KeyboardPredictorTests KeyboardTouchDecoderTests KeyboardLearnedWordsTests HostTextTrackerTests ContextMemoryTests; do
   [ -f $W/Tests/$t.swift ] && cp $W/Tests/$t.swift $P/Tests/Bench/
 done
 cp $P/UIKitShim.swift $P/Tests/Bench/

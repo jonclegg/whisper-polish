@@ -195,4 +195,80 @@ final class KeyboardTouchDecoderTests: XCTestCase {
         XCTAssertFalse(decode("thw").contains("thw"))
         XCTAssertFalse(decode("the").contains("the"))
     }
+
+    // MARK: - The trie
+
+    /// The trie walk drops branches early, so check it against a plain edit
+    /// distance over every word, on sloppy taps of real words.
+    func testTheTrieFindsWhatASearchOfEveryWordWould() {
+        let settings = WordDecoder.Settings()
+        let odds = odds(after: "I think")
+        var random = SplitMix(seed: 9)
+        let aims = ["restaurant", "because", "tomorrow", "the", "what", "hello", "probably", "it", "something", "meeting"]
+        for aim in aims + aims {
+            var typed = ""
+            var touches: [CGPoint?] = []
+            for letter in aim {
+                let (point, nearest) = sloppyTap(at: letter, spread: 0.42, random: &random)
+                typed.append(nearest)
+                touches.append(point)
+            }
+            let letters = Array(typed.utf8)
+            let maxLoss = letters.count >= 3 ? settings.maxEditLoss : settings.maxShortWordLoss
+            let maxEdits = Int(maxLoss / settings.editPenalty)
+            var expected: [(word: String, score: Double)] = []
+            let literal = decoder.spatialScore(typed: typed, touches: touches)!
+            for length in max(1, letters.count - maxEdits)...(letters.count + maxEdits) {
+                let bucket = lexicon.words(ofLength: length)
+                for (word, rank) in zip(bucket.words, bucket.ranks) where word != letters && Lexicon.isWord(word, rank: rank) {
+                    let text = String(decoding: word, as: UTF8.self)
+                    let startsNear = cost(typed, touches, 0, text.first!).isFinite || (letters.count > 1 && word[0] == letters[1]) || (word.count > 1 && word[1] == letters[0])
+                    let loss = editLoss(typed, touches, to: text, settings: settings)
+                    guard startsNear, loss <= maxLoss else { continue }
+                    expected.append((text, literal - loss + decoder.prior(WordModel.repository.ids[text], odds: odds)))
+                }
+            }
+            let found = decoder.decode(typed: typed, touches: touches, odds: odds, limit: 1000).candidates.filter { !$0.word.contains(" ") }
+            XCTAssertEqual(Set(found.map(\.word)), Set(expected.map(\.word)), "typed \(typed) for \(aim)")
+            for candidate in found {
+                let score = expected.first { $0.word == candidate.word }?.score ?? .nan
+                XCTAssertEqual(candidate.score, score, accuracy: 1e-9, "\(candidate.word) for \(typed)")
+            }
+        }
+    }
+
+    func testNearMissesOfAWordsStartAreFound() {
+        let prefixes = decoder.decode(typed: "resyau", touches: Array(repeating: nil, count: 6), odds: odds(after: "Let's meet at the")).prefixes
+        XCTAssertTrue(prefixes.contains { prefix in
+            prefix.words.contains { decoder.wordIds[$0] == WordModel.repository.ids["restaurant"] }
+        })
+    }
+
+    private func cost(_ typed: String, _ touches: [CGPoint?], _ index: Int, _ letter: Character) -> Double {
+        let typedLetter = Array(typed)[index]
+        guard letter != typedLetter else { return 0 }
+        let point = touches[index] ?? centers[typedLetter]!
+        let likelihood = TouchModel.logLikelihood(of: point, aimingAt: centers[letter]!)
+        return likelihood >= TouchModel.farthest ? TouchModel.logLikelihood(of: point, aimingAt: centers[typedLetter]!) - likelihood : .infinity
+    }
+
+    /// The decoder's edit distance, worked out in full.
+    private func editLoss(_ typed: String, _ touches: [CGPoint?], to word: String, settings: WordDecoder.Settings) -> Double {
+        let t = Array(typed)
+        let w = Array(word)
+        var d = [[Double]](repeating: [Double](repeating: 0, count: w.count + 1), count: t.count + 1)
+        for i in 0...t.count {
+            for j in 0...w.count {
+                guard i > 0, j > 0 else {
+                    d[i][j] = Double(i + j) * settings.editPenalty
+                    continue
+                }
+                var value = min(d[i - 1][j], d[i][j - 1]) + settings.editPenalty
+                value = min(value, d[i - 1][j - 1] + cost(typed, touches, i - 1, w[j - 1]))
+                if i > 1, j > 1, t[i - 1] == w[j - 2], t[i - 2] == w[j - 1] { value = min(value, d[i - 2][j - 2] + settings.swapPenalty) }
+                d[i][j] = value
+            }
+        }
+        return d[t.count][w.count]
+    }
 }

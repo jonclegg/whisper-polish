@@ -270,20 +270,27 @@ final class Predictor: @unchecked Sendable {
         var suggestions: [Suggestion]
         var correction: String?
         var decoded: [WordDecoder.Candidate] = []
+        var nearMisses: [WordDecoder.Prefix] = []
         if let revert, revert.replacement == typed {
             suggestions = [Suggestion(text: revert.original, isQuoted: true, learns: true), Suggestion(text: typed)]
         } else {
             let known = isKnown(typed)
-            decoded = decode(typed, touches: touches, odds: odds, lexicon: lexicon)
+            // A known word is only decoded to check it for a slip, which autocorrect being off rules out.
+            if allowsCorrection || !known {
+                (decoded, nearMisses) = decode(typed, touches: touches, odds: odds, lexicon: lexicon)
+            }
             correction = allowsCorrection ? self.correction(for: typed, isKnown: known, decoded: decoded, touches: touches, odds: odds) : nil
             suggestions = [Suggestion(text: typed, isQuoted: !known, learns: !known)]
             if let correction {
                 suggestions.append(Suggestion(text: correction, isAutocorrection: true))
             }
-            if known { decoded = [] }
+            if known {
+                decoded = []
+                nearMisses = []
+            }
         }
         // Words that finish what's typed come before other fixes for it: a partial word usually isn't a typo.
-        let completions = top(odds, among: completionRange(of: typed), limit: 3).map {
+        let completions = completions(of: typed, odds: odds, nearMisses: nearMisses).map {
             Self.matchingCase(of: typed, display($0, after: context.previousWords.last))
         }
         for text in completions + decoded.map({ Self.matchingCase(of: typed, $0.word) }) where suggestions.count < 3 {
@@ -372,6 +379,28 @@ final class Predictor: @unchecked Sendable {
             if matched >= history.count / 2, matched >= best?.matched ?? 0 { best = (offset + matched, matched) }
         }
         return best
+    }
+
+    /// The best words that finish what's typed, then ones that finish a near miss
+    /// of it when they fit the sentence well enough to make up for the miss: one
+    /// stray tap shouldn't take the word that was meant off the bar.
+    private func completions(of typed: String, odds: [Float], nearMisses: [WordDecoder.Prefix]) -> [Int] {
+        let exact = top(odds, among: completionRange(of: typed), limit: 3)
+        guard let decoder, !nearMisses.isEmpty else { return exact }
+        let typedId = vocabulary[typed.lowercased()]
+        var scored = exact.map { (id: $0, score: decoder.prior($0, odds: odds)) }
+        for prefix in nearMisses {
+            let ids = prefix.words.lazy.map { decoder.wordIds[$0] }.filter { $0 >= 0 && $0 != typedId }
+            for id in top(odds, among: ids, limit: 3) {
+                scored.append((id, decoder.prior(id, odds: odds) - prefix.loss - decoder.settings.nearMissMargin))
+            }
+        }
+        var seen = Set<Int>()
+        return scored
+            .sorted { $0.score > $1.score }
+            .filter { seen.insert($0.id).inserted }
+            .prefix(3)
+            .map(\.id)
     }
 
     /// Ids of vocabulary words that start with `typed`, other than `typed` itself.
@@ -468,12 +497,14 @@ final class Predictor: @unchecked Sendable {
 
     /// Words the touches most likely meant: keys near each touch, common words,
     /// and words that fit the previous ones.
-    private func decode(_ typed: String, touches: [CGPoint?], odds: [Float], lexicon: Lexicon) -> [WordDecoder.Candidate] {
+    private func decode(_ typed: String, touches: [CGPoint?], odds: [Float], lexicon: Lexicon) -> ([WordDecoder.Candidate], [WordDecoder.Prefix]) {
         let touches = touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)
-        return decoder!.candidates(typed: typed, touches: touches, odds: odds).map { candidate in
+        let (candidates, prefixes) = decoder!.decode(typed: typed, touches: touches, odds: odds)
+        let displayed = candidates.map { candidate in
             let words = candidate.word.split(separator: " ").map { lexicon.displayForm(of: String($0)) ?? String($0) }
             return WordDecoder.Candidate(word: words.joined(separator: " "), score: candidate.score)
         }
+        return (displayed, prefixes)
     }
 
     private static func matchingCase(of typed: String, _ word: String) -> String {

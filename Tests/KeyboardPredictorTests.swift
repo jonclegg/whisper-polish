@@ -52,6 +52,11 @@ final class KeyboardPredictorTests: XCTestCase {
         XCTAssertEqual(suggestions.dropFirst().first, Suggestion(text: "what", isAutocorrection: true))
     }
 
+    func testAStrayTapEarlyInAWordStillCompletesIt() {
+        XCTAssertTrue(result("Let's meet at the resyau").suggestions.contains { $0.text == "restaurant" })
+        XCTAssertTrue(result("See you tomorrow at the airpprt").suggestions.contains { $0.text.hasPrefix("airport") })
+    }
+
     func testLetterOddsFavorLettersThatContinueTheWord() {
         let odds = predictor().letterOdds(for: TypingContext(before: "I want th"))
         XCTAssertEqual(odds.max { $0.value < $1.value }?.key, "e")

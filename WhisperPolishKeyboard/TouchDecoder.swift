@@ -73,10 +73,19 @@ enum KeyResolver {
 
 /// Finds the words a sequence of touches most likely spelled, scoring each
 /// word by how close its keys are to the touches plus how likely it is to come next.
+/// The lexicon's words sit in a trie, so words sharing a start share the work of
+/// matching it, and a branch is dropped once nothing down it could match.
 struct WordDecoder: Sendable {
     struct Candidate: Equatable {
         let word: String
         let score: Double
+    }
+
+    /// Words that start with a near miss of what's typed, like "restau" for "resyau":
+    /// `words` indexes `wordIds`, and `loss` is what reading the touches as that start costs.
+    struct Prefix: Equatable {
+        let words: Range<Int>
+        let loss: Double
     }
 
     /// Tuned with `TypingSimulationTests`, which types real messages with simulated sloppy taps.
@@ -98,6 +107,12 @@ struct WordDecoder: Sendable {
         var apostropheOddsRatio: Float = 2
         /// Words only the spell checker knows ("inly") get these log odds, so they can be fixed like slips.
         var spellCheckedLogOdds = -14.0
+        /// Starts of words this close to the touches offer their completions, about one slip.
+        var maxPrefixLoss = 6.0
+        /// Fewer letters than this say too little to complete a near miss of them.
+        var nearMissLetters = 3
+        /// A near miss's completion goes ahead of one of exactly what's typed only when it scores this much better.
+        var nearMissMargin = 2.0
     }
 
     /// Two words run together count only when both are this common.
@@ -108,23 +123,63 @@ struct WordDecoder: Sendable {
     var settings: Settings
     /// Key centers indexed by letter, a = 0.
     private let centers: [CGPoint]
-    /// Each length bucket's words as next-word odds ids, -1 for none.
-    private let oddsIds: [Int: [Int]]
+    /// The trie in preorder from the root, node 0: each node's descendants run up to
+    /// `subtreeEnd`, `letter` leads into it, and its words, in sorted order, run from
+    /// `firstWord` to the next subtree's. A node ends a word when its first word is as long as it is deep.
+    private let letter: [UInt8]
+    private let subtreeEnd: [Int32]
+    private let firstWord: [Int32]
+    private let endsWord: [Bool]
+    /// The trie's words as bytes, sorted.
+    private let words: [[UInt8]]
+    /// The next-word odds id of each of `words`, -1 for none.
+    let wordIds: [Int]
 
     /// `oddsIds` finds a word's place in the next-word odds passed to `candidates`. Every
     /// lexicon word is a word model word, so the ids never change once the two are loaded.
+    /// Building the trie takes a moment, so it's built once per process.
     init(lexicon: Lexicon, oddsIds: [String: Int], settings: Settings = Settings(), geometry: KeyGeometry = .letters) {
         self.lexicon = lexicon
         self.settings = settings
         centers = (0..<26).map { offset in
             geometry.centers[Character(Unicode.Scalar(Self.a + UInt8(offset)))] ?? CGPoint(x: -100, y: -100)
         }
-        var bucketIds: [Int: [Int]] = [:]
+        var words: [[UInt8]] = []
         for length in 1...32 {
-            let words = lexicon.words(ofLength: length).words
-            if !words.isEmpty { bucketIds[length] = words.map { oddsIds[String(decoding: $0, as: UTF8.self)] ?? -1 } }
+            let bucket = lexicon.words(ofLength: length)
+            for (word, rank) in zip(bucket.words, bucket.ranks) where Lexicon.isWord(word, rank: rank) { words.append(word) }
         }
-        self.oddsIds = bucketIds
+        words.sort { $0.lexicographicallyPrecedes($1) }
+        var letter: [UInt8] = []
+        var subtreeEnd: [Int32] = []
+        var firstWord: [Int32] = []
+        var endsWord: [Bool] = []
+        func build(_ range: Range<Int>, depth: Int) {
+            let node = letter.count
+            letter.append(depth == 0 ? 0 : words[range.lowerBound][depth - 1])
+            subtreeEnd.append(0)
+            firstWord.append(Int32(range.lowerBound))
+            // Sorted, so a word that is this node's whole prefix comes first.
+            let isWord = words[range.lowerBound].count == depth
+            endsWord.append(isWord)
+            var start = range.lowerBound + (isWord ? 1 : 0)
+            while start < range.upperBound {
+                let next = words[start][depth]
+                var end = start + 1
+                while end < range.upperBound, words[end][depth] == next { end += 1 }
+                build(start..<end, depth: depth + 1)
+                start = end
+            }
+            subtreeEnd[node] = Int32(letter.count)
+        }
+        build(0..<words.count, depth: 0)
+        firstWord.append(Int32(words.count))
+        self.letter = letter
+        self.subtreeEnd = subtreeEnd
+        self.firstWord = firstWord
+        self.endsWord = endsWord
+        self.words = words
+        wordIds = words.map { oddsIds[String(decoding: $0, as: UTF8.self)] ?? -1 }
     }
 
     /// How well the touches fit the letters exactly as typed.
@@ -140,30 +195,32 @@ struct WordDecoder: Sendable {
         return spatial + prior(oddsId, odds: odds)
     }
 
+    /// The scale candidates and completions share for how likely a word is to come next.
+    func prior(_ id: Int?, odds: [Float]) -> Double {
+        settings.oddsWeight * log(Double(id.map { odds[$0] } ?? 0) + 1e-7)
+    }
+
     /// `touches[i]` is where the i-th letter of `typed` was touched, or nil to
     /// assume the key's center; `odds` are the next-word odds. Words up to two
     /// added, dropped, or swapped letters away are considered too, since
     /// key-by-key matching can't find those. Runs on every keystroke, so it
     /// works on bytes rather than Strings.
     func candidates(typed: String, touches: [CGPoint?], odds: [Float], limit: Int = 3) -> [Candidate] {
+        decode(typed: typed, touches: touches, odds: odds, limit: limit).candidates
+    }
+
+    /// The candidates, and the starts of words that are a near miss of what's typed
+    /// (not what's typed itself), whose completions may be what was meant.
+    func decode(typed: String, touches: [CGPoint?], odds: [Float], limit: Int = 3) -> (candidates: [Candidate], prefixes: [Prefix]) {
         let letters = Array(typed.lowercased().utf8)
         guard touches.count == letters.count, !letters.isEmpty,
-              letters.allSatisfy({ $0 >= Self.a && $0 < Self.a + 26 }) else { return [] }
+              letters.allSatisfy({ $0 >= Self.a && $0 < Self.a + 26 }) else { return ([], []) }
         let observed = zip(letters, touches).map { letter, touch in touch ?? centers[Int(letter - Self.a)] }
         let literal = spatialScore(letters, observed) ?? 0
 
-        var best: [[UInt8]: Double] = [:]
-        var slips = Slips(letters: letters, observed: observed, centers: centers, settings: settings)
-        let maxLoss = letters.count >= 3 ? settings.maxEditLoss : settings.maxShortWordLoss
-        let maxEdits = Int(maxLoss / settings.editPenalty)
-        for length in max(1, letters.count - maxEdits)...(letters.count + maxEdits) {
-            let bucket = lexicon.words(ofLength: length)
-            let ids = oddsIds[length] ?? []
-            for (index, (word, rank)) in zip(bucket.words, bucket.ranks).enumerated() where word != letters && Lexicon.isWord(word, rank: rank) {
-                guard slips.mayStart(word), let loss = slips.loss(to: word, limit: maxLoss) else { continue }
-                best[word] = literal - loss + prior(ids[index] >= 0 ? ids[index] : nil, odds: odds)
-            }
-        }
+        var search = Search(decoder: self, letters: letters, observed: observed, odds: odds, literal: literal)
+        search.run()
+        var best = search.found
         let shifted = literal - settings.editPenalty
         // A missed space bar: "letme" is "let me".
         for split in 1..<letters.count {
@@ -175,11 +232,12 @@ struct WordDecoder: Sendable {
             let phrase = first + [UInt8(ascii: " ")] + second
             best[phrase] = shifted + log(Lexicon.weight(rank: max(firstRank, secondRank)))
         }
-        return best
+        let candidates = best
             .map { Candidate(word: String(decoding: $0.key, as: UTF8.self), score: $0.value) }
             .sorted { $0.score != $1.score ? $0.score > $1.score : $0.word < $1.word }
             .prefix(limit)
             .map { $0 }
+        return (candidates, search.prefixes)
     }
 
     private func spatialScore(_ word: [UInt8], _ points: [CGPoint]) -> Double? {
@@ -192,84 +250,127 @@ struct WordDecoder: Sendable {
         return total
     }
 
-    private func prior(_ id: Int?, odds: [Float]) -> Double {
-        settings.oddsWeight * log(Double(id.map { odds[$0] } ?? 0) + 1e-7)
-    }
-}
+    /// One walk of the trie for one set of touches. It's an edit distance that knows a
+    /// near miss on a neighboring key is cheap and a key across the keyboard isn't: a
+    /// touch read as a key other than the one typed costs what the touch model says that
+    /// key loses, and each added, dropped, or swapped letter costs a penalty. Each trie
+    /// node adds one row of distances below its parent's, for the word start it spells.
+    private struct Search {
+        let decoder: WordDecoder
+        let letters: [UInt8]
+        let odds: [Float]
+        let literal: Double
+        let maxLoss: Double
+        let lengths: ClosedRange<Int>
+        let prefixDepths: Range<Int>
+        /// `costs[touch * 26 + letter]`, infinite for keys too far from the touch. A touch
+        /// can fit another key better than the one it typed, so a cost can be below zero.
+        private let costs: [Double]
+        /// The least the touches from each one on can still add, for dropping only branches
+        /// that can't come back under the limit.
+        private let leastToCome: [Double]
+        /// Distance rows by depth, `width` apiece: `rows[depth * width + touches]`.
+        private var rows: [Double]
+        private var rowBest: [Double]
+        private let width: Int
+        /// The letters of the word start being walked.
+        private var path: [UInt8]
+        private(set) var found: [[UInt8]: Double] = [:]
+        private(set) var prefixes: [Prefix] = []
 
-/// How far a word is from what was typed: a touch read as a key other than the
-/// one typed costs what the touch model says that key loses, and each added,
-/// dropped, or swapped letter costs a penalty. It's an edit distance that knows
-/// a near miss on a neighboring key is cheap and a key across the keyboard isn't.
-private struct Slips {
-    private static let a = UInt8(ascii: "a")
-
-    let letters: [UInt8]
-    let settings: WordDecoder.Settings
-    /// `costs[touch * 26 + letter]`, infinite for keys too far from the touch.
-    private let costs: [Double]
-    /// Distance rows, reused across words because this runs for thousands of words per keystroke.
-    private var earlier: [Double] = []
-    private var previous: [Double] = []
-    private var current: [Double] = []
-
-    init(letters: [UInt8], observed: [CGPoint], centers: [CGPoint], settings: WordDecoder.Settings) {
-        self.letters = letters
-        self.settings = settings
-        var costs = [Double](repeating: .infinity, count: letters.count * 26)
-        for (touch, point) in observed.enumerated() {
-            let typed = TouchModel.logLikelihood(of: point, aimingAt: centers[Int(letters[touch] - Self.a)])
-            for letter in 0..<26 {
-                let likelihood = TouchModel.logLikelihood(of: point, aimingAt: centers[letter])
-                if likelihood >= TouchModel.farthest { costs[touch * 26 + letter] = typed - likelihood }
-            }
-            costs[touch * 26 + Int(letters[touch] - Self.a)] = 0
-        }
-        self.costs = costs
-    }
-
-    private func cost(_ touch: Int, _ letter: UInt8) -> Double {
-        costs[touch * 26 + Int(letter &- Self.a)]
-    }
-
-    /// Words must start near the first touch, unless its letter was doubled,
-    /// swapped, or missed; checking the rest of the word list would be too slow.
-    func mayStart(_ word: [UInt8]) -> Bool {
-        cost(0, word[0]).isFinite
-            || (letters.count > 1 && word[0] == letters[1])
-            || (word.count > 1 && word[1] == letters[0])
-    }
-
-    /// The cheapest way the touches could have been meant as `word`, or nil past `limit`.
-    mutating func loss(to word: [UInt8], limit: Double) -> Double? {
-        let edit = settings.editPenalty
-        let width = word.count + 1
-        if current.count < width {
-            earlier = Array(repeating: 0, count: width)
-            previous = earlier
-            current = earlier
-        }
-        for column in 0..<width { previous[column] = Double(column) * edit }
-        var previousBest = 0.0
-        for touch in 1...letters.count {
-            current[0] = Double(touch) * edit
-            var rowBest = current[0]
-            for column in 1..<width {
-                var value = min(previous[column], current[column - 1]) + edit
-                value = min(value, previous[column - 1] + cost(touch - 1, word[column - 1]))
-                if touch > 1, column > 1, letters[touch - 1] == word[column - 2], letters[touch - 2] == word[column - 1] {
-                    value = min(value, earlier[column - 2] + settings.swapPenalty)
+        init(decoder: WordDecoder, letters: [UInt8], observed: [CGPoint], odds: [Float], literal: Double) {
+            self.decoder = decoder
+            self.letters = letters
+            self.odds = odds
+            self.literal = literal
+            let settings = decoder.settings
+            maxLoss = letters.count >= 3 ? settings.maxEditLoss : settings.maxShortWordLoss
+            let maxEdits = Int(maxLoss / settings.editPenalty)
+            lengths = max(1, letters.count - maxEdits)...(letters.count + maxEdits)
+            prefixDepths = letters.count >= settings.nearMissLetters ? (letters.count - 1)..<(letters.count + 2) : 0..<0
+            var costs = [Double](repeating: .infinity, count: letters.count * 26)
+            for (touch, point) in observed.enumerated() {
+                let typed = TouchModel.logLikelihood(of: point, aimingAt: decoder.centers[Int(letters[touch] - WordDecoder.a)])
+                for letter in 0..<26 {
+                    let likelihood = TouchModel.logLikelihood(of: point, aimingAt: decoder.centers[letter])
+                    if likelihood >= TouchModel.farthest { costs[touch * 26 + letter] = typed - likelihood }
                 }
-                current[column] = value
-                rowBest = min(rowBest, value)
+                costs[touch * 26 + Int(letters[touch] - WordDecoder.a)] = 0
             }
-            // A swap reaches back two rows, so both have to be out of reach.
-            if rowBest > limit, previousBest > limit { return nil }
-            previousBest = rowBest
-            swap(&earlier, &previous)
-            swap(&previous, &current)
+            self.costs = costs
+            var leastToCome = [Double](repeating: 0, count: letters.count + 1)
+            for touch in letters.indices.reversed() {
+                leastToCome[touch] = leastToCome[touch + 1] + min(0, costs[(touch * 26)..<((touch + 1) * 26)].min()!)
+            }
+            self.leastToCome = leastToCome
+            width = letters.count + 1
+            let depths = lengths.upperBound + 1
+            rows = [Double](repeating: 0, count: depths * width)
+            rowBest = [Double](repeating: 0, count: depths)
+            path = [UInt8](repeating: 0, count: depths)
+            for touches in 0..<width { rows[touches] = Double(touches) * settings.editPenalty }
         }
-        let loss = previous[width - 1]
-        return loss <= limit ? loss : nil
+
+        mutating func run() {
+            var child = 1
+            while child < Int(decoder.subtreeEnd[0]) {
+                visit(child, depth: 1, startAllowed: true)
+                child = Int(decoder.subtreeEnd[child])
+            }
+        }
+
+        /// `startAllowed` is false below a first letter that's only allowed for words
+        /// whose second letter was typed first. Words must start near the first touch,
+        /// unless its letter was doubled, swapped, or missed; checking the rest of the
+        /// word list would be too slow.
+        private mutating func visit(_ node: Int, depth: Int, startAllowed: Bool) {
+            let settings = decoder.settings
+            let edit = settings.editPenalty
+            let wordLetter = decoder.letter[node]
+            path[depth - 1] = wordLetter
+            var startAllowed = startAllowed
+            if depth == 1 {
+                startAllowed = cost(0, wordLetter).isFinite || (letters.count > 1 && wordLetter == letters[1])
+            } else if depth == 2, !startAllowed {
+                guard wordLetter == letters[0] else { return }
+                startAllowed = true
+            }
+            let row = depth * width
+            let above = row - width
+            rows[row] = Double(depth) * edit
+            var best = rows[row] + leastToCome[0]
+            for touch in 1..<width {
+                var value = min(rows[above + touch], rows[row + touch - 1]) + edit
+                value = min(value, rows[above + touch - 1] + cost(touch - 1, wordLetter))
+                if touch > 1, depth > 1, letters[touch - 1] == path[depth - 2], letters[touch - 2] == wordLetter {
+                    value = min(value, rows[above - width + touch - 2] + settings.swapPenalty)
+                }
+                rows[row + touch] = value
+                best = min(best, value + leastToCome[touch])
+            }
+            rowBest[depth] = best
+            let loss = rows[row + width - 1]
+            if startAllowed {
+                if decoder.endsWord[node], lengths.contains(depth), loss <= maxLoss, depth != letters.count || !path[..<depth].elementsEqual(letters) {
+                    let index = Int(decoder.firstWord[node])
+                    let id = decoder.wordIds[index]
+                    found[decoder.words[index]] = literal - loss + decoder.prior(id >= 0 ? id : nil, odds: odds)
+                }
+                if prefixDepths.contains(depth), loss <= settings.maxPrefixLoss, depth != letters.count || !path[..<depth].elementsEqual(letters) {
+                    prefixes.append(Prefix(words: Int(decoder.firstWord[node])..<Int(decoder.firstWord[Int(decoder.subtreeEnd[node])]), loss: loss))
+                }
+            }
+            // A swap reaches back two rows, so both have to be out of reach, whatever the touches still to come add.
+            guard depth < lengths.upperBound, best <= maxLoss || rowBest[depth - 1] <= maxLoss else { return }
+            var child = node + 1
+            while child < Int(decoder.subtreeEnd[node]) {
+                visit(child, depth: depth + 1, startAllowed: startAllowed)
+                child = Int(decoder.subtreeEnd[child])
+            }
+        }
+
+        private func cost(_ touch: Int, _ letter: UInt8) -> Double {
+            costs[touch * 26 + Int(letter &- WordDecoder.a)]
+        }
     }
 }
