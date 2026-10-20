@@ -80,13 +80,18 @@ final class PredictionBenchmarkTests: XCTestCase {
     /// The same messages typed with sloppy taps, at `TypingSimulationTests`' "normal" spread,
     /// through key resolution: how often the bar offers the intended word and the keystrokes
     /// that saves, and how often autocorrect leaves a word typed to its end right. The clean
-    /// benchmark above types every letter right, which no thumb does.
+    /// benchmark above types every letter right, which no thumb does. KEYBOARD_BENCH_THUMBS
+    /// adds a steady miss per key (`thumbBias`), and KEYBOARD_BENCH_ADAPT has the keyboard
+    /// learn where the touches land from words typed right, as `TouchAdaptation` does on the phone.
     func testNoisyTapBenchmark() throws {
         guard let path = ProcessInfo.processInfo.environment["KEYBOARD_BENCH"] else {
             throw XCTSkip("Set TEST_RUNNER_KEYBOARD_BENCH to run the noisy-tap benchmark.")
         }
         let bench = try JSONDecoder().decode(Bench.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let spread = Double(ProcessInfo.processInfo.environment["KEYBOARD_BENCH_SPREAD"] ?? "0.3")!
+        let thumbs = ProcessInfo.processInfo.environment["KEYBOARD_BENCH_THUMBS"] != nil
+        let adapts = ProcessInfo.processInfo.environment["KEYBOARD_BENCH_ADAPT"] != nil
+        var adaptation = TouchAdaptation()
         let predictor = Predictor()
         predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository)
         predictor.addNames(bench.contacts)
@@ -136,12 +141,16 @@ final class PredictionBenchmarkTests: XCTestCase {
                         if typed.count <= 2, letters.count >= 3 { offeredEarly += 1 }
                     }
                     guard aim != "\u{0}" else { break }
-                    let (point, nearest) = sloppyTap(at: aim, spread: spread, random: &random)
-                    typed.append(KeyResolver.resolve(point, nearest: nearest, odds: predictor.letterOdds(for: context)))
+                    let (point, nearest) = sloppyTap(at: aim, spread: spread, bias: thumbs ? thumbBias(for: aim) : (0, 0), random: &random)
+                    typed.append(KeyResolver.resolve(point, nearest: nearest, odds: predictor.letterOdds(for: context), geometry: predictor.keyGeometry))
                     touches.append(point)
                 }
                 let final = (result.correction ?? typed).lowercased()
                 if final == intended { autocorrectRight += 1 }
+                if adapts, typed == letters, final == intended {
+                    adaptation.learn(typed, points: touches)
+                    predictor.keyGeometry = adaptation.geometry()
+                }
                 if typed != letters {
                     tappedWrong += 1
                     if final == intended { fixed += 1 }
@@ -152,7 +161,7 @@ final class PredictionBenchmarkTests: XCTestCase {
             learn(text, into: predictor)
         }
         print(String(
-            format: "NOISY spread %.2f words %d savings %.3f early %.3f autocorrect %.3f tappedWrong %.3f fixed %.3f broke %.4f",
+            format: "NOISY spread %.2f\(thumbs ? " thumbs" : "")\(adapts ? " adapting" : "") words %d savings %.3f early %.3f autocorrect %.3f tappedWrong %.3f fixed %.3f broke %.4f",
             spread, words, Double(saved) / Double(keystrokes), Double(offeredEarly) / Double(longWords),
             Double(autocorrectRight) / Double(words), Double(tappedWrong) / Double(words),
             Double(fixed) / Double(max(tappedWrong, 1)), Double(broken) / Double(words)

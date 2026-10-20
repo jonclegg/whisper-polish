@@ -46,6 +46,10 @@ final class Predictor: @unchecked Sendable {
     var decoderSettings = WordDecoder.Settings() {
         didSet { decoder?.settings = decoderSettings }
     }
+    /// Where the user's touches for each key land, learned on the phone (`TouchAdaptation`).
+    var keyGeometry = KeyGeometry.letters {
+        didSet { decoder?.aim(at: keyGeometry) }
+    }
     /// Words with an apostrophe by how they're typed without it: "youve" to "you've".
     private var apostropheForms: [String: String] = [:]
     /// Every word the bar can offer: the word model's, then names and words you've taught it.
@@ -74,6 +78,7 @@ final class Predictor: @unchecked Sendable {
         self.wordModel = wordModel
         self.decoder = decoder
         self.decoder!.settings = decoderSettings
+        self.decoder!.aim(at: keyGeometry)
         self.personal = personal
         self.personal.addNames(Array(names.values))
         apostropheForms = wordModel.apostropheForms

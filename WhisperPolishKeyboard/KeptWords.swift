@@ -8,6 +8,8 @@ struct KeptWords {
         let text: String
         /// The sentence before it, lowercased.
         let previous: [String]
+        /// Where each of its letters was touched, nil where that's not known.
+        let touches: [CGPoint?]
         /// Characters between the word's end and the cursor.
         fileprivate(set) var after: Int
     }
@@ -18,8 +20,8 @@ struct KeptWords {
     private(set) var held: [Word] = []
 
     /// Holds `text`, which ends `after` characters before the cursor, and returns any word now old enough to learn.
-    mutating func finished(_ text: String, previous: [String], after: Int = 0) -> [Word] {
-        held.append(Word(text: text, previous: previous, after: after))
+    mutating func finished(_ text: String, previous: [String], touches: [CGPoint?] = [], after: Int = 0) -> [Word] {
+        held.append(Word(text: text, previous: previous, touches: touches, after: after))
         let ready = held.count - Self.holding
         guard ready > 0 else { return [] }
         defer { held.removeFirst(ready) }

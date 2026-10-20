@@ -78,6 +78,9 @@ final class KeyboardModel {
     /// Where each recently typed letter was touched, in key units, so corrections
     /// can tell a near miss on a neighboring key from a deliberate letter.
     @ObservationIgnored private var letterTouches: [(letter: Character, point: CGPoint?)] = []
+    /// Where this user's touches for each key land, learned from words they kept.
+    @ObservationIgnored private var touchAdaptation = TouchAdaptation.load()
+    @ObservationIgnored private var keyGeometry = KeyGeometry.letters
     @ObservationIgnored private var dismissedPasteboardChangeCount: Int
     @ObservationIgnored private var profile = AutofillProfile.empty
     @ObservationIgnored private var autofill = AutofillSession()
@@ -102,6 +105,8 @@ final class KeyboardModel {
         self.controller = controller
         dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
         let opening = Self.signposter.beginInterval("Open", id: Self.signposter.makeSignpostID())
+        keyGeometry = touchAdaptation.geometry()
+        prediction.perform { [keyGeometry] in $0.keyGeometry = keyGeometry }
         Task {
             let (lexicon, wordModel, decoder) = await Self.sharedModels.value
             prediction.perform { [personalURL = Self.personalURL, legacyPersonalURL = Self.legacyPersonalURL] predictor in
@@ -228,7 +233,7 @@ final class KeyboardModel {
         // Worked out with the bar after the last key; until it's in, the touched key types.
         guard let letterOdds, letterOdds.text == predictionText else { return nearest }
         return Self.signposter.withIntervalSignpost("Touch down") {
-            String(KeyResolver.resolve(point, nearest: letter, odds: letterOdds.odds))
+            String(KeyResolver.resolve(point, nearest: letter, odds: letterOdds.odds, geometry: keyGeometry))
         }
     }
 
@@ -393,6 +398,7 @@ final class KeyboardModel {
         // Before earlier sessions' learning loads there's only an empty model, which would overwrite it.
         guard isPredictorLoaded else { return }
         learnKeptWords()
+        touchAdaptation.save()
         let publishes = hasFullAccess
         prediction.perform { [personalURL = Self.personalURL] predictor in
             let personal = predictor.personalModel
@@ -424,7 +430,7 @@ final class KeyboardModel {
         let document = documentIdentifier
         if document != keptWordsDocument { learnKeptWords() }
         keptWordsDocument = document
-        learn(keptWords.finished(context.partialWord, previous: context.previousWords, after: after))
+        learn(keptWords.finished(context.partialWord, previous: context.previousWords, touches: touches(for: context.partialWord), after: after))
     }
 
     /// The user moved on, so the words still held were kept.
@@ -432,9 +438,15 @@ final class KeyboardModel {
         learn(keptWords.flush())
     }
 
+    /// Kept words teach the predictor, and their touches where this user's keys are.
     private func learn(_ words: [KeptWords.Word]) {
         guard !words.isEmpty else { return }
+        for word in words { touchAdaptation.learn(word.text, points: word.touches) }
+        let geometry = touchAdaptation.geometry()
+        let moved = geometry.centers != keyGeometry.centers
+        keyGeometry = geometry
         prediction.perform { predictor in
+            if moved { predictor.keyGeometry = geometry }
             for word in words { predictor.learnTyped(word.text, after: word.previous) }
         }
     }

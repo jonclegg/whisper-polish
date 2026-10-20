@@ -121,8 +121,8 @@ struct WordDecoder: Sendable {
 
     let lexicon: Lexicon
     var settings: Settings
-    /// Key centers indexed by letter, a = 0.
-    private let centers: [CGPoint]
+    /// Key centers indexed by letter, a = 0: where the user's touches for each land.
+    private var centers: [CGPoint]
     /// The trie in preorder from the root, node 0: each node's descendants run up to
     /// `subtreeEnd`, `letter` leads into it, and its words, in sorted order, run from
     /// `firstWord` to the next subtree's. A node ends a word when its first word is as long as it is deep.
@@ -141,9 +141,7 @@ struct WordDecoder: Sendable {
     init(lexicon: Lexicon, oddsIds: [String: Int], settings: Settings = Settings(), geometry: KeyGeometry = .letters) {
         self.lexicon = lexicon
         self.settings = settings
-        centers = (0..<26).map { offset in
-            geometry.centers[Character(Unicode.Scalar(Self.a + UInt8(offset)))] ?? CGPoint(x: -100, y: -100)
-        }
+        centers = Self.centers(of: geometry)
         var words: [[UInt8]] = []
         for length in 1...32 {
             let bucket = lexicon.words(ofLength: length)
@@ -180,6 +178,17 @@ struct WordDecoder: Sendable {
         self.endsWord = endsWord
         self.words = words
         wordIds = words.map { oddsIds[String(decoding: $0, as: UTF8.self)] ?? -1 }
+    }
+
+    /// Reads touches against `geometry`'s key centers from now on, like those learned from the user's typing.
+    mutating func aim(at geometry: KeyGeometry) {
+        centers = Self.centers(of: geometry)
+    }
+
+    private static func centers(of geometry: KeyGeometry) -> [CGPoint] {
+        (0..<26).map { offset in
+            geometry.centers[Character(Unicode.Scalar(a + UInt8(offset)))] ?? CGPoint(x: -100, y: -100)
+        }
     }
 
     /// How well the touches fit the letters exactly as typed.

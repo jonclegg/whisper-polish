@@ -68,9 +68,10 @@ struct SplitMix {
 
 /// A tap aimed at `letter`'s key that lands `spread` key widths off on average
 /// (less vertically, since rows are taller than keys are wide), and the key it lands nearest.
-func sloppyTap(at letter: Character, spread: Double, random: inout SplitMix) -> (point: CGPoint, nearest: Character) {
+/// `bias` moves every tap for the key the same way, like a thumb that misses consistently.
+func sloppyTap(at letter: Character, spread: Double, bias: (dx: Double, dy: Double) = (0, 0), random: inout SplitMix) -> (point: CGPoint, nearest: Character) {
     let center = KeyGeometry.letters.centers[letter]!
-    let point = CGPoint(x: center.x + spread * random.normal(), y: center.y + spread * 0.7 * random.normal())
+    let point = CGPoint(x: center.x + bias.dx + spread * random.normal(), y: center.y + bias.dy + spread * 0.7 * random.normal())
     let nearest = KeyGeometry.letters.centers.min { distanceSquared($0.value, point) < distanceSquared($1.value, point) }!.key
     return (point, nearest)
 }
@@ -79,4 +80,10 @@ private func distanceSquared(_ a: CGPoint, _ b: CGPoint) -> Double {
     let dx = a.x - b.x
     let dy = a.y - b.y
     return dx * dx + dy * dy
+}
+
+/// A made-up but steady thumb habit: keys on each half are hit toward the middle of the keyboard, and low.
+func thumbBias(for letter: Character) -> (dx: Double, dy: Double) {
+    let center = KeyGeometry.letters.centers[letter]!
+    return (center.x < KeySpec.rowUnits / 2 ? 0.18 : -0.18, 0.15)
 }

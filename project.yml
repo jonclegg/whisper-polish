@@ -143,6 +143,7 @@ targets:
       - WhisperPolishKeyboard/KeptWords.swift
       - WhisperPolishKeyboard/WritingField.swift
       - WhisperPolishKeyboard/PredictionEngine.swift
+      - WhisperPolishKeyboard/TouchAdaptation.swift
     dependencies:
       - target: WhisperPolish
     settings:
