@@ -41,6 +41,7 @@ final class Predictor {
     private var names: [String: String] = [:]
     private var replacements: [String: String] = [:]
     private var spellCheckedWords: [String: Bool] = [:]
+    private var slipsChecked: [String: Bool] = [:]
     private var decoder: WordDecoder?
     var decoderSettings = WordDecoder.Settings() {
         didSet { decoder?.settings = decoderSettings }
@@ -88,7 +89,7 @@ final class Predictor {
         vocabulary = wordModel.ids
         vocabularyWords = wordModel.words
         sortedVocabulary = wordModel.sortedWords
-        addToVocabulary(Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(personal.isLearned))
+        addToVocabulary(Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(isLearnedTyped))
     }
 
     /// Words the keyboard added to its dictionary on its own: ones you kept from
@@ -96,7 +97,7 @@ final class Predictor {
     var learnedWords: [String] {
         guard let wordModel, let lexicon else { return [] }
         let typed = personal.typed.keys.filter {
-            personal.isLearned($0) && wordModel.ids[$0] == nil && !lexicon.isWord($0) && learned[$0] == nil
+            isLearnedTyped($0) && wordModel.ids[$0] == nil && !lexicon.isWord($0) && learned[$0] == nil
         }
         return Array(learned.values) + typed.filter { names[$0] == nil }
     }
@@ -144,12 +145,67 @@ final class Predictor {
     func learnTyped(_ word: String, after previous: [String]) {
         guard wordModel != nil else { return }
         personal.learn(word, after: previous)
-        if personal.isLearned(word) { addToVocabulary([word]) }
+        if isLearnedTyped(word) { addToVocabulary([word]) }
         cachedOdds = nil
     }
 
     /// What's been learned from your typing, to save between sessions.
     var personalModel: PersonalModel { personal }
+
+    /// Made-up words one slip from a common word ("teh", "becuase") are likelier typos
+    /// than words of your own, so they take this many typings to learn, not two.
+    static let timesToLearnSlip = 4
+    /// Words this common are the ones a slip would most likely have been meant as.
+    private static let commonRank = 10_000
+
+    /// Whether you've typed `word` often enough for the keyboard to take it as a word.
+    private func isLearnedTyped(_ word: String) -> Bool {
+        let lower = word.lowercased()
+        let times = personal.typed[lower, default: 0]
+        guard times >= PersonalModel.timesToLearn else { return false }
+        return times >= Self.timesToLearnSlip || !isSlipOfCommonWord(lower)
+    }
+
+    /// Whether one dropped, added, swapped, or wrong letter makes `word` (lowercased) a common word.
+    private func isSlipOfCommonWord(_ word: String) -> Bool {
+        if let known = slipsChecked[word] { return known }
+        guard let lexicon else { return false }
+        let letters = Array(word.utf8)
+        let alphabet = UInt8(ascii: "a")...UInt8(ascii: "z")
+        func isCommon(_ candidate: [UInt8]) -> Bool {
+            guard let rank = lexicon.rank(ofLowercased: candidate) else { return false }
+            return rank < Self.commonRank && Lexicon.isWord(candidate, rank: rank)
+        }
+        func search() -> Bool {
+            guard letters.count >= 3, letters.allSatisfy(alphabet.contains), !lexicon.isWord(word) else { return false }
+            for index in letters.indices {
+                var dropped = letters
+                dropped.remove(at: index)
+                if isCommon(dropped) { return true }
+                if index > 0 {
+                    var swapped = letters
+                    swapped.swapAt(index, index - 1)
+                    if isCommon(swapped) { return true }
+                }
+                for letter in alphabet where letter != letters[index] {
+                    var changed = letters
+                    changed[index] = letter
+                    if isCommon(changed) { return true }
+                }
+            }
+            for index in 0...letters.count {
+                for letter in alphabet {
+                    var added = letters
+                    added.insert(letter, at: index)
+                    if isCommon(added) { return true }
+                }
+            }
+            return false
+        }
+        let isSlip = search()
+        slipsChecked[word] = isSlip
+        return isSlip
+    }
 
     /// New words are sorted among themselves and merged in, one pass however many
     /// there are: a keyboard opening adds every name and learned word.
@@ -366,7 +422,7 @@ final class Predictor {
 
     private func isKnown(_ word: String) -> Bool {
         let lower = word.lowercased()
-        if learned[lower] != nil || names[lower] != nil || personal.isLearned(lower) || lexicon?.isWord(lower) == true { return true }
+        if learned[lower] != nil || names[lower] != nil || isLearnedTyped(lower) || lexicon?.isWord(lower) == true { return true }
         // The spell checker takes any letter on its own for a word.
         if lower.count == 1 { return false }
         if let known = spellCheckedWords[lower] { return known }
@@ -391,7 +447,7 @@ final class Predictor {
               !typed.dropFirst().contains(where: \.isUppercase) else { return nil }
         guard isKnown else { return decoded.first.map { Self.matchingCase(of: typed, $0.word) } }
         // Words only the spell checker knows ("inly", "sas") are fixed when a word clearly fits better.
-        if let lexicon, !lexicon.isWord(lower), learned[lower] == nil, names[lower] == nil, !personal.isLearned(lower) {
+        if let lexicon, !lexicon.isWord(lower), learned[lower] == nil, names[lower] == nil, !isLearnedTyped(lower) {
             guard let best = decoded.first,
                   let spatial = decoder!.spatialScore(typed: typed, touches: touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)),
                   best.score - (spatial + decoderSettings.oddsWeight * decoderSettings.spellCheckedLogOdds) > decoderSettings.realWordMargin else { return nil }

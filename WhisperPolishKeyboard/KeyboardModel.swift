@@ -126,15 +126,20 @@ final class KeyboardModel {
     @ObservationIgnored private var contextMemory = ContextMemory()
     @ObservationIgnored private var lastSyncedState = ""
     @ObservationIgnored private var suggestionsScheduled = false
+    @ObservationIgnored private var keptWords = KeptWords()
+    /// The field the held words were typed in.
+    @ObservationIgnored private var keptWordsDocument: UUID?
 
     private func insert(_ text: String) {
         hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: documentIdentifier)
+        keptWords.typed(text.count)
         proxy.insertText(text)
     }
 
     private func delete(count: Int) {
         guard count > 0 else { return }
         hostText.willDelete(count, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: documentIdentifier)
+        keptWords.deleted(count)
         for _ in 0..<count { proxy.deleteBackward() }
     }
 
@@ -154,6 +159,7 @@ final class KeyboardModel {
     }
 
     func refresh() {
+        learnKeptWords()
         hasFullAccess = controller.hasFullAccess
         options = KeyboardOptions.load()
         needsInputModeSwitchKey = controller.needsInputModeSwitchKey
@@ -271,9 +277,9 @@ final class KeyboardModel {
         let typed = TypingContext(before: before).partialWord
         if suggestion.learns { predictor.learn(suggestion.text) }
         let separator = typed.isEmpty && before.last.map { !$0.isWhitespace } == true ? " " : ""
-        learnFinishedWord(before: String(before.dropLast(typed.count)) + separator + suggestion.text)
         // The word and the space after it reach the host as one edit.
         replace(typed, with: separator + suggestion.text + " ")
+        learnFinishedWord(before: String(before.dropLast(typed.count)) + separator + suggestion.text, after: 1)
         layout = .letters
         didType()
         insertedSuggestionSpace = true
@@ -290,6 +296,7 @@ final class KeyboardModel {
     }
 
     func cursorMoveEnded() {
+        learnKeptWords()
         floatingCursor!.end()
         floatingCursor = nil
         letterTouches = []
@@ -343,6 +350,7 @@ final class KeyboardModel {
         applyPendingCorrection()
         learnFinishedWord()
         insert("\n")
+        learnKeptWords()
         didType()
     }
 
@@ -358,6 +366,7 @@ final class KeyboardModel {
     func savePersonal() {
         // Before earlier sessions' learning loads there's only an empty model, which would overwrite it.
         guard predictor.isLoaded else { return }
+        learnKeptWords()
         let personal = predictor.personalModel
         Self.savedPersonal = personal
         Task.detached(priority: .utility) { personal.save(to: Self.personalURL) }
@@ -377,12 +386,23 @@ final class KeyboardModel {
         }
     }
 
-    /// The word just before the cursor is done; the predictor learns it in its sentence.
-    /// `before` is the text before the cursor, when it's about to be different from the host's.
-    private func learnFinishedWord(before: String? = nil) {
+    /// The word just before the cursor is done; the predictor learns it in its sentence
+    /// once it's clear the user kept it. `before` is the text up to the end of the word
+    /// when it's different from the host's, and `after` how far past it the cursor is.
+    private func learnFinishedWord(before: String? = nil, after: Int = 0) {
         let context = TypingContext(before: before ?? textBeforeCursor)
-        guard !context.partialWord.isEmpty else { return }
-        predictor.learnTyped(context.partialWord, after: context.previousWords)
+        guard !context.partialWord.isEmpty, WritingField.holdsWriting(proxy) else { return }
+        let document = documentIdentifier
+        if document != keptWordsDocument { learnKeptWords() }
+        keptWordsDocument = document
+        for word in keptWords.finished(context.partialWord, previous: context.previousWords, after: after) {
+            predictor.learnTyped(word.text, after: word.previous)
+        }
+    }
+
+    /// The user moved on, so the words still held were kept.
+    private func learnKeptWords() {
+        for word in keptWords.flush() { predictor.learnTyped(word.text, after: word.previous) }
     }
 
     /// Keeps what already matches: every deleted character and insert is a round
@@ -427,6 +447,7 @@ final class KeyboardModel {
             // Nothing known before the cursor, so let the host decide what goes.
             proxy.deleteBackward()
             forgetLocalEdits()
+            keptWords.drop()
         } else {
             delete(count: 1)
         }
@@ -443,6 +464,7 @@ final class KeyboardModel {
         if before.isEmpty {
             proxy.deleteBackward()
             forgetLocalEdits()
+            keptWords.drop()
         } else {
             delete(count: spaces + word)
         }
@@ -485,6 +507,8 @@ final class KeyboardModel {
         // Each read asks the host app, so the text after the cursor and the document are read once here.
         let after = proxy.documentContextAfterInput ?? ""
         let document = documentIdentifier
+        // An emptied field is a sent message, and deletes in the next shouldn't reach back into it.
+        if after.isEmpty, textBeforeCursor.isEmpty { learnKeptWords() }
         if options.wholeMessage { _ = contextMemory.extend(textBeforeCursor, after: after, document: document) }
         updateAutoCapitalization()
         updateTraits(after: after)
@@ -667,6 +691,7 @@ final class KeyboardModel {
         let style = selectedStyle
         AppGroup.defaults.set(style.id, forKey: SettingsKeys.defaultStyle)
         forgetLocalEdits()
+        learnKeptWords()
         show(.polishing)
         polishTask = Task {
             do {

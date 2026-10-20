@@ -140,6 +140,8 @@ targets:
       - WhisperPolishKeyboard/FloatingCursor.swift
       - WhisperPolishKeyboard/ContextMemory.swift
       - WhisperPolishKeyboard/DocumentReader.swift
+      - WhisperPolishKeyboard/KeptWords.swift
+      - WhisperPolishKeyboard/WritingField.swift
     dependencies:
       - target: WhisperPolish
     settings:

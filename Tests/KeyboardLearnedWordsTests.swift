@@ -65,6 +65,15 @@ final class KeyboardLearnedWordsTests: XCTestCase {
         XCTAssertTrue(suggestions(predictor, "That was so blorp").contains { $0.text == "blorptastic" })
     }
 
+    func testASlipOfACommonWordTakesLongerToLearn() {
+        let predictor = predictor()
+        for _ in 0..<(Predictor.timesToLearnSlip - 1) { predictor.learnTyped("becuase", after: ["just"]) }
+        XCTAssertEqual(predictor.learnedWords, [], "\"becuase\" is one swap from \"because\"")
+        XCTAssertEqual(suggestions(predictor, "just becuase").dropFirst().first?.text, "because")
+        predictor.learnTyped("becuase", after: ["just"])
+        XCTAssertEqual(predictor.learnedWords, ["becuase"])
+    }
+
     func testForgettingATypedWordStopsSuggestingItUntilItsTypedOftenAgain() {
         let predictor = predictor()
         predictor.learnTyped("blorptastic", after: ["so"])
