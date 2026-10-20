@@ -102,11 +102,16 @@ final class KeyboardPredictorTests: XCTestCase {
             and I will call them tomorrow morning before work.
             """
         for (index, character) in zip(long.indices, long) where character == " " { _ = bar(predictor, String(long[...index])) }
+        _ = bar(predictor, long)
         XCTAssertGreaterThan(TypingContext(before: long).history.count, TypingContext.historyLength - 1)
         _ = bar(predictor, String(long.dropLast(6)))
         XCTAssertEqual(predictor.lastModelSteps, 0)
-        // Moving the cursor back a sentence is still text it was fed.
+        // Moving the cursor back a sentence is still text it was fed, and so is coming back.
         _ = bar(predictor, String(long.dropLast(47)))
+        XCTAssertEqual(predictor.lastModelSteps, 0)
+        _ = bar(predictor, long)
+        XCTAssertEqual(predictor.lastModelSteps, 0)
+        _ = bar(predictor, String(long.dropLast(150)))
         XCTAssertEqual(predictor.lastModelSteps, 0)
     }
 }

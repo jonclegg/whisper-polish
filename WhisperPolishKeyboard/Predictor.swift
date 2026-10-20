@@ -325,6 +325,11 @@ final class Predictor: @unchecked Sendable {
         var fresh = true
         var matched = 0
         if let memory = modelMemory, let resume = Self.resumePoint(of: history, in: memory.fed, fresh: memory.fresh) {
+            // Looking back, as after a backspace or a cursor move, keeps what comes after for coming back.
+            guard resume.matched < history.count else {
+                lastModelSteps = 0
+                return memory.states[resume.end]
+            }
             fed = Array(memory.fed[..<resume.end])
             states = Array(memory.states[...resume.end])
             fresh = memory.fresh
