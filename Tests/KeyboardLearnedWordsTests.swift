@@ -115,4 +115,60 @@ final class KeyboardLearnedWordsTests: XCTestCase {
         }
         XCTAssertNil(withWord.typed["zorbly"])
     }
+
+    func testThePersonalModelReadsBackWhatItSaved() throws {
+        var model = PersonalModel()
+        model.addNames(["Rena"])
+        model.learn("Hi", after: [])
+        model.learn("Rena", after: ["hi"])
+        model.learn("Tesla", after: ["hi", "rena"])
+        model.learn("Tesla", after: ["my"])
+        model.learn("can't", after: ["i"])
+        model.forget("can't")
+        let read = try PersonalModel(file: model.file)
+        let vocabulary = ["hi": 0, "rena": 1, "tesla": 2, "my": 3]
+        for previous in [[], ["hi"], ["hi", "rena"], ["my"], ["i"]] {
+            XCTAssertEqual(read.probabilities(after: previous, vocabulary: vocabulary, count: 4), model.probabilities(after: previous, vocabulary: vocabulary, count: 4))
+        }
+        XCTAssertEqual(read.typed, model.typed)
+        XCTAssertEqual(read.wordsTyped, model.wordsTyped)
+        XCTAssertEqual(read.writtenForm(of: "tesla"), "Tesla")
+        XCTAssertEqual(try PersonalModel(file: PersonalModel().file).typed, [:])
+        XCTAssertThrowsError(try PersonalModel(file: Data("not a model".utf8)))
+    }
+
+    func testAJSONModelIsMovedToTheCompactFile() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let compact = folder.appendingPathComponent("personal-typing.bin")
+        let legacy = folder.appendingPathComponent("personal-typing.json")
+        var model = PersonalModel()
+        model.learn("blorptastic", after: ["so"])
+        try JSONEncoder().encode(model).write(to: legacy)
+
+        XCTAssertEqual(PersonalModel.load(from: compact, migratingFrom: legacy).typed, ["blorptastic": 1])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertEqual(PersonalModel.load(from: compact, migratingFrom: legacy).typed, ["blorptastic": 1])
+        XCTAssertEqual(PersonalModel.load(from: folder.appendingPathComponent("none"), migratingFrom: legacy).typed, [:])
+    }
+
+    func testTrigramsSeenOnceArePrunedPastTheLimit() {
+        var model = PersonalModel()
+        for (word, previous) in [("dinner", ["for", "the"]), ("dinner", ["for", "the"]), ("show", ["for", "the"]), ("cake", ["eat", "the"])] {
+            model.learn(word, after: previous)
+        }
+        let vocabulary = ["dinner": 0, "show": 1, "cake": 2]
+        func odds(_ model: PersonalModel, _ previous: [String]) -> [Float] {
+            model.probabilities(after: previous, vocabulary: vocabulary, count: 3)
+        }
+        var underLimit = model
+        underLimit.pruneTrigrams(over: 3)
+        XCTAssertEqual(odds(underLimit, ["eat", "the"]), odds(model, ["eat", "the"]))
+
+        model.pruneTrigrams(over: 2)
+        // "eat the cake" was seen once, so after "eat the" only "the" is left to go on.
+        XCTAssertEqual(odds(model, ["eat", "the"]), odds(model, ["unseen", "the"]))
+        XCTAssertNotEqual(odds(model, ["for", "the"]), odds(model, ["unseen", "the"]))
+    }
 }

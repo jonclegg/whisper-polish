@@ -60,7 +60,9 @@ final class KeyboardModel {
     /// What the keyboard has learned from your typing; it stays in the keyboard's own container.
     private static let personalURL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("personal-typing.json")
+        .appendingPathComponent("personal-typing.bin")
+    /// Where keyboards before the compact file kept it.
+    private static let legacyPersonalURL = personalURL.deletingPathExtension().appendingPathExtension("json")
     @ObservationIgnored private var polishTask: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var deleteRepeatTask: Task<Void, Never>?
@@ -102,9 +104,9 @@ final class KeyboardModel {
         let opening = Self.signposter.beginInterval("Open", id: Self.signposter.makeSignpostID())
         Task {
             let (lexicon, wordModel, decoder) = await Self.sharedModels.value
-            prediction.perform { [personalURL = Self.personalURL] predictor in
+            prediction.perform { [personalURL = Self.personalURL, legacyPersonalURL = Self.legacyPersonalURL] predictor in
                 // What was learned is saved each time the keyboard closes; a new process reads it back.
-                let personal = PredictionEngine.savedPersonal ?? PersonalModel.load(from: personalURL)
+                let personal = PredictionEngine.savedPersonal ?? PersonalModel.load(from: personalURL, migratingFrom: legacyPersonalURL)
                 Self.signposter.withIntervalSignpost("setLexicon") {
                     predictor.setLexicon(lexicon, wordModel: wordModel, decoder: decoder, personal: personal)
                 }

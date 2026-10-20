@@ -201,7 +201,7 @@ final class KeyboardPerformanceTests: XCTestCase {
         }
         for _ in 0..<5 {
             let start = ContinuousClock.now
-            let loaded = load.time { PersonalModel.load(from: url) }
+            let loaded = load.time { PersonalModel.load(from: url, migratingFrom: url.appendingPathExtension("json")) }
             let predictor = Predictor()
             setLexicon.time { predictor.setLexicon(.repository, wordModel: .repository, decoder: .repository, personal: loaded) }
             names.time { predictor.addNames(contacts) }

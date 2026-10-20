@@ -14,6 +14,9 @@ struct PersonalModel: Codable {
     /// and how much it can build up, so a change of habit shows within a few uses.
     static let casingMargin = 2
     static let casingVotes = 6
+    /// Trigrams seen once are most of the model and say the least; past this many
+    /// trigrams (a year of typing makes about 60,000) they're left out of the file.
+    static let maxTrigrams = 150_000
 
     /// Lowercased word to times typed.
     private(set) var typed: [String: Int] = [:]
@@ -30,6 +33,8 @@ struct PersonalModel: Codable {
     private var capitalVotes: [String: Int]?
     /// The capitalized way you write words, like "Rena" or "iPhone".
     private var capitalForms: [String: String]?
+
+    init() {}
 
     /// Names count as known words that can start a sentence.
     mutating func addNames(_ names: [String]) {
@@ -81,14 +86,137 @@ struct PersonalModel: Codable {
         for previous in trigrams.keys { trigrams[previous]?[word] = nil }
     }
 
-    static func load(from url: URL) -> PersonalModel {
-        guard let data = try? Data(contentsOf: url) else { return PersonalModel() }
-        return try! JSONDecoder().decode(PersonalModel.self, from: data)
+    /// What was saved at `url`, or what an older keyboard saved as JSON at `legacy`, which
+    /// is then rewritten at `url` and removed. Nothing saved yet is an empty model.
+    static func load(from url: URL, migratingFrom legacy: URL) -> PersonalModel {
+        if let data = try? Data(contentsOf: url) { return try! PersonalModel(file: data) }
+        guard let json = try? Data(contentsOf: legacy) else { return PersonalModel() }
+        let model = try! JSONDecoder().decode(PersonalModel.self, from: json)
+        model.save(to: url)
+        try! FileManager.default.removeItem(at: legacy)
+        return model
     }
 
     func save(to url: URL) {
+        var model = self
+        model.pruneTrigrams(over: Self.maxTrigrams)
         try! FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try! JSONEncoder().encode(self).write(to: url, options: .atomic)
+        try! model.file.write(to: url, options: .atomic)
+    }
+
+    /// Drops trigrams seen only once when there are more than `limit`, so years of typing
+    /// don't grow the file, and the memory it's read into, without end.
+    mutating func pruneTrigrams(over limit: Int) {
+        guard trigrams.reduce(0, { $0 + $1.value.count }) > limit else { return }
+        trigrams = trigrams.compactMapValues { followers in
+            let kept = followers.filter { $0.value > 1 }
+            return kept.isEmpty ? nil : kept
+        }
+    }
+
+    // MARK: - File
+
+    /// A list of every word the model mentions, then its counts with words as places in
+    /// that list. A year of typing reads back about ten times faster than it did as JSON.
+    private static let magic = Data("WPPM".utf8)
+    private static let fileVersion: UInt32 = 1
+
+    enum FileError: Error {
+        case notAPersonalModel
+        case unsupportedVersion
+        case truncated
+    }
+
+    var file: Data {
+        var ids: [String: UInt32] = [:]
+        var words: [String] = []
+        func id(_ word: String) -> UInt32 {
+            if let id = ids[word] { return id }
+            let id = UInt32(words.count)
+            ids[word] = id
+            words.append(word)
+            return id
+        }
+        var counts = FileWriter()
+        func write(_ table: [String: Int]) {
+            counts.append(table.count)
+            for (word, count) in table {
+                counts.append(id(word))
+                counts.append(count)
+            }
+        }
+        counts.append(wordsTyped)
+        counts.append(continuationTotal)
+        write(typed)
+        write(continuation)
+        for table in [bigrams, trigrams] {
+            counts.append(table.count)
+            for (previous, followers) in table {
+                // A trigram's context is two words; each is written as its own place in the list.
+                let context = previous.split(separator: " ", omittingEmptySubsequences: false).map { id(String($0)) }
+                counts.append(context.count)
+                for part in context { counts.append(part) }
+                write(followers)
+            }
+        }
+        counts.append(names.count)
+        for name in names { counts.append(id(name)) }
+        write(capitalVotes ?? [:])
+        counts.append(capitalForms?.count ?? 0)
+        for (word, form) in capitalForms ?? [:] {
+            counts.append(id(word))
+            counts.append(id(form))
+        }
+        var file = FileWriter()
+        file.data.append(Self.magic)
+        file.append(Self.fileVersion)
+        let list = Data(words.joined(separator: "\n").utf8)
+        file.append(words.count)
+        file.append(list.count)
+        file.data.append(list)
+        file.data.append(counts.data)
+        return file.data
+    }
+
+    init(file data: Data) throws {
+        guard data.prefix(4) == Self.magic else { throw FileError.notAPersonalModel }
+        var reader = FileReader(data: data, offset: 4)
+        guard try reader.unsigned() == Self.fileVersion else { throw FileError.unsupportedVersion }
+        let wordCount = try reader.count()
+        let words = try reader.text(bytes: reader.count()).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard words.count == wordCount || (wordCount == 0 && words == [""]) else { throw FileError.notAPersonalModel }
+        func word() throws -> String {
+            let id = Int(try reader.unsigned())
+            guard id < words.count else { throw FileError.notAPersonalModel }
+            return words[id]
+        }
+        func table() throws -> [String: Int] {
+            let count = try reader.count()
+            var table = [String: Int](minimumCapacity: count)
+            for _ in 0..<count { table[try word()] = try reader.signed() }
+            return table
+        }
+        func followers() throws -> [String: [String: Int]] {
+            let count = try reader.count()
+            var followers = [String: [String: Int]](minimumCapacity: count)
+            for _ in 0..<count {
+                let context = try (0..<reader.count()).map { _ in try word() }.joined(separator: " ")
+                followers[context] = try table()
+            }
+            return followers
+        }
+        wordsTyped = try reader.signed()
+        continuationTotal = try reader.signed()
+        typed = try table()
+        continuation = try table()
+        bigrams = try followers()
+        trigrams = try followers()
+        names = Set(try (0..<reader.count()).map { _ in try word() })
+        capitalVotes = try table()
+        var forms: [String: String] = [:]
+        for _ in 0..<(try reader.count()) { forms[try word()] = try word() }
+        capitalForms = forms
+        guard reader.isAtEnd else { throw FileError.notAPersonalModel }
     }
 
     /// How you write `word` mid-sentence, once you've shown a habit: a capitalized form, or the lowercase word.
@@ -142,5 +270,62 @@ struct PersonalModel: Codable {
         for (id, count) in known {
             result[id] += max(Float(count) - Self.discount, 0) / total
         }
+    }
+}
+
+/// Numbers as variable-length fields of seven bits a byte, low bits first, with signed
+/// ones zigzagged so small negatives stay short: most counts and places take a byte or two.
+private struct FileWriter {
+    var data = Data()
+
+    mutating func append(_ value: UInt32) {
+        var rest = value
+        while rest >= 0x80 {
+            data.append(UInt8(rest & 0x7F) | 0x80)
+            rest >>= 7
+        }
+        data.append(UInt8(rest))
+    }
+
+    mutating func append(_ value: Int) {
+        let value = Int32(value)
+        append(UInt32(bitPattern: (value << 1) ^ (value >> 31)))
+    }
+}
+
+private struct FileReader {
+    let data: Data
+    var offset: Int
+
+    var isAtEnd: Bool { offset == data.count }
+
+    mutating func unsigned() throws -> UInt32 {
+        var value: UInt32 = 0
+        var shift: UInt32 = 0
+        while true {
+            guard offset < data.count, shift < 32 else { throw PersonalModel.FileError.truncated }
+            let byte = data[data.startIndex + offset]
+            offset += 1
+            value |= UInt32(byte & 0x7F) << shift
+            if byte < 0x80 { return value }
+            shift += 7
+        }
+    }
+
+    mutating func signed() throws -> Int {
+        let value = try unsigned()
+        return Int(Int32(bitPattern: (value >> 1) ^ (0 &- (value & 1))))
+    }
+
+    mutating func count() throws -> Int {
+        let count = try signed()
+        guard count >= 0 else { throw PersonalModel.FileError.notAPersonalModel }
+        return count
+    }
+
+    mutating func text(bytes: Int) throws -> String {
+        guard offset + bytes <= data.count else { throw PersonalModel.FileError.truncated }
+        defer { offset += bytes }
+        return String(decoding: data[(data.startIndex + offset)..<(data.startIndex + offset + bytes)], as: UTF8.self)
     }
 }
