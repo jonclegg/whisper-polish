@@ -35,3 +35,43 @@ func sentenceHostReport(_ before: String) -> String {
     while !startsSentence(start) { start -= 1 }
     return String(characters[start...])
 }
+
+/// A seeded generator, so every variant sees the same taps.
+struct SplitMix {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed
+    }
+
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+
+    mutating func uniform() -> Double {
+        Double(next() >> 11) / Double(1 << 53)
+    }
+
+    mutating func normal() -> Double {
+        sqrt(-2 * log(max(uniform(), 1e-12))) * cos(2 * .pi * uniform())
+    }
+}
+
+/// A tap aimed at `letter`'s key that lands `spread` key widths off on average
+/// (less vertically, since rows are taller than keys are wide), and the key it lands nearest.
+func sloppyTap(at letter: Character, spread: Double, random: inout SplitMix) -> (point: CGPoint, nearest: Character) {
+    let center = KeyGeometry.letters.centers[letter]!
+    let point = CGPoint(x: center.x + spread * random.normal(), y: center.y + spread * 0.7 * random.normal())
+    let nearest = KeyGeometry.letters.centers.min { distanceSquared($0.value, point) < distanceSquared($1.value, point) }!.key
+    return (point, nearest)
+}
+
+private func distanceSquared(_ a: CGPoint, _ b: CGPoint) -> Double {
+    let dx = a.x - b.x
+    let dy = a.y - b.y
+    return dx * dx + dy * dy
+}

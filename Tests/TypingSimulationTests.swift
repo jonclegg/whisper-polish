@@ -127,9 +127,7 @@ final class TypingSimulationTests: XCTestCase {
                 return final
             }
             let aim = plan[plan.index(plan.startIndex, offsetBy: typed.count)]
-            let center = KeyGeometry.letters.centers[aim]!
-            let point = CGPoint(x: center.x + level.spread * random.normal(), y: center.y + level.spread * 0.7 * random.normal())
-            let nearest = KeyGeometry.letters.centers.min { distance($0.value, point) < distance($1.value, point) }!.key
+            let (point, nearest) = sloppyTap(at: aim, spread: level.spread, random: &random)
             let letter = KeyResolver.resolve(point, nearest: nearest, odds: predictor.letterOdds(for: context))
             typed.append(letter)
             touches.append(point)
@@ -154,12 +152,6 @@ final class TypingSimulationTests: XCTestCase {
         return String(letters)
     }
 
-    private func distance(_ a: CGPoint, _ b: CGPoint) -> Double {
-        let dx = a.x - b.x
-        let dy = a.y - b.y
-        return dx * dx + dy * dy
-    }
-
     private func learn(_ text: String, into predictor: Predictor) {
         var previous: [String] = []
         for match in Self.token.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)) {
@@ -171,30 +163,5 @@ final class TypingSimulationTests: XCTestCase {
             predictor.learnTyped(token, after: previous)
             previous.append(token.lowercased())
         }
-    }
-}
-
-/// A seeded generator, so every variant sees the same taps.
-private struct SplitMix {
-    private var state: UInt64
-
-    init(seed: UInt64) {
-        state = seed
-    }
-
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        return z ^ (z >> 31)
-    }
-
-    mutating func uniform() -> Double {
-        Double(next() >> 11) / Double(1 << 53)
-    }
-
-    mutating func normal() -> Double {
-        sqrt(-2 * log(max(uniform(), 1e-12))) * cos(2 * .pi * uniform())
     }
 }

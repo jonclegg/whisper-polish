@@ -54,6 +54,8 @@ final class Predictor {
     /// The word model's memory of the history it was last fed, so each new word costs one step.
     private var modelMemory: (fed: [String?], state: WordModel.State)?
     private var cachedOdds: (history: [String?], odds: [Float])?
+    /// Words the last call fed the word model: none or one while typing, the whole history after a jump.
+    private(set) var lastModelSteps = 0
 
     init() {
         let words = UserDefaults.standard.stringArray(forKey: Self.learnedKey) ?? []
@@ -221,6 +223,7 @@ final class Predictor {
     /// How likely each vocabulary word is to come next: your typing mixed with the word model.
     private func nextWordOdds(for context: TypingContext) -> [Float]? {
         guard let wordModel else { return nil }
+        lastModelSteps = 0
         if let cachedOdds, cachedOdds.history == context.history { return cachedOdds.odds }
         let fromModel = wordModel.probabilities(after: modelState(after: context.history, model: wordModel))
         let count = vocabularyWords.count
@@ -248,6 +251,7 @@ final class Predictor {
                 && Array(memory.fed.suffix(history.count - added)) == Array(history.dropLast(added)) {
                 var state = memory.state
                 for token in history.suffix(added) { model.advance(&state, with: token.map(model.id(of:)) ?? WordModel.boundary) }
+                lastModelSteps = added
                 modelMemory = (Array((memory.fed + history.suffix(added)).suffix(TypingContext.historyLength)), state)
                 return state
             }
@@ -255,6 +259,7 @@ final class Predictor {
         var state = model.start
         model.advance(&state, with: WordModel.boundary)
         for token in history { model.advance(&state, with: token.map(model.id(of:)) ?? WordModel.boundary) }
+        lastModelSteps = history.count + 1
         modelMemory = (history, state)
         return state
     }

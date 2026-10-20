@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import UIKit
+import os
 
 @MainActor
 @Observable
@@ -73,6 +74,8 @@ final class KeyboardModel {
     @ObservationIgnored private var autofill = AutofillSession()
 
     private static let dismissedPasteboardChangeCountKey = "dismissedPasteboardChangeCount"
+    /// Intervals for Instruments' Points of Interest: what each keystroke and keyboard open costs.
+    static let signposter = OSSignposter(subsystem: "com.jonclegg.WhisperPolish.Keyboard", category: .pointsOfInterest)
 
     /// The word list and model load once per keyboard process. iOS makes a new
     /// keyboard each time one is shown, and loading them again each time cost
@@ -85,13 +88,17 @@ final class KeyboardModel {
     init(controller: KeyboardViewController) {
         self.controller = controller
         dismissedPasteboardChangeCount = UserDefaults.standard.integer(forKey: Self.dismissedPasteboardChangeCountKey)
+        let opening = Self.signposter.beginInterval("Open", id: Self.signposter.makeSignpostID())
         Task {
             let (lexicon, wordModel) = await Self.sharedModels.value
             // What was learned is saved each time the keyboard closes, so it's read fresh.
             let personal = await Task.detached { PersonalModel.load(from: Self.personalURL) }.value
-            predictor.setLexicon(lexicon, wordModel: wordModel, personal: personal)
+            Self.signposter.withIntervalSignpost("setLexicon") {
+                predictor.setLexicon(lexicon, wordModel: wordModel, personal: personal)
+            }
             syncLearnedWords()
             updateSuggestions()
+            Self.signposter.endInterval("Open", opening)
         }
     }
 
@@ -163,8 +170,11 @@ final class KeyboardModel {
             after: proxy.documentContextAfterInput,
             document: documentIdentifier
         )
-        guard hostText.local == nil, documentState != lastSyncedState else { return }
-        syncWithDocument()
+        guard hostText.local == nil, documentState != lastSyncedState else {
+            Self.signposter.emitEvent("Host echo")
+            return
+        }
+        Self.signposter.withIntervalSignpost("Resync") { syncWithDocument() }
     }
 
     // MARK: - Keys
@@ -190,11 +200,15 @@ final class KeyboardModel {
     func resolveLetter(at point: CGPoint, nearest: String) -> String {
         guard options.predictions, layout == .letters, nearest.count == 1, let letter = nearest.first,
               (proxy.selectedText ?? "").isEmpty else { return nearest }
-        let odds = predictor.letterOdds(for: predictionContext)
-        return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
+        return Self.signposter.withIntervalSignpost("Touch down") {
+            let odds = predictor.letterOdds(for: predictionContext)
+            return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
+        }
     }
 
     func keyUp(_ key: Key, at point: CGPoint? = nil) {
+        let state = Self.signposter.beginInterval("Key up", id: Self.signposter.makeSignpostID())
+        defer { Self.signposter.endInterval("Key up", state) }
         switch key {
         case .character(let character):
             type(character, at: point)
@@ -483,6 +497,7 @@ final class KeyboardModel {
             pendingCorrection = nil
             return
         }
+        let state = Self.signposter.beginInterval("Suggestions", id: Self.signposter.makeSignpostID())
         let context = predictionContext
         let result = predictor.suggestions(
             for: context,
@@ -490,6 +505,7 @@ final class KeyboardModel {
             allowsCorrection: options.autocorrect && proxy.autocorrectionType != .no,
             revert: revertCandidate
         )
+        Self.signposter.endInterval("Suggestions", state, "model steps \(self.predictor.lastModelSteps)")
         if suggestions != result.suggestions { suggestions = result.suggestions }
         pendingCorrection = result.correction
     }
