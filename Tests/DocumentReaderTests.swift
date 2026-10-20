@@ -182,4 +182,28 @@ final class DocumentReaderTests: XCTestCase {
         await host.settle()
         XCTAssertEqual(host.document, original)
     }
+
+    /// The ends of the field wait a few times as long as moves took to show, not a second each.
+    func testAQuickHostIsReadQuickly() async throws {
+        let original = Self.prose
+        func read(_ reader: DocumentReader) async throws -> Duration {
+            let start = ContinuousClock.now
+            let read = try await reader.readWholeDocument()
+            let took = ContinuousClock.now - start
+            XCTAssertEqual(read, original)
+            return took
+        }
+        var fixed = DocumentReader(proxy: LaggingHost(text: original, moveLatency: .milliseconds(10), afterLag: .milliseconds(10)))
+        fixed.shortestEdgeTimeout = fixed.edgeTimeout
+        let before = try await read(fixed)
+        let after = try await read(DocumentReader(proxy: LaggingHost(text: original, moveLatency: .milliseconds(10), afterLag: .milliseconds(10))))
+        print("POLISH read with full-second edges \(before), with edges that follow the host \(after)")
+        XCTAssertLessThan(after, before - .milliseconds(800))
+    }
+
+    /// The edge wait follows a slow host up, so its last step still counts.
+    func testAVerySlowHostKeepsEveryLetter() async throws {
+        let original = Self.prose
+        try await polish(original, on: LaggingHost(text: original, moveLatency: .milliseconds(120), afterLag: .milliseconds(60)))
+    }
 }

@@ -16,12 +16,29 @@ import UIKit
 @MainActor
 struct DocumentReader {
     let proxy: UITextDocumentProxy
-    /// How long a move may take to show before the cursor is taken to be at an edge.
+    /// How long a move may take to show before the cursor is taken to be at an edge,
+    /// until moves have shown how quick this host is.
     var edgeTimeout: Duration = .seconds(1)
+    /// Once moves have landed, an edge waits this many times the slowest of them,
+    /// but never less than `shortestEdgeTimeout`: most hosts show a move well within
+    /// 100 ms, so a full second at each end of the field was most of a polish's wait.
+    var edgeTimeoutPerLanding = 4
+    var shortestEdgeTimeout: Duration = .milliseconds(400)
     /// How long a move over known text may take to show before the reader gives up.
     var landingTimeout: Duration = .seconds(3)
     /// How long a step that only changed the text after the cursor may take to show before it too.
     var stepSettle: Duration = .milliseconds(300)
+    private let landings = Landings()
+
+    /// The slowest a move has taken to show in this read.
+    private final class Landings {
+        var slowest: Duration?
+    }
+
+    private var edgeWait: Duration {
+        guard let slowest = landings.slowest else { return edgeTimeout }
+        return min(max(slowest * edgeTimeoutPerLanding, shortestEdgeTimeout), edgeTimeout)
+    }
 
     /// Returns the field's full text and leaves the cursor at its end.
     func readWholeDocument() async throws -> String {
@@ -49,7 +66,7 @@ struct DocumentReader {
         var unseenMoves = 0
         while unseenMoves < 20 {
             let before = proxy.documentContextBeforeInput ?? ""
-            let moved = try await move(by: before.isEmpty ? -1 : -before.utf16.count, within: before.isEmpty ? edgeTimeout : stepSettle) { $0 != $1 }
+            let moved = try await move(by: before.isEmpty ? -1 : -before.utf16.count, within: before.isEmpty ? edgeWait : stepSettle) { $0 != $1 }
             // Nothing before the cursor and nothing moving is the start. Text
             // before the cursor means it isn't: the move went among blank lines,
             // which a host can show the same context on, or hasn't shown yet.
@@ -77,7 +94,7 @@ struct DocumentReader {
             // last character before the cursor, unless the context restarted
             // at a new paragraph, in which case it was a line break.
             let start = context
-            guard try await move(by: 1, within: edgeTimeout, until: Self.stepped) else { return text }
+            guard try await move(by: 1, within: edgeWait, until: Self.stepped) else { return text }
             if context.before == start.before {
                 // Only the text after the cursor changed: either the host shows
                 // the same line break before the cursor on both sides of the
@@ -117,8 +134,12 @@ struct DocumentReader {
     private func move(by offset: Int, within timeout: Duration, until landed: (Context, Context) -> Bool) async throws -> Bool {
         try Task.checkCancellation()
         let start = context
+        let began = ContinuousClock.now
         proxy.adjustTextPosition(byCharacterOffset: offset)
-        return try await wait(within: timeout) { landed(start, $0) }
+        guard try await wait(within: timeout, until: { landed(start, $0) }) else { return false }
+        let took = ContinuousClock.now - began
+        landings.slowest = max(landings.slowest ?? took, took)
+        return true
     }
 
     private func wait(within timeout: Duration, until done: (Context) -> Bool) async throws -> Bool {
