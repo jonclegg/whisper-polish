@@ -10,8 +10,8 @@ struct Suggestion: Hashable {
     var title: String { isQuoted ? "\u{201C}\(text)\u{201D}" : text }
 }
 
-@MainActor
-final class Predictor {
+/// Not thread-safe: the keyboard only touches it on `PredictionEngine`'s queue.
+final class Predictor: @unchecked Sendable {
     struct Result {
         let suggestions: [Suggestion]
         let correction: String?

@@ -48,7 +48,15 @@ final class KeyboardModel {
     var isPickingStyle = false
 
     @ObservationIgnored unowned let controller: KeyboardViewController
-    @ObservationIgnored let predictor = Predictor()
+    @ObservationIgnored let prediction = PredictionEngine()
+    /// Set once earlier sessions' learning has loaded into the predictor.
+    @ObservationIgnored private var isPredictorLoaded = false
+    /// Each bar update asks the predictor anew; only the latest answer is shown.
+    @ObservationIgnored private var requestNumber = 0
+    /// The autocorrection the latest answer had for the word being typed.
+    @ObservationIgnored private var latestCorrection: (request: Int, correction: String?)?
+    /// How likely each letter is to come next after `text`, so a touch down only looks it up.
+    @ObservationIgnored private var letterOdds: (text: String, odds: [Character: Double])?
     /// What the keyboard has learned from your typing; it stays in the keyboard's own container.
     private static let personalURL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -61,7 +69,6 @@ final class KeyboardModel {
     @ObservationIgnored private var isShiftHeld = false
     @ObservationIgnored private var typedWhileShiftHeld = false
     @ObservationIgnored private var layoutBeforeSwitch: KeyboardLayout = .letters
-    @ObservationIgnored private var pendingCorrection: String?
     @ObservationIgnored private var lastAutocorrection: Predictor.Autocorrection?
     @ObservationIgnored private var revertCandidate: Predictor.Autocorrection?
     @ObservationIgnored private var insertedSuggestionSpace = false
@@ -86,9 +93,8 @@ final class KeyboardModel {
         let wordModel = try! WordModel(contentsOf: Bundle.main.url(forResource: "word-model", withExtension: "bin")!)
         return (lexicon, wordModel, WordDecoder(lexicon: lexicon, oddsIds: wordModel.ids))
     }
-    /// What this process last saved, which is what the file holds: only the keyboard writes
-    /// it, so a keyboard opening in the same process skips decoding it again.
-    private static var savedPersonal: PersonalModel?
+    /// A space waits this long at most for the correction of a word the bar hasn't caught up with.
+    private static let correctionDeadline = DispatchTimeInterval.milliseconds(40)
 
     init(controller: KeyboardViewController) {
         self.controller = controller
@@ -96,19 +102,20 @@ final class KeyboardModel {
         let opening = Self.signposter.beginInterval("Open", id: Self.signposter.makeSignpostID())
         Task {
             let (lexicon, wordModel, decoder) = await Self.sharedModels.value
-            // What was learned is saved each time the keyboard closes; a new process reads it back.
-            let personal: PersonalModel
-            if let saved = Self.savedPersonal {
-                personal = saved
-            } else {
-                personal = await Task.detached { PersonalModel.load(from: Self.personalURL) }.value
+            prediction.perform { [personalURL = Self.personalURL] predictor in
+                // What was learned is saved each time the keyboard closes; a new process reads it back.
+                let personal = PredictionEngine.savedPersonal ?? PersonalModel.load(from: personalURL)
+                Self.signposter.withIntervalSignpost("setLexicon") {
+                    predictor.setLexicon(lexicon, wordModel: wordModel, decoder: decoder, personal: personal)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    isPredictorLoaded = true
+                    syncLearnedWords()
+                    updateSuggestions()
+                    Self.signposter.endInterval("Open", opening)
+                }
             }
-            Self.signposter.withIntervalSignpost("setLexicon") {
-                predictor.setLexicon(lexicon, wordModel: wordModel, decoder: decoder, personal: personal)
-            }
-            syncLearnedWords()
-            updateSuggestions()
-            Self.signposter.endInterval("Open", opening)
         }
     }
 
@@ -216,9 +223,10 @@ final class KeyboardModel {
     func resolveLetter(at point: CGPoint, nearest: String) -> String {
         guard options.predictions, layout == .letters, nearest.count == 1, let letter = nearest.first,
               (proxy.selectedText ?? "").isEmpty else { return nearest }
+        // Worked out with the bar after the last key; until it's in, the touched key types.
+        guard let letterOdds, letterOdds.text == predictionText else { return nearest }
         return Self.signposter.withIntervalSignpost("Touch down") {
-            let odds = predictor.letterOdds(for: predictionContext)
-            return String(KeyResolver.resolve(point, nearest: letter, odds: odds))
+            String(KeyResolver.resolve(point, nearest: letter, odds: letterOdds.odds))
         }
     }
 
@@ -275,7 +283,7 @@ final class KeyboardModel {
         if options.suggestionClick { UIDevice.current.playInputClick() }
         let before = textBeforeCursor
         let typed = TypingContext(before: before).partialWord
-        if suggestion.learns { predictor.learn(suggestion.text) }
+        if suggestion.learns { prediction.perform { $0.learn(suggestion.text) } }
         let separator = typed.isEmpty && before.last.map { !$0.isWhitespace } == true ? " " : ""
         // The word and the space after it reach the host as one edit.
         replace(typed, with: separator + suggestion.text + " ")
@@ -356,34 +364,53 @@ final class KeyboardModel {
 
     @discardableResult
     private func applyPendingCorrection() -> Predictor.Autocorrection? {
-        if suggestionsScheduled { updateSuggestions() }
-        guard let correction = pendingCorrection else { return nil }
+        let correction: String?
+        if !suggestionsScheduled, let latestCorrection, latestCorrection.request == requestNumber {
+            correction = latestCorrection.correction
+        } else {
+            correction = waitForCorrection()
+        }
+        guard let correction else { return nil }
         let typed = TypingContext(before: textBeforeCursor).partialWord
         replace(typed, with: correction)
         return (typed, correction)
     }
 
+    /// The bar hasn't caught up with the last key, so the word's correction is worked
+    /// out now, waiting a moment at most; a word it can't check in time stays as typed.
+    private func waitForCorrection() -> String? {
+        guard let request = predictionRequest() else { return nil }
+        return Self.signposter.withIntervalSignpost("Correction wait") {
+            prediction.performAndWait(until: .now() + Self.correctionDeadline) { predictor in
+                predictor.suggestions(for: request.context, touches: request.touches, allowsCorrection: request.allowsCorrection, revert: request.revert).correction
+            } ?? nil
+        }
+    }
+
     func savePersonal() {
         // Before earlier sessions' learning loads there's only an empty model, which would overwrite it.
-        guard predictor.isLoaded else { return }
+        guard isPredictorLoaded else { return }
         learnKeptWords()
-        let personal = predictor.personalModel
-        Self.savedPersonal = personal
-        Task.detached(priority: .utility) { personal.save(to: Self.personalURL) }
-        if hasFullAccess { LearnedWords.publish(predictor.learnedWords) }
+        let publishes = hasFullAccess
+        prediction.perform { [personalURL = Self.personalURL] predictor in
+            let personal = predictor.personalModel
+            PredictionEngine.savedPersonal = personal
+            Task.detached(priority: .utility) { personal.save(to: personalURL) }
+            if publishes { LearnedWords.publish(predictor.learnedWords) }
+        }
     }
 
     /// Forgets the learned words removed in the app, then lists what's left there.
     private func syncLearnedWords() {
-        guard hasFullAccess, predictor.isLoaded else { return }
+        guard hasFullAccess, isPredictorLoaded else { return }
         let removals = LearnedWords.takeRemovals()
-        predictor.forget(removals)
-        if removals.isEmpty {
-            LearnedWords.publish(predictor.learnedWords)
-        } else {
-            savePersonal()
-            updateSuggestions()
+        guard !removals.isEmpty else {
+            prediction.perform { LearnedWords.publish($0.learnedWords) }
+            return
         }
+        prediction.perform { $0.forget(removals) }
+        savePersonal()
+        updateSuggestions()
     }
 
     /// The word just before the cursor is done; the predictor learns it in its sentence
@@ -395,14 +422,19 @@ final class KeyboardModel {
         let document = documentIdentifier
         if document != keptWordsDocument { learnKeptWords() }
         keptWordsDocument = document
-        for word in keptWords.finished(context.partialWord, previous: context.previousWords, after: after) {
-            predictor.learnTyped(word.text, after: word.previous)
-        }
+        learn(keptWords.finished(context.partialWord, previous: context.previousWords, after: after))
     }
 
     /// The user moved on, so the words still held were kept.
     private func learnKeptWords() {
-        for word in keptWords.flush() { predictor.learnTyped(word.text, after: word.previous) }
+        learn(keptWords.flush())
+    }
+
+    private func learn(_ words: [KeptWords.Word]) {
+        guard !words.isEmpty else { return }
+        prediction.perform { predictor in
+            for word in words { predictor.learnTyped(word.text, after: word.previous) }
+        }
     }
 
     /// Keeps what already matches: every deleted character and insert is a round
@@ -498,8 +530,30 @@ final class KeyboardModel {
     }
 
     /// What predictions read: the text before the cursor, back past the sentence the host reports.
-    private var predictionContext: TypingContext {
-        TypingContext(before: options.wholeMessage ? contextMemory.text : textBeforeCursor)
+    private var predictionText: String {
+        options.wholeMessage ? contextMemory.text : textBeforeCursor
+    }
+
+    private struct PredictionRequest: Sendable {
+        let text: String
+        let context: TypingContext
+        let touches: [CGPoint?]
+        let allowsCorrection: Bool
+        let revert: Predictor.Autocorrection?
+    }
+
+    /// What to ask the predictor about the text as it is now, or nil when the bar shows no predictions.
+    private func predictionRequest() -> PredictionRequest? {
+        guard options.predictions, isPredictorLoaded, (proxy.selectedText ?? "").isEmpty else { return nil }
+        let text = predictionText
+        let context = TypingContext(before: text)
+        return PredictionRequest(
+            text: text,
+            context: context,
+            touches: touches(for: context.partialWord),
+            allowsCorrection: options.autocorrect && proxy.autocorrectionType != .no,
+            revert: revertCandidate
+        )
     }
 
     private func syncWithDocument() {
@@ -527,24 +581,34 @@ final class KeyboardModel {
         }
     }
 
+    /// Asks the predictor on its own queue; the answer shows unless a newer question went after it.
     private func updateSuggestions() {
         suggestionsScheduled = false
-        guard options.predictions, (proxy.selectedText ?? "").isEmpty else {
+        requestNumber += 1
+        let number = requestNumber
+        guard let request = predictionRequest() else {
             if !suggestions.isEmpty { suggestions = [] }
-            pendingCorrection = nil
+            latestCorrection = (number, nil)
+            letterOdds = nil
             return
         }
-        let state = Self.signposter.beginInterval("Suggestions", id: Self.signposter.makeSignpostID())
-        let context = predictionContext
-        let result = predictor.suggestions(
-            for: context,
-            touches: touches(for: context.partialWord),
-            allowsCorrection: options.autocorrect && proxy.autocorrectionType != .no,
-            revert: revertCandidate
-        )
-        Self.signposter.endInterval("Suggestions", state, "model steps \(self.predictor.lastModelSteps)")
+        prediction.perform { predictor in
+            let state = Self.signposter.beginInterval("Suggestions", id: Self.signposter.makeSignpostID())
+            let result = predictor.suggestions(for: request.context, touches: request.touches, allowsCorrection: request.allowsCorrection, revert: request.revert)
+            let steps = predictor.lastModelSteps
+            let odds = predictor.letterOdds(for: request.context)
+            Self.signposter.endInterval("Suggestions", state, "model steps \(steps)")
+            DispatchQueue.main.async { [weak self] in
+                self?.receive(result, letterOdds: odds, after: request.text, for: number)
+            }
+        }
+    }
+
+    private func receive(_ result: Predictor.Result, letterOdds odds: [Character: Double], after text: String, for number: Int) {
+        guard number == requestNumber else { return }
+        letterOdds = (text, odds)
         if suggestions != result.suggestions { suggestions = result.suggestions }
-        pendingCorrection = result.correction
+        latestCorrection = (number, result.correction)
     }
 
     /// Touch points for `word`, or nil for letters that weren't typed on these keys just now.

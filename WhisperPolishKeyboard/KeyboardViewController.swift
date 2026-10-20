@@ -22,7 +22,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         requestSupplementaryLexicon { [weak self] lexicon in
-            Task { @MainActor in self?.model.predictor.setSupplementaryLexicon(lexicon) }
+            Task { @MainActor in self?.model.prediction.perform { $0.setSupplementaryLexicon(lexicon) } }
         }
         let host = UIHostingController(rootView: KeyboardView(model: model))
         host.view.backgroundColor = .clear
