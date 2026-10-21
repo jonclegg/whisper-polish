@@ -62,6 +62,7 @@ final class KeyGridView: UIView {
     private let popup = KeyPopupView()
     private let accents = AccentPopupView()
     private let trackpadText = TrackpadTextView()
+    private let keyFeedback = UIImpactFeedbackGenerator(style: .light)
 
     init(model: KeyboardModel) {
         self.model = model
@@ -158,6 +159,7 @@ final class KeyGridView: UIView {
             let tracker = Tracker(cap: cap, origin: point, landing: units)
             trackers[touch] = tracker
             UIDevice.current.playInputClick()
+            tapFeedback()
             press(cap)
             if case .layout = cap.spec.key { tracker.mode = .layoutSlide }
             scheduleHold(for: tracker)
@@ -296,6 +298,7 @@ final class KeyGridView: UIView {
         tracker.holdTimer?.invalidate()
         tracker.mode = .trackpad
         if let cap = tracker.cap { release(cap) }
+        tapFeedback()
         model.cursorMoveBegan(width: trackpadText.textWidth) { [trackpadText] layout, caret in
             trackpadText.show(layout, caret: caret)
         }
@@ -315,6 +318,14 @@ final class KeyGridView: UIView {
             self.trackpadText.alpha = 0
         }
         model.cursorMoveEnded()
+    }
+
+    /// The haptic tap the system keyboard gives, when the user turned it on.
+    /// Preparing for the next one keeps the Taptic Engine from lagging behind fast typing.
+    private func tapFeedback() {
+        guard model.options.haptics else { return }
+        keyFeedback.impactOccurred()
+        keyFeedback.prepare()
     }
 
     // MARK: - Pressing
