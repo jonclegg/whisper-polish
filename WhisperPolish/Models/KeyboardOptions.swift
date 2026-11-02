@@ -19,6 +19,9 @@ struct KeyboardOptions: Equatable {
     /// A light tap on each keypress, like the system keyboard's haptic
     /// feedback. Off unless the user turns it on.
     var haptics = false
+    /// Records what the bar offered and what was typed (`TypingLog`). Off unless the user turns it on.
+    var typingLog = false
+    static let typingLogKey = "keyboardTypingLog"
 
     static let all: [(key: String, title: String, detail: String, path: WritableKeyPath<KeyboardOptions, Bool>)] = [
         ("keyboardBarTapLayer", "Fast suggestion taps", "Suggestion taps are handled the way key taps are, instead of by SwiftUI.", \.barTapLayer),
@@ -29,6 +32,7 @@ struct KeyboardOptions: Equatable {
         ("keyboardSuggestionClick", "Click on suggestion taps", "Plays the key click when you tap a suggestion.", \.suggestionClick),
         ("keyboardEmojiAutoReplace", "Emoji auto-replace", "Turns shortcuts like lol and :) into emoji when you finish them. Backspace right after to undo.", \.emojiAutoReplace),
         ("keyboardHaptics", "Haptic feedback", "A light tap on each keypress. Needs Allow Full Access.", \.haptics),
+        (typingLogKey, "Typing log", "Records what the suggestion bar offered and the words you typed, on this phone only, so prediction problems can be studied. Share or clear it under Settings › Typing log. Needs Allow Full Access.", \.typingLog),
     ]
 
     static func load(from defaults: UserDefaults = AppGroup.defaults) -> KeyboardOptions {
