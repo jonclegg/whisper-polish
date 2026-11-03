@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class KeyboardLearnedWordsTests: XCTestCase {
-    /// Where `Predictor` keeps words kept from the bar.
+    /// Where keyboards before build 76 kept words tapped on the bar.
     private let learnedKey = "KeyboardLearnedWords"
 
     override func setUp() {
@@ -31,27 +31,44 @@ final class KeyboardLearnedWordsTests: XCTestCase {
         ).suggestions
     }
 
-    func testAWordKeptFromTheBarIsListedAndSuggested() {
+    func testAWordKeptTwiceIsListedAndSuggested() {
         let predictor = predictor()
         XCTAssertEqual(predictor.learnedWords, [])
-        XCTAssertEqual(suggestions(predictor, "I saw a zorbly").first, Suggestion(text: "zorbly", isQuoted: true, learns: true))
+        XCTAssertEqual(suggestions(predictor, "I saw a zorbly").first, Suggestion(text: "zorbly", isQuoted: true))
 
-        predictor.learn("Zorbly")
+        predictor.learnTyped("Zorbly", after: ["a"])
+        XCTAssertEqual(predictor.learnedWords, [], "Keeping a word once doesn't teach it")
+        predictor.learnTyped("Zorbly", after: ["a"])
         XCTAssertEqual(predictor.learnedWords, ["Zorbly"])
         XCTAssertEqual(suggestions(predictor, "I saw a zorbly").first, Suggestion(text: "zorbly"))
         XCTAssertTrue(suggestions(predictor, "I saw a zorb").contains { $0.text == "Zorbly" })
-        // It's remembered for the next time the keyboard opens.
-        XCTAssertEqual(self.predictor().learnedWords, ["Zorbly"])
+    }
+
+    func testShortAndCutShortWordsAreNeverLearned() {
+        let predictor = predictor()
+        for _ in 0..<6 {
+            for word in ["th", "fo", "b", "perfo", "Fac"] { predictor.learnTyped(word, after: ["the"]) }
+        }
+        XCTAssertEqual(predictor.learnedWords, [])
+        XCTAssertEqual(suggestions(predictor, "send me th").first, Suggestion(text: "th", isQuoted: true))
+        XCTAssertEqual(suggestions(predictor, "the perfo").first, Suggestion(text: "perfo", isQuoted: true))
+    }
+
+    func testWordsTheOldKeyboardLearnedFromOneTapKeepOnlyLikelyWords() {
+        UserDefaults.standard.set(["th", "perfo", "Fac", "austism", "Zorbly", "polymarket"], forKey: learnedKey)
+        let predictor = predictor()
+        XCTAssertEqual(Set(predictor.learnedWords), ["Zorbly", "polymarket"], "\"austism\" is a slip of \"autism\"")
+        XCTAssertNil(UserDefaults.standard.stringArray(forKey: learnedKey))
     }
 
     func testForgettingAKeptWordMakesItUnknownAgain() {
         let predictor = predictor()
-        predictor.learn("Zorbly")
+        predictor.learnTyped("Zorbly", after: ["a"])
+        predictor.learnTyped("Zorbly", after: ["a"])
         predictor.forget(["zorbly"])
         XCTAssertEqual(predictor.learnedWords, [])
-        XCTAssertEqual(suggestions(predictor, "I saw a zorbly").first, Suggestion(text: "zorbly", isQuoted: true, learns: true))
+        XCTAssertEqual(suggestions(predictor, "I saw a zorbly").first, Suggestion(text: "zorbly", isQuoted: true))
         XCTAssertFalse(suggestions(predictor, "I saw a zorb").contains { $0.text.lowercased() == "zorbly" })
-        XCTAssertEqual(self.predictor().learnedWords, [])
     }
 
     func testMadeUpWordsTypedTwiceAreListedButRealWordsAreNot() {
@@ -91,7 +108,8 @@ final class KeyboardLearnedWordsTests: XCTestCase {
 
     func testForgettingNothingChangesNothing() {
         let predictor = predictor()
-        predictor.learn("Zorbly")
+        predictor.learnTyped("Zorbly", after: ["a"])
+        predictor.learnTyped("Zorbly", after: ["a"])
         predictor.forget([])
         XCTAssertEqual(predictor.learnedWords, ["Zorbly"])
     }

@@ -315,7 +315,6 @@ final class KeyboardModel {
         if options.suggestionClick { UIDevice.current.playInputClick() }
         let before = textBeforeCursor
         let typed = suggestion.replaces ?? TypingContext(before: before).partialWord
-        if suggestion.learns { prediction.perform { $0.learn(suggestion.text) } }
         let reverts = revertCandidate.map { $0.original == suggestion.text && $0.replacement == typed } ?? false
         logFinishedWord(reverts ? .reverted : .tapped, as: suggestion.text, typed: typed.isEmpty ? nil : typed)
         let separator = typed.isEmpty && before.last.map { !$0.isWhitespace } == true ? " " : ""
