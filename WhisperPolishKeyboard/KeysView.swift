@@ -125,6 +125,18 @@ final class KeyGridView: UIView {
         }
     }
 
+    /// While typing, the bottom of the bar above belongs to the top row (`KeyboardModel.keysClaimBarEdge`).
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if super.point(inside: point, with: event) { return true }
+        return point.y < 0 && point.y >= -KeyboardModel.barEdgeForKeys && point.x >= 0 && point.x < bounds.width && model.keysClaimBarEdge
+    }
+
+    /// Hands a finished key press to the model, with where it landed for the typing log.
+    private func type(_ cap: KeyCapView, for tracker: Tracker) {
+        model.noteTouch(at: convert(tracker.origin, to: model.controller.view), on: cap.spec.key)
+        model.keyUp(cap.spec.key, at: tracker.landing)
+    }
+
     /// The key whose area holds the touch, gaps included; row edges belong to the end keys.
     private func cap(at point: CGPoint) -> KeyCapView? {
         guard !rows.isEmpty, bounds.width > 0, bounds.height > 0 else { return nil }
@@ -215,7 +227,7 @@ final class KeyGridView: UIView {
             case .key:
                 guard let cap = tracker.cap else { continue }
                 release(cap)
-                model.keyUp(cap.spec.key, at: tracker.landing)
+                type(cap, for: tracker)
             }
         }
     }
@@ -232,7 +244,7 @@ final class KeyGridView: UIView {
             guard let cap = tracker.cap else { continue }
             release(cap)
             if tracker.mode == .key, case .character = cap.spec.key {
-                model.keyUp(cap.spec.key, at: tracker.landing)
+                type(cap, for: tracker)
             } else {
                 model.keyCancelled(cap.spec.key)
             }
@@ -247,7 +259,7 @@ final class KeyGridView: UIView {
             tracker.holdTimer?.invalidate()
             trackers.removeValue(forKey: touch)
             release(cap)
-            model.keyUp(cap.spec.key, at: tracker.landing)
+            type(cap, for: tracker)
         }
     }
 

@@ -32,6 +32,12 @@ final class SuggestionTapView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// While typing, the bar's bottom edge is left to the keys under it (`KeyboardModel.keysClaimBarEdge`).
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard super.point(inside: point, with: event) else { return false }
+        return point.y < bounds.height - KeyboardModel.barEdgeForKeys || !model.keysClaimBarEdge
+    }
+
     private func slot(at point: CGPoint) -> Int? {
         guard slotCount > 0, bounds.insetBy(dx: -12, dy: -12).contains(point) else { return nil }
         return min(max(Int(point.x / (bounds.width / CGFloat(slotCount))), 0), slotCount - 1)
@@ -53,7 +59,7 @@ final class SuggestionTapView: UIView {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         let tapped = pressed
         release()
-        if let tapped { model.tapBarSlot(tapped) }
+        if let tapped, let point = touches.first?.location(in: model.controller.view) { model.tapBarSlot(tapped, at: point) }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {

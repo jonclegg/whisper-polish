@@ -17,6 +17,17 @@ enum TypingLog {
             case reverted
         }
 
+        /// A touch while the word was typed, at the point it landed, in points from the
+        /// keyboard's top left (the bar is the top `KeyboardView.toolbarHeight`), and
+        /// what took it: a key ("e", "space", "delete") or a bar slot ("bar 0 th").
+        struct Tap: Codable, Equatable {
+            let target: String
+            let x: Double
+            let y: Double
+            /// Since the touch before it, nil for the first one the keyboard saw.
+            let milliseconds: Int?
+        }
+
         /// What the bar showed once `typed` letters of the word were in.
         struct Bar: Codable, Equatable {
             let typed: String
@@ -36,6 +47,9 @@ enum TypingLog {
         let bars: [Bar]
         /// The longest the bar took to catch up with a keystroke in this word.
         let slowestBarMilliseconds: Int?
+        /// Every touch from the end of the word before through the one that finished this word.
+        let taps: [Tap]
+        let keyboardWidth: Double
     }
 
     /// Under Library so `devicectl device copy from --domain-type appGroupDataContainer` can read it.

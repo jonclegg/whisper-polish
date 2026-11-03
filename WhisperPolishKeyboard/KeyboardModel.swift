@@ -149,6 +149,21 @@ final class KeyboardModel {
     @ObservationIgnored private var slowestBar: CFAbsoluteTime = 0
     /// The first keystroke the bar hasn't answered yet.
     @ObservationIgnored private var unansweredKeystroke: CFAbsoluteTime?
+    @ObservationIgnored private var loggedTaps: [TypingLog.Entry.Tap] = []
+    @ObservationIgnored private var lastTap: CFAbsoluteTime?
+    /// When a key was last touched down, for `keysClaimBarEdge`.
+    @ObservationIgnored private var lastKeyTouch: CFAbsoluteTime = 0
+
+    /// While typing, the bottom of the bar belongs to the top row: a thumb reaching for
+    /// E or R lands a little high, and the bar's left slot took it as a tap on the typed
+    /// word, committing half a word and learning it.
+    static let barEdgeForKeys: CGFloat = 12
+    private static let barEdgeTypingWindow: CFTimeInterval = 0.8
+
+    /// Whether a key was touched recently enough that the bar's bottom edge goes to the keys.
+    var keysClaimBarEdge: Bool {
+        CFAbsoluteTimeGetCurrent() - lastKeyTouch < Self.barEdgeTypingWindow
+    }
 
     private func insert(_ text: String) {
         hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: documentIdentifier)
@@ -217,6 +232,7 @@ final class KeyboardModel {
     // MARK: - Keys
 
     func keyDown(_ key: Key) {
+        lastKeyTouch = CFAbsoluteTimeGetCurrent()
         switch key {
         case .delete:
             startDeleting()
@@ -277,8 +293,10 @@ final class KeyboardModel {
         layout = layoutBeforeSwitch
     }
 
-    /// A tap on the bar's `index`th slot, from `SuggestionTapView`.
-    func tapBarSlot(_ index: Int) {
+    /// A tap on the bar's `index`th slot, from `SuggestionTapView`, at `point` in the keyboard's coordinates.
+    func tapBarSlot(_ index: Int, at point: CGPoint) {
+        let shown = autofillCandidates.isEmpty ? (index < suggestions.count ? suggestions[index].text : "") : "autofill"
+        noteTouch(at: point, on: "bar \(index) \(shown)")
         if !autofillCandidates.isEmpty {
             if index < autofillCandidates.count { fill(autofillCandidates[index]) }
         } else if index < suggestions.count {
@@ -668,6 +686,33 @@ final class KeyboardModel {
 
     // MARK: - Typing log
 
+    /// A touch that typed a key or tapped the bar, at `point` in the keyboard's coordinates, while the typing log is on.
+    func noteTouch(at point: CGPoint, on key: Key) {
+        let target = switch key {
+        case .character(let character): character
+        case .shift: "shift"
+        case .delete: "delete"
+        case .space: "space"
+        case .returnKey: "return"
+        case .nextKeyboard: "next keyboard"
+        case .layout(let layout): "layout \(layout)"
+        }
+        noteTouch(at: point, on: target)
+    }
+
+    private func noteTouch(at point: CGPoint, on target: String) {
+        guard options.typingLog else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        defer { lastTap = now }
+        guard loggedTaps.count < 60 else { return }
+        loggedTaps.append(TypingLog.Entry.Tap(
+            target: target,
+            x: (point.x * 10).rounded() / 10,
+            y: (point.y * 10).rounded() / 10,
+            milliseconds: lastTap.map { Int((now - $0) * 1000) }
+        ))
+    }
+
     /// Keeps the bar for the prefix of the word being typed, while the typing log is on.
     private func recordBar(_ shown: [Suggestion], after text: String) {
         defer { unansweredKeystroke = nil }
@@ -686,6 +731,7 @@ final class KeyboardModel {
     private func logFinishedWord(_ finish: TypingLog.Entry.Finish = .typed, as word: String? = nil, typed: String? = nil) {
         defer {
             loggedBars = []
+            loggedTaps = []
             slowestBar = 0
         }
         guard options.typingLog, hasFullAccess, WritingField.holdsWriting(proxy) else { return }
@@ -699,7 +745,9 @@ final class KeyboardModel {
             finish: finish,
             typed: typed,
             bars: loggedBars,
-            slowestBarMilliseconds: loggedBars.isEmpty ? nil : Int(slowestBar * 1000)
+            slowestBarMilliseconds: loggedBars.isEmpty ? nil : Int(slowestBar * 1000),
+            taps: loggedTaps,
+            keyboardWidth: Double(controller.view.bounds.width)
         ))
     }
 

@@ -23,7 +23,12 @@ final class TypingLogTests: XCTestCase {
             finish: finish,
             typed: nil,
             bars: bars.map { TypingLog.Entry.Bar(typed: $0.0, shown: $0.1) },
-            slowestBarMilliseconds: 12
+            slowestBarMilliseconds: 12,
+            taps: [
+                TypingLog.Entry.Tap(target: "s", x: 41.5, y: 140, milliseconds: nil),
+                TypingLog.Entry.Tap(target: "bar 0 s", x: 70, y: 37.5, milliseconds: 180),
+            ],
+            keyboardWidth: 420
         )
     }
 
