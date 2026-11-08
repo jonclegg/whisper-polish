@@ -6,10 +6,10 @@ struct WhisperPolishApp: App {
     @State private var transcription = TranscriptionService()
     @State private var subscription = SubscriptionStore()
     @State private var polishModel = OnDevicePolishDownload()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         AppGroup.migrateStandardDefaults()
-        PolishLog.mirrorToDocuments()
     }
 
     var body: some Scene {
@@ -25,5 +25,8 @@ struct WhisperPolishApp: App {
             }
         }
         .modelContainer(for: Note.self)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { PolishLog.mirrorToDocuments() }
+        }
     }
 }

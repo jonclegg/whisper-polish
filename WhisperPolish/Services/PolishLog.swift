@@ -30,7 +30,7 @@ enum PolishLog {
         try? handle.close()
     }
 
-    /// Called by the app at launch.
+    /// Called by the app each time it comes to the front.
     static func mirrorToDocuments() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("polish-log.txt")
