@@ -38,6 +38,15 @@ struct LabView: View {
         let manager = FileManager.default
         let source = documents.appendingPathComponent("lab")
         try? manager.createDirectory(at: groupLab.appendingPathComponent("models"), withIntermediateDirectories: true)
+        // Deletes the lab's models and results, and any partial downloads, to give the space back.
+        if ProcessInfo.processInfo.arguments.contains("-labClean") {
+            try? manager.removeItem(at: groupLab)
+            try? manager.removeItem(at: source)
+            for name in (try? manager.contentsOfDirectory(atPath: manager.temporaryDirectory.path)) ?? [] {
+                try? manager.removeItem(at: manager.temporaryDirectory.appendingPathComponent(name))
+            }
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("-labReset") {
             try? manager.removeItem(at: groupLab.appendingPathComponent("progress.json"))
             try? manager.removeItem(at: groupLab.appendingPathComponent("results.jsonl"))
