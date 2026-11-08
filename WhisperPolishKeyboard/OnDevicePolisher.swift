@@ -63,13 +63,21 @@ enum OnDevicePolisher {
 
     /// Reads the model straight through so it's in the system's file cache before
     /// llama.cpp maps it. Mapping a file that isn't cached faults it in 16 KB at a
-    /// time, which took 12.6 s on the first load after a copy in the lab; one
-    /// sequential pass should take well under a second, and almost nothing once cached.
+    /// time, which took 12.6 s on the first load after a copy in the lab. One
+    /// reused buffer keeps the keyboard's memory flat while 800 MB passes through.
     private static func warmUp(_ url: URL) throws -> Double {
         let started = Date()
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        while let chunk = try handle.read(upToCount: 8 * 1_048_576), !chunk.isEmpty {}
+        let file = open(url.path, O_RDONLY)
+        guard file >= 0 else { throw CocoaError(.fileReadUnknown) }
+        defer { close(file) }
+        let size = 4 * 1_048_576
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16_384)
+        defer { buffer.deallocate() }
+        while true {
+            let count = read(file, buffer, size)
+            guard count >= 0 else { throw CocoaError(.fileReadUnknown) }
+            if count == 0 { break }
+        }
         return Date().timeIntervalSince(started)
     }
 }
