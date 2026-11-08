@@ -9,6 +9,7 @@ struct WhisperPolishApp: App {
 
     init() {
         AppGroup.migrateStandardDefaults()
+        PolishLog.mirrorToDocuments()
     }
 
     var body: some Scene {
