@@ -14,6 +14,7 @@ struct PolishModelCard: View {
                     .font(.subheadline.weight(.semibold))
                 Text(detail)
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 action
@@ -73,8 +74,10 @@ struct PolishModelRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
                 Text(detail)
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -116,8 +119,9 @@ struct PolishModelRing: View {
     let state: OnDevicePolishDownload.State
     let size: CGFloat
 
+    /// Whole megabytes, so the text doesn't change width with every chunk.
     static func megabytes(_ fraction: Double) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(fraction * Double(OnDevicePolishModel.byteCount)), countStyle: .file)
+        "\(Int(fraction * Double(OnDevicePolishModel.byteCount) / 1_000_000)) MB"
     }
 
     var body: some View {

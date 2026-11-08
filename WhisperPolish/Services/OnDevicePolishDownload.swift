@@ -16,7 +16,7 @@ final class OnDevicePolishDownload: NSObject {
     private(set) var state: State = OnDevicePolishModel.isInstalled ? .installed : .notDownloaded
     @ObservationIgnored private var task: URLSessionDownloadTask?
 
-    static let sizeText = ByteCountFormatter.string(fromByteCount: Int64(OnDevicePolishModel.byteCount), countStyle: .file)
+    static let sizeText = "\(Int((Double(OnDevicePolishModel.byteCount) / 1_000_000).rounded())) MB"
 
     func start() {
         switch state {
