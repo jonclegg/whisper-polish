@@ -10,8 +10,7 @@ import Foundation
 /// already present). Bonus: because we own the transfer, we get a byte-accurate
 /// progress fraction, which FluidAudio's file-count progress can't give us.
 enum ModelMirror {
-    /// CloudFront distribution fronting the S3 model bucket.
-    static let baseURL = URL(string: "https://d36t08oi3ecji2.cloudfront.net")!
+    static let baseURL = ModelHost.baseURL
 
     struct Manifest: Decodable {
         struct File: Decodable {

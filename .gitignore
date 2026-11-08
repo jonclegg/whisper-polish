@@ -10,3 +10,7 @@ backend/dist/
 backend/.env
 deploy/.env
 Config/DevKeys.xcconfig
+scripts/on-device-polish/.venv/
+Packages/LlamaCpp/llama.xcframework/
+scripts/on-device-polish/data/
+scripts/on-device-polish/apple/polish_apple

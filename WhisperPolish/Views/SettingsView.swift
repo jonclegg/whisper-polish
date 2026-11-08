@@ -141,6 +141,7 @@ struct SettingsView: View {
                 }
 
                 Section("Keyboard") {
+                    PolishModelRow()
                     NavigationLink {
                         AutofillProfileView()
                     } label: {

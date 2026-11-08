@@ -89,6 +89,10 @@ final class KeyboardViewController: UIInputViewController {
             ancestor = current.superview
         }
         view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+        // EXPERIMENT: run the on-device polish lab when the app has left a plan.
+        if hasFullAccess {
+            OnDeviceLab.resume(host: view) { [weak self] in self?.model.showLabReport($0) }
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {

@@ -3,6 +3,7 @@ import SwiftData
 
 struct NotesListView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(OnDevicePolishDownload.self) private var polishModel
     @Environment(\.modelContext) private var modelContext
     @Environment(TranscriptionService.self) private var transcription
     @Query(sort: \Note.createdAt, order: .reverse) private var notes: [Note]
@@ -57,6 +58,9 @@ struct NotesListView: View {
                     }
                     if showModelBanner {
                         modelBanner
+                    }
+                    if polishModel.state != .installed {
+                        PolishModelCard()
                     }
                     if notes.isEmpty {
                         emptyState

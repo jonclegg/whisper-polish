@@ -25,6 +25,8 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
     exactVersion: 0.18.0
+  LlamaCpp:
+    path: Packages/LlamaCpp
 targets:
   WhisperPolish:
     type: application
@@ -67,6 +69,9 @@ targets:
       - package: FluidAudio
       - package: WhisperKit
       - target: WhisperPolishKeyboard
+      # The keyboard loads llama.cpp from the app's Frameworks.
+      - package: LlamaCpp
+        product: llama
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -109,13 +114,15 @@ targets:
       - WhisperPolish/Models/CloudAccess.swift
       - WhisperPolish/Models/PolishModel.swift
       - WhisperPolish/Models/PolishStyle.swift
+      - WhisperPolish/Models/OnDevicePolishModel.swift
       - WhisperPolish/Models/AutofillProfile.swift
       - WhisperPolish/Models/AutofillSession.swift
       - WhisperPolish/Models/LearnedWords.swift
       - WhisperPolish/Models/KeyboardOptions.swift
-      - WhisperPolish/Services/CloudPolishService.swift
-      - WhisperPolish/Services/PolishService.swift
-      - WhisperPolish/Services/Polisher.swift
+    dependencies:
+      - package: LlamaCpp
+        product: llama
+        embed: false
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

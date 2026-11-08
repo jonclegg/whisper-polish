@@ -5,6 +5,7 @@ import SwiftData
 struct WhisperPolishApp: App {
     @State private var transcription = TranscriptionService()
     @State private var subscription = SubscriptionStore()
+    @State private var polishModel = OnDevicePolishDownload()
 
     init() {
         AppGroup.migrateStandardDefaults()
@@ -12,10 +13,15 @@ struct WhisperPolishApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NotesListView()
-                .environment(transcription)
-                .environment(subscription)
-                .tint(.polishTeal)
+            if ProcessInfo.processInfo.arguments.contains("-lab") {
+                LabView()
+            } else {
+                NotesListView()
+                    .environment(transcription)
+                    .environment(subscription)
+                    .environment(polishModel)
+                    .tint(.polishTeal)
+            }
         }
         .modelContainer(for: Note.self)
     }

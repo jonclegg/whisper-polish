@@ -793,7 +793,6 @@ final class KeyboardModel {
         guard hasFullAccess else { return show(.message(Self.fullAccessMessage)) }
         guard notice != .polishing else { return }
         isPickingStyle = false
-        let jws = AppGroup.defaults.string(forKey: SettingsKeys.cloudEntitlementJWS)
         let style = selectedStyle
         AppGroup.defaults.set(style.id, forKey: SettingsKeys.defaultStyle)
         forgetLocalEdits()
@@ -808,16 +807,16 @@ final class KeyboardModel {
                     show(.message("Type or select some text to polish."))
                     return
                 }
-                let result = try await Polisher.polish(text: text, style: style, transactionJWS: jws).result
+                let polished = try await OnDevicePolisher.polish(text: text, style: style)
                 try Task.checkCancellation()
                 // Without a selection the reader left the cursor at the end of the field.
                 if selected.isEmpty {
-                    try reader.replace(text, with: result.text)
+                    try reader.replace(text, with: polished)
                 } else {
-                    proxy.insertText(result.text)
+                    proxy.insertText(polished)
                 }
                 forgetLocalEdits()
-                undo = (text, result.text)
+                undo = (text, polished)
                 show(.polished)
                 syncWithDocument()
             } catch is CancellationError {
@@ -890,6 +889,11 @@ final class KeyboardModel {
     }
 
     // MARK: - Notices
+
+    /// EXPERIMENT: progress from the on-device polish lab.
+    func showLabReport(_ text: String) {
+        show(.message(text))
+    }
 
     private func show(_ newNotice: Notice) {
         noticeTask?.cancel()
