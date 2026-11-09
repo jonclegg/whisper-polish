@@ -42,11 +42,13 @@ final class OnDevicePolishDownload: NSObject {
             throw ModelMirror.MirrorError.sizeMismatch(
                 path: OnDevicePolishModel.fileName, expected: OnDevicePolishModel.byteCount, got: size ?? 0)
         }
+        // Clearing the folder also deletes an older model this one replaces.
         let destination = OnDevicePolishModel.fileURL
-        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
+        let folder = destination.deletingLastPathComponent()
+        if FileManager.default.fileExists(atPath: folder.path) {
+            try FileManager.default.removeItem(at: folder)
         }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FileManager.default.moveItem(at: location, to: destination)
     }
 }
