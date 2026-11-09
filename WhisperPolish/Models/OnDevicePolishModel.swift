@@ -1,10 +1,10 @@
 import Foundation
 
-/// The small polish model the keyboard runs on the phone: Qwen3.5-0.8B tuned (round three, on fact-checked examples) on
+/// The small polish model the keyboard runs on the phone: Qwen3.5-0.8B tuned (round three, on fact-checked examples, then preference-trained away from its own invented details) on
 /// dictated and phone-typed notes. The app downloads it into the App Group once,
 /// and the keyboard memory-maps it from there.
 enum OnDevicePolishModel {
-    static let fileName = "qwen3.5-0.8b-r3-Q8_0.gguf"
+    static let fileName = "qwen3.5-0.8b-r3dpo-Q8_0.gguf"
     static let byteCount = 811_843_232
     static let remoteURL = ModelHost.baseURL.appendingPathComponent("polish/\(fileName)")
 
