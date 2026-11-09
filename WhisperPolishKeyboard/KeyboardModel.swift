@@ -66,7 +66,7 @@ final class KeyboardModel {
     @ObservationIgnored private var polishTask: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var deleteRepeatTask: Task<Void, Never>?
-    @ObservationIgnored private var undo: (original: String, polished: String)?
+    @ObservationIgnored private var undo: (original: String, polished: String, id: UUID)?
     @ObservationIgnored private var lastShiftTap = Date.distantPast
     @ObservationIgnored private var isShiftHeld = false
     @ObservationIgnored private var typedWhileShiftHeld = false
@@ -807,8 +807,12 @@ final class KeyboardModel {
                     show(.message("Type or select some text to polish."))
                     return
                 }
+                let started = Date()
                 let polished = try await OnDevicePolisher.polish(text: text, style: style)
                 try Task.checkCancellation()
+                let id = UUID()
+                PolishHistory.recordPolish(id: id, input: text, style: style, output: polished,
+                                           seconds: Date().timeIntervalSince(started))
                 // Without a selection the reader left the cursor at the end of the field.
                 if selected.isEmpty {
                     try reader.replace(text, with: polished)
@@ -816,7 +820,7 @@ final class KeyboardModel {
                     proxy.insertText(polished)
                 }
                 forgetLocalEdits()
-                undo = (text, polished)
+                undo = (text, polished, id)
                 show(.polished)
                 syncWithDocument()
             } catch is CancellationError {
@@ -831,6 +835,7 @@ final class KeyboardModel {
 
     func undoPolish() {
         guard let undo else { return }
+        PolishHistory.recordUndo(id: undo.id)
         for _ in 0..<undo.polished.count { proxy.deleteBackward() }
         proxy.insertText(undo.original)
         forgetLocalEdits()
