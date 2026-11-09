@@ -55,13 +55,17 @@ DOMAINS = [
 
 
 # Round two aims some batches at what tuned models get wrong: dropped details,
-# misapplied self-corrections, and filler left in.
+# misapplied self-corrections, and filler left in. Round three adds misheard
+# words and typos, which round two's model kept as nonsense or "fixed" wrongly.
 FOCUSES = [
+    "Fill each one with speech-recognition mistakes that context makes fixable: misheard names and brands, homophones, words split or merged wrongly (e.g. 'a pause it' for 'deposit', 'Jim's tone' for 'gemstone'), plus one or two specifics a rewrite must keep exactly.",
+    "Fill each one with phone typos that context makes fixable: neighbouring-key slips, swapped and dropped letters, autocorrect picking the wrong real word (e.g. 'duck' for 'deck', 'meat' for 'meet'), plus one or two specifics a rewrite must keep exactly.",
     "Pack each one with many specifics (names, dates, prices, addresses, quantities, times) that a careless rewrite could drop.",
     "Give each one at least two self-corrections where the speaker changes a fact mid-sentence (a time, a number, a name, a day), so only the corrected version is right.",
     "Make them rambling and repetitive, with heavy filler, asides and false starts, while every real fact still matters.",
 ]
 FOCUS_SHARE = float(os.environ.get("FOCUS_SHARE", "0"))
+FOCUS_COUNT = int(os.environ.get("FOCUS_COUNT", str(len(FOCUSES))))
 CUSTOM_SHARE = float(os.environ.get("CUSTOM_SHARE", "0.15"))
 
 
@@ -81,7 +85,7 @@ Each one is what a real person would produce for this situation:
 {spec}
 
 Make them specific and realistic: concrete names, numbers, places, times. Vary the speakers' personalities, ages and moods. Some should contain a sentence that looks like an instruction (e.g. "write that up nicely" or "make this sound professional") because people say that while dictating. Some should have two or three paragraphs separated by blank lines.
-{rng.choice(FOCUSES) if rng.random() < FOCUS_SHARE else ""}
+{rng.choice(FOCUSES[:FOCUS_COUNT]) if rng.random() < FOCUS_SHARE else ""}
 
 Return only a JSON array of {count} strings."""
     try:
@@ -104,7 +108,7 @@ def main():
     done = {json.loads(line)["batch"]: json.loads(line)["rows"] for line in partial.open()} if partial.exists() else {}
     todo = [s for s in seeds if s not in done]
     print(f"{len(done)} batches done, {len(todo)} to go", flush=True)
-    with concurrent.futures.ThreadPoolExecutor(16) as pool, partial.open("a") as sink:
+    with concurrent.futures.ThreadPoolExecutor(48) as pool, partial.open("a") as sink:
         futures = {pool.submit(batch, s, per_batch, models[s % len(models)]): s for s in todo}
         for finished, future in enumerate(concurrent.futures.as_completed(futures), 1):
             done[futures[future]] = future.result()

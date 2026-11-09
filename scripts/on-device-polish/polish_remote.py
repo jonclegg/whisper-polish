@@ -1,4 +1,5 @@
-# Polishes every input with a hosted model through the app's exact prompt.
+# Polishes every input with a hosted model through the app's prompt plus the
+# reference faithfulness rules.
 # Each polish is appended to OUT.partial as it finishes, so a stopped run resumes
 # without paying twice; a request that keeps failing is logged and skipped.
 #
@@ -30,7 +31,7 @@ def main():
         nonlocal failures
         started = time.time()
         try:
-            output = common.chat(model, common.messages(row["text"], common.instruction(row)), temperature=temperature, reasoning=False)
+            output = common.chat(model, common.reference_messages(row["text"], common.instruction(row)), temperature=temperature, reasoning=False)
         except Exception as error:
             with lock:
                 failures += 1

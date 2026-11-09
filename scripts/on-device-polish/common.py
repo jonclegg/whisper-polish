@@ -50,6 +50,22 @@ Rules:
 {instruction}"""
 
 
+# Added to the app's prompt when making training references: round two's
+# references invented details on garbled input, and the small model copied that.
+REFERENCE_RULES = """
+Faithfulness:
+- The input came from speech recognition or fast phone typing, so some words are wrong. Where context makes the intended word clear, write the intended word. Where a fragment is too garbled to understand, leave it out. Never guess at what it meant or fill the gap with something plausible.
+- Add nothing: no new facts, opinions, events, status lines or closing sentences. If the input breaks off mid-thought, end where it ends.
+- Keep every name, number, price, date and time exactly as given."""
+
+
+def reference_messages(text, instruction):
+    return [
+        {"role": "system", "content": system_prompt(instruction) + "\n" + REFERENCE_RULES},
+        {"role": "user", "content": user_message(text)},
+    ]
+
+
 def user_message(text):
     return f"<transcript>\n{text}\n</transcript>"
 
