@@ -5,7 +5,6 @@ struct Suggestion: Hashable {
     let text: String
     var isQuoted = false
     var isAutocorrection = false
-    var learns = false
     /// The text before the cursor a tap replaces when it's more than the word being typed,
     /// like the ":)" or "thumbs up" an emoji stands for.
     var replaces: String?
@@ -22,7 +21,8 @@ final class Predictor: @unchecked Sendable {
 
     typealias Autocorrection = (original: String, replacement: String)
 
-    private static let learnedKey = "KeyboardLearnedWords"
+    /// Where keyboards before build 76 kept words tapped on the bar, which were learned on one tap.
+    private static let legacyLearnedKey = "KeyboardLearnedWords"
     private static let language = "en_US"
 
     /// How much next-word odds lean on what you've typed over the word model once
@@ -40,11 +40,11 @@ final class Predictor: @unchecked Sendable {
     private var lexicon: Lexicon?
     private var wordModel: WordModel?
     private var personal = PersonalModel()
-    private var learned: [String: String]
     private var names: [String: String] = [:]
     private var replacements: [String: String] = [:]
     private var spellCheckedWords: [String: Bool] = [:]
     private var slipsChecked: [String: Bool] = [:]
+    private var startsChecked: [String: Bool] = [:]
     private var decoder: WordDecoder?
     var decoderSettings = WordDecoder.Settings() {
         didSet { decoder?.settings = decoderSettings }
@@ -69,11 +69,6 @@ final class Predictor: @unchecked Sendable {
     /// Words the last call fed the word model: none or one while typing, the whole history after a jump.
     private(set) var lastModelSteps = 0
 
-    init() {
-        let words = UserDefaults.standard.stringArray(forKey: Self.learnedKey) ?? []
-        learned = Dictionary(words.map { ($0.lowercased(), $0) }) { _, latest in latest }
-    }
-
     /// `personal` is what was learned from your typing in earlier sessions. `decoder`
     /// reads only the lexicon and the word model, so it's built once per process.
     func setLexicon(_ lexicon: Lexicon, wordModel: WordModel, decoder: WordDecoder, personal: PersonalModel = PersonalModel()) {
@@ -86,6 +81,7 @@ final class Predictor: @unchecked Sendable {
         self.personal.addNames(Array(names.values))
         apostropheForms = wordModel.apostropheForms
         rebuildVocabulary()
+        adoptLegacyLearnedWords()
     }
 
     var isLoaded: Bool { wordModel != nil }
@@ -97,28 +93,34 @@ final class Predictor: @unchecked Sendable {
         vocabulary = wordModel.ids
         vocabularyWords = wordModel.words
         sortedVocabulary = wordModel.sortedWords
-        addToVocabulary(Array(learned.keys) + Array(names.keys) + personal.typed.keys.filter(isLearnedTyped))
+        addToVocabulary(Array(names.keys) + personal.typed.keys.filter(isLearnedTyped))
     }
 
-    /// Words the keyboard added to its dictionary on its own: ones you kept from
-    /// the bar, and made-up words you typed often enough. Not real words or names.
+    /// Words the keyboard added to its dictionary on its own: made-up words you typed,
+    /// or kept from the bar, often enough. Not real words or names.
     var learnedWords: [String] {
         guard let wordModel, let lexicon else { return [] }
-        let typed = personal.typed.keys.filter {
-            isLearnedTyped($0) && wordModel.ids[$0] == nil && !lexicon.isWord($0) && learned[$0] == nil
-        }
-        return Array(learned.values) + typed.filter { names[$0] == nil }
+        return personal.typed.keys
+            .filter { isLearnedTyped($0) && wordModel.ids[$0] == nil && !lexicon.isWord($0) && names[$0] == nil }
+            .map { personal.writtenForm(of: $0) ?? $0 }
+    }
+
+    /// Words tapped on the bar used to be learned on one tap, so half-typed words a stray
+    /// tap committed ("th", "perfo") were learned too. The ones that pass the rules for a
+    /// word of your own count as typed enough to learn, and the old list goes.
+    private func adoptLegacyLearnedWords() {
+        guard let words = UserDefaults.standard.stringArray(forKey: Self.legacyLearnedKey) else { return }
+        let kept = words.filter { couldBeOwnWord($0.lowercased()) }
+        for word in kept { personal.adopt(word) }
+        addToVocabulary(kept.filter(isLearnedTyped))
+        UserDefaults.standard.removeObject(forKey: Self.legacyLearnedKey)
     }
 
     /// Forgets words you removed in the app. Needs earlier sessions' learning loaded, or it would come back.
     func forget(_ words: [String]) {
         precondition(isLoaded, "Forgetting before the personal model loads would be undone when it does")
         guard !words.isEmpty else { return }
-        for word in words {
-            learned[word.lowercased()] = nil
-            personal.forget(word)
-        }
-        UserDefaults.standard.set(Array(learned.values), forKey: Self.learnedKey)
+        for word in words { personal.forget(word) }
         rebuildVocabulary()
     }
 
@@ -142,12 +144,6 @@ final class Predictor: @unchecked Sendable {
         cachedOdds = nil
     }
 
-    func learn(_ word: String) {
-        learned[word.lowercased()] = word
-        UserDefaults.standard.set(Array(learned.values), forKey: Self.learnedKey)
-        addToVocabulary([word])
-    }
-
     /// Counts `word` as typed after the sentence so far; words you keep typing become suggestions.
     /// Nothing is learned until earlier sessions' learning has loaded.
     func learnTyped(_ word: String, after previous: [String]) {
@@ -166,12 +162,35 @@ final class Predictor: @unchecked Sendable {
     /// Words this common are the ones a slip would most likely have been meant as.
     private static let commonRank = 10_000
 
-    /// Whether you've typed `word` often enough for the keyboard to take it as a word.
+    /// Words shorter than this are never learned: they were nearly all a word cut short ("th", "fo").
+    static let shortestLearnedWord = 3
+
+    /// Whether you've typed `word`, or kept it from the bar, often enough for the keyboard to take it as a word.
     private func isLearnedTyped(_ word: String) -> Bool {
         let lower = word.lowercased()
         let times = personal.typed[lower, default: 0]
-        guard times >= PersonalModel.timesToLearn else { return false }
+        guard times >= PersonalModel.timesToLearn, couldBeOwnWord(lower) else { return false }
         return times >= Self.timesToLearnSlip || !isSlipOfCommonWord(lower)
+    }
+
+    /// Whether `word` (lowercased) could be a word of your own rather than a common one cut
+    /// short: long enough, and not the start of a common word ("perfo", "fac").
+    private func couldBeOwnWord(_ word: String) -> Bool {
+        guard word.count >= Self.shortestLearnedWord else { return false }
+        return !isStartOfCommonWord(word)
+    }
+
+    private func isStartOfCommonWord(_ word: String) -> Bool {
+        if let known = startsChecked[word] { return known }
+        guard let lexicon, !lexicon.isWord(word) else { return false }
+        let prefix = Array(word.utf8)
+        let isStart = prefixMatches(of: prefix).contains { index in
+            let entry = sortedVocabulary[index]
+            guard entry.bytes.count > prefix.count, let rank = lexicon.rank(ofLowercased: entry.bytes) else { return false }
+            return rank < Self.commonRank && Lexicon.isWord(entry.bytes, rank: rank)
+        }
+        startsChecked[word] = isStart
+        return isStart
     }
 
     /// Whether one dropped, added, swapped, or wrong letter makes `word` (lowercased) a common word.
@@ -280,7 +299,7 @@ final class Predictor: @unchecked Sendable {
         var decoded: [WordDecoder.Candidate] = []
         var nearMisses: [WordDecoder.Prefix] = []
         if let revert, revert.replacement == typed {
-            suggestions = [Suggestion(text: revert.original, isQuoted: true, learns: true), Suggestion(text: typed)]
+            suggestions = [Suggestion(text: revert.original, isQuoted: true), Suggestion(text: typed)]
         } else {
             let known = isKnown(typed)
             // A known word is only decoded to check it for a slip, which autocorrect being off rules out.
@@ -288,7 +307,7 @@ final class Predictor: @unchecked Sendable {
                 (decoded, nearMisses) = decode(typed, touches: touches, odds: odds, lexicon: lexicon)
             }
             correction = allowsCorrection ? self.correction(for: typed, isKnown: known, decoded: decoded, touches: touches, odds: odds) : nil
-            suggestions = [Suggestion(text: typed, isQuoted: !known, learns: !known)]
+            suggestions = [Suggestion(text: typed, isQuoted: !known)]
             if let correction {
                 suggestions.append(Suggestion(text: correction, isAutocorrection: true))
             }
@@ -456,7 +475,6 @@ final class Predictor: @unchecked Sendable {
     func written(_ word: String, after previous: String?) -> String {
         if let previous, let named = lexicon?.capitalizedForm(of: word, after: previous) { return named }
         if let written = personal.writtenForm(of: word) { return written }
-        if let learned = learned[word] { return learned }
         let listed = lexicon?.displayForm(of: word)
         if let name = names[word], listed == nil || listed != word { return name }
         return listed ?? word
@@ -464,7 +482,7 @@ final class Predictor: @unchecked Sendable {
 
     private func isKnown(_ word: String) -> Bool {
         let lower = word.lowercased()
-        if learned[lower] != nil || names[lower] != nil || isLearnedTyped(lower) || lexicon?.isWord(lower) == true { return true }
+        if names[lower] != nil || isLearnedTyped(lower) || lexicon?.isWord(lower) == true { return true }
         // The spell checker takes any letter on its own for a word.
         if lower.count == 1 { return false }
         if let known = spellCheckedWords[lower] { return known }
@@ -479,7 +497,7 @@ final class Predictor: @unchecked Sendable {
         let lower = typed.lowercased()
         if let replacement = replacements[lower] { return replacement }
         // Typed without its apostrophe: "youve" is "you've", and "ill" is "I'll" when the sentence says so.
-        if let form = apostropheForms[lower], learned[lower] == nil, let formId = vocabulary[form],
+        if let form = apostropheForms[lower], !isLearnedTyped(lower), let formId = vocabulary[form],
            !isKnown || odds[formId] > decoderSettings.apostropheOddsRatio * (vocabulary[lower].map { odds[$0] } ?? 0) {
             return Self.matchingCase(of: typed, lexicon?.displayForm(of: form) ?? form)
         }
@@ -489,7 +507,7 @@ final class Predictor: @unchecked Sendable {
               !typed.dropFirst().contains(where: \.isUppercase) else { return nil }
         guard isKnown else { return decoded.first.map { Self.matchingCase(of: typed, $0.word) } }
         // Words only the spell checker knows ("inly", "sas") are fixed when a word clearly fits better.
-        if let lexicon, !lexicon.isWord(lower), learned[lower] == nil, names[lower] == nil, !isLearnedTyped(lower) {
+        if let lexicon, !lexicon.isWord(lower), names[lower] == nil, !isLearnedTyped(lower) {
             guard let best = decoded.first,
                   let spatial = decoder!.spatialScore(typed: typed, touches: touches.count == typed.count ? touches : Array(repeating: nil, count: typed.count)),
                   best.score - (spatial + decoderSettings.oddsWeight * decoderSettings.spellCheckedLogOdds) > decoderSettings.realWordMargin else { return nil }

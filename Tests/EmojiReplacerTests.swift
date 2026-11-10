@@ -129,15 +129,15 @@ final class EmojiReplacerTests: XCTestCase {
     }
 
     func testTheBarShowsASwappedShortcutAsTheAutocorrection() {
-        let bar = [Suggestion(text: "thx", isQuoted: true, learns: true), Suggestion(text: "the", isAutocorrection: true), Suggestion(text: "then")]
+        let bar = [Suggestion(text: "thx", isQuoted: true), Suggestion(text: "the", isAutocorrection: true), Suggestion(text: "then")]
         XCTAssertEqual(
             EmojiReplacer.bar(bar, before: "ok thx", partialWord: "thx", swapsShortcuts: true),
-            [Suggestion(text: "thx", isQuoted: true, learns: true), Suggestion(text: "🙏", isAutocorrection: true, replaces: "thx"), Suggestion(text: "then")]
+            [Suggestion(text: "thx", isQuoted: true), Suggestion(text: "🙏", isAutocorrection: true, replaces: "thx"), Suggestion(text: "then")]
         )
         // With swapping off it's only offered, and autocorrect keeps its say.
         XCTAssertEqual(
             EmojiReplacer.bar(bar, before: "ok thx", partialWord: "thx", swapsShortcuts: false),
-            [Suggestion(text: "thx", isQuoted: true, learns: true), Suggestion(text: "the", isAutocorrection: true), Suggestion(text: "🙏", replaces: "thx")]
+            [Suggestion(text: "thx", isQuoted: true), Suggestion(text: "the", isAutocorrection: true), Suggestion(text: "🙏", replaces: "thx")]
         )
     }
 

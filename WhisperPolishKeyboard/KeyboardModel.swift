@@ -144,6 +144,26 @@ final class KeyboardModel {
     @ObservationIgnored private var emoji = EmojiReplacer()
     /// The field the held words were typed in.
     @ObservationIgnored private var keptWordsDocument: UUID?
+    /// The bars shown for the word being typed, and the longest one took, for `TypingLog`.
+    @ObservationIgnored private var loggedBars: [TypingLog.Entry.Bar] = []
+    @ObservationIgnored private var slowestBar: CFAbsoluteTime = 0
+    /// The first keystroke the bar hasn't answered yet.
+    @ObservationIgnored private var unansweredKeystroke: CFAbsoluteTime?
+    @ObservationIgnored private var loggedTaps: [TypingLog.Entry.Tap] = []
+    @ObservationIgnored private var lastTap: CFAbsoluteTime?
+    /// When a key was last touched down, for `keysClaimBarEdge`.
+    @ObservationIgnored private var lastKeyTouch: CFAbsoluteTime = 0
+
+    /// While typing, the bottom of the bar belongs to the top row: a thumb reaching for
+    /// E or R lands a little high, and the bar's left slot took it as a tap on the typed
+    /// word, committing half a word and learning it.
+    static let barEdgeForKeys: CGFloat = 12
+    private static let barEdgeTypingWindow: CFTimeInterval = 0.8
+
+    /// Whether a key was touched recently enough that the bar's bottom edge goes to the keys.
+    var keysClaimBarEdge: Bool {
+        CFAbsoluteTimeGetCurrent() - lastKeyTouch < Self.barEdgeTypingWindow
+    }
 
     private func insert(_ text: String) {
         hostText.willInsert(text, reported: proxy.documentContextBeforeInput, after: proxy.documentContextAfterInput, document: documentIdentifier)
@@ -181,6 +201,7 @@ final class KeyboardModel {
         layout = proxy.keyboardType == .numbersAndPunctuation ? .numbers : .letters
         isPickingStyle = false
         letterTouches = []
+        loggedBars = []
         forgetLocalEdits()
         resetTypingState()
         profile = hasFullAccess ? AutofillProfile.load() : .empty
@@ -211,6 +232,7 @@ final class KeyboardModel {
     // MARK: - Keys
 
     func keyDown(_ key: Key) {
+        lastKeyTouch = CFAbsoluteTimeGetCurrent()
         switch key {
         case .delete:
             startDeleting()
@@ -271,8 +293,10 @@ final class KeyboardModel {
         layout = layoutBeforeSwitch
     }
 
-    /// A tap on the bar's `index`th slot, from `SuggestionTapView`.
-    func tapBarSlot(_ index: Int) {
+    /// A tap on the bar's `index`th slot, from `SuggestionTapView`, at `point` in the keyboard's coordinates.
+    func tapBarSlot(_ index: Int, at point: CGPoint) {
+        let shown = autofillCandidates.isEmpty ? (index < suggestions.count ? suggestions[index].text : "") : "autofill"
+        noteTouch(at: point, on: "bar \(index) \(shown)")
         if !autofillCandidates.isEmpty {
             if index < autofillCandidates.count { fill(autofillCandidates[index]) }
         } else if index < suggestions.count {
@@ -291,7 +315,8 @@ final class KeyboardModel {
         if options.suggestionClick { UIDevice.current.playInputClick() }
         let before = textBeforeCursor
         let typed = suggestion.replaces ?? TypingContext(before: before).partialWord
-        if suggestion.learns { prediction.perform { $0.learn(suggestion.text) } }
+        let reverts = revertCandidate.map { $0.original == suggestion.text && $0.replacement == typed } ?? false
+        logFinishedWord(reverts ? .reverted : .tapped, as: suggestion.text, typed: typed.isEmpty ? nil : typed)
         let separator = typed.isEmpty && before.last.map { !$0.isWhitespace } == true ? " " : ""
         // The word and the space after it reach the host as one edit.
         replace(typed, with: separator + suggestion.text + " ")
@@ -316,6 +341,7 @@ final class KeyboardModel {
         floatingCursor!.end()
         floatingCursor = nil
         letterTouches = []
+        loggedBars = []
         forgetLocalEdits()
         resetTypingState()
         syncWithDocument()
@@ -338,7 +364,8 @@ final class KeyboardModel {
                 return
             }
             swap = swapShortcut()
-            if swap == nil { applyPendingCorrection() }
+            let correction = swap == nil ? applyPendingCorrection() : nil
+            logFinishedWord(after: correction)
             learnFinishedWord()
         }
         insert(text)
@@ -366,6 +393,7 @@ final class KeyboardModel {
         } else {
             swap = swapShortcut()
             if swap == nil { correction = applyPendingCorrection() }
+            logFinishedWord(after: correction)
             learnFinishedWord()
             insert(" ")
         }
@@ -377,7 +405,7 @@ final class KeyboardModel {
 
     private func typeReturn() {
         guard returnKey.isEnabled else { return }
-        applyPendingCorrection()
+        logFinishedWord(after: applyPendingCorrection())
         learnFinishedWord()
         insert("\n")
         learnKeptWords()
@@ -544,6 +572,7 @@ final class KeyboardModel {
     // MARK: - Typing state
 
     private func didType() {
+        if unansweredKeystroke == nil { unansweredKeystroke = CFAbsoluteTimeGetCurrent() }
         dismissPasteOffer()
         polishTask?.cancel()
         undo = nil
@@ -651,6 +680,79 @@ final class KeyboardModel {
             : result.suggestions
         if suggestions != shown { suggestions = shown }
         latestCorrection = (number, result.correction)
+        recordBar(shown, after: text)
+    }
+
+    // MARK: - Typing log
+
+    /// A touch that typed a key or tapped the bar, at `point` in the keyboard's coordinates, while the typing log is on.
+    func noteTouch(at point: CGPoint, on key: Key) {
+        let target = switch key {
+        case .character(let character): character
+        case .shift: "shift"
+        case .delete: "delete"
+        case .space: "space"
+        case .returnKey: "return"
+        case .nextKeyboard: "next keyboard"
+        case .layout(let layout): "layout \(layout)"
+        }
+        noteTouch(at: point, on: target)
+    }
+
+    private func noteTouch(at point: CGPoint, on target: String) {
+        guard options.typingLog else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        defer { lastTap = now }
+        guard loggedTaps.count < 60 else { return }
+        loggedTaps.append(TypingLog.Entry.Tap(
+            target: target,
+            x: (point.x * 10).rounded() / 10,
+            y: (point.y * 10).rounded() / 10,
+            milliseconds: lastTap.map { Int((now - $0) * 1000) }
+        ))
+    }
+
+    /// Keeps the bar for the prefix of the word being typed, while the typing log is on.
+    private func recordBar(_ shown: [Suggestion], after text: String) {
+        defer { unansweredKeystroke = nil }
+        // An answer for text since typed past belongs to the word before.
+        guard options.typingLog, text == predictionText else { return }
+        if let unansweredKeystroke { slowestBar = max(slowestBar, CFAbsoluteTimeGetCurrent() - unansweredKeystroke) }
+        let bar = TypingLog.Entry.Bar(typed: TypingContext(before: text).partialWord, shown: shown.map(\.text))
+        if loggedBars.last?.typed == bar.typed {
+            loggedBars[loggedBars.count - 1] = bar
+        } else if loggedBars.count < 40 {
+            loggedBars.append(bar)
+        }
+    }
+
+    /// The word before the cursor is finished; `as` is what replaces it when that's a tapped suggestion.
+    private func logFinishedWord(_ finish: TypingLog.Entry.Finish = .typed, as word: String? = nil, typed: String? = nil) {
+        defer {
+            loggedBars = []
+            loggedTaps = []
+            slowestBar = 0
+        }
+        guard options.typingLog, hasFullAccess, WritingField.holdsWriting(proxy) else { return }
+        let text = predictionText
+        let partial = TypingContext(before: text).partialWord
+        guard let word = word ?? (partial.isEmpty ? nil : partial) else { return }
+        TypingLog.append(TypingLog.Entry(
+            date: Date(),
+            before: String(text.dropLast(partial.count).suffix(TypingLog.contextCharacters)),
+            word: word,
+            finish: finish,
+            typed: typed,
+            bars: loggedBars,
+            slowestBarMilliseconds: loggedBars.isEmpty ? nil : Int(slowestBar * 1000),
+            taps: loggedTaps,
+            keyboardWidth: Double(controller.view.bounds.width)
+        ))
+    }
+
+    /// A word finished by space, punctuation, or return, which autocorrect may have just replaced.
+    private func logFinishedWord(after correction: Predictor.Autocorrection?) {
+        logFinishedWord(correction == nil ? .typed : .autocorrected, typed: correction?.original)
     }
 
     /// Touch points for `word`, or nil for letters that weren't typed on these keys just now.

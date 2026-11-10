@@ -48,7 +48,7 @@ final class KeyboardPredictorTests: XCTestCase {
 
     func testOffersTheTypedWordThenTheCorrection() {
         let suggestions = result("wjat").suggestions
-        XCTAssertEqual(suggestions.first, Suggestion(text: "wjat", isQuoted: true, learns: true))
+        XCTAssertEqual(suggestions.first, Suggestion(text: "wjat", isQuoted: true))
         XCTAssertEqual(suggestions.dropFirst().first, Suggestion(text: "what", isAutocorrection: true))
     }
 

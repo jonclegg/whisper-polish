@@ -120,6 +120,7 @@ targets:
       - WhisperPolish/Models/AutofillSession.swift
       - WhisperPolish/Models/LearnedWords.swift
       - WhisperPolish/Models/KeyboardOptions.swift
+      - WhisperPolish/Models/TypingLog.swift
     dependencies:
       - package: LlamaCpp
         product: llama

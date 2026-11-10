@@ -69,6 +69,17 @@ struct PersonalModel: Codable {
         }
     }
 
+    /// Counts `word`, written that way, as typed often enough to learn, with no sentence to go with it.
+    mutating func adopt(_ word: String) {
+        let lower = word.lowercased()
+        typed[lower] = max(typed[lower, default: 0], Self.timesToLearn)
+        guard word.first?.isUppercase == true else { return }
+        capitalVotes = capitalVotes ?? [:]
+        capitalVotes![lower] = max(capitalVotes![lower, default: 0], Self.casingMargin)
+        capitalForms = capitalForms ?? [:]
+        capitalForms![lower] = word
+    }
+
     /// Drops everything learned about `word`, so it stops being suggested until it's typed often again.
     mutating func forget(_ word: String) {
         let word = word.lowercased()

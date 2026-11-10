@@ -157,6 +157,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Keyboard options", systemImage: "slider.horizontal.3")
                     }
+                    NavigationLink {
+                        TypingLogView()
+                    } label: {
+                        Label("Typing log", systemImage: "list.bullet.rectangle")
+                    }
                 }
 
                 Section("About") {
