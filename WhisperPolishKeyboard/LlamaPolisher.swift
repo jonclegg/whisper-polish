@@ -37,7 +37,12 @@ final class LlamaPolisher {
     /// Hears progress events (load stages, tokens written); the on-device lab logs them.
     private let trace: ((String) -> Void)?
 
-    init(modelPath: String, gpuLayers: Int32, contextTokens: Int, threads: Int32, cacheBits: Int, extraBuffers: Bool, microBatch: Int, cpuOnly: Bool, trace: ((String) -> Void)? = nil) throws {
+    /// `outputsPerBatch` is how many positions in one batch need next-token scores:
+    /// 1 for plain decoding, `draftLength + 1` for prompt lookup. llama.cpp sizes its
+    /// working buffer for that many rows of 248k scores, so leaving it at the batch
+    /// size (256) reserves about 250 MB, past the keyboard's 177 MB limit once long
+    /// text fills it.
+    init(modelPath: String, gpuLayers: Int32, contextTokens: Int, threads: Int32, cacheBits: Int, extraBuffers: Bool, microBatch: Int, outputsPerBatch: Int, cpuOnly: Bool, trace: ((String) -> Void)? = nil) throws {
         llama_backend_init()
         var modelParams = llama_model_default_params()
         modelParams.load_mode = LLAMA_LOAD_MODE_MMAP
@@ -59,6 +64,7 @@ final class LlamaPolisher {
         params.n_ctx = UInt32(contextTokens)
         params.n_batch = UInt32(microBatch)
         params.n_ubatch = UInt32(microBatch)
+        params.n_outputs_max = UInt32(outputsPerBatch)
         params.op_offload = gpuLayers != 0
         params.n_threads = threads
         params.n_threads_batch = threads
@@ -156,9 +162,13 @@ final class LlamaPolisher {
         var output = Data()
         var generated = 0
         var position = tokens.count
+        var finished = false
         while position < contextTokens - 1, generated < maxTokens {
             var next = llama_sampler_sample(sampler, context, -1)
-            if llama_vocab_is_eog(vocab, next) { break }
+            if llama_vocab_is_eog(vocab, next) {
+                finished = true
+                break
+            }
             var piece = [CChar](repeating: 0, count: 128)
             let length = llama_token_to_piece(vocab, next, &piece, 128, 0, false)
             output.append(contentsOf: piece.prefix(Int(max(0, length))).map { UInt8(bitPattern: $0) })
@@ -169,6 +179,8 @@ final class LlamaPolisher {
             let status = llama_decode(context, llama_batch_get_one(&next, 1))
             guard status == 0 else { throw Failure.decode(status) }
         }
+        // Running out of context mid-answer would hand back a polish cut off partway.
+        guard finished || generated >= maxTokens else { throw Failure.tooLong(tokens.count) }
         return Output(
             text: String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines),
             promptTokens: tokens.count,

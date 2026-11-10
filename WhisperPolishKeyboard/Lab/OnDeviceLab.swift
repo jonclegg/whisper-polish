@@ -241,6 +241,7 @@ enum OnDeviceLab {
             cacheBits: step.cacheBits ?? 8,
             extraBuffers: step.extraBuffers ?? true,
             microBatch: step.microBatch ?? 512,
+            outputsPerBatch: (step.draftLength ?? 0) + 1,
             cpuOnly: step.cpuOnly ?? false,
             trace: LabMemory.breadcrumb
         )

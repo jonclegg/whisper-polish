@@ -19,7 +19,8 @@ enum OnDevicePolisher {
     }
 
     /// Settings measured on an iPhone Air: GPU, 8-bit cache and 256-token batches
-    /// polish a typical note in 1.5–4 s at about 120 MB.
+    /// polish a typical note in 1.5–4 s. iOS kills the keyboard past 177 MB, so
+    /// llama.cpp is told only one position per batch needs scores (see LlamaPolisher).
     private static let contextTokens = 2048
 
     static func polish(text: String, style: PolishStyle) async throws -> String {
@@ -27,6 +28,9 @@ enum OnDevicePolisher {
         return try await Task.detached(priority: .userInitiated) {
             let started = Date()
             PolishLog.write("start chars=\(text.count) style=\(style.id) footprint=\(Int(LabMemory.footprintMB()))MB")
+            let peak = LabMemory.PeakWatcher()
+            peak.start()
+            defer { _ = peak.stop() }
             do {
                 let warmSeconds = try warmUp(OnDevicePolishModel.fileURL)
                 PolishLog.write(String(format: "file-read %.2fs", warmSeconds))
@@ -38,6 +42,7 @@ enum OnDevicePolisher {
                     cacheBits: 8,
                     extraBuffers: false,
                     microBatch: 256,
+                    outputsPerBatch: 1,
                     cpuOnly: false,
                     trace: { PolishLog.write("\($0) footprint=\(Int(LabMemory.footprintMB()))MB") }
                 )
@@ -49,9 +54,9 @@ enum OnDevicePolisher {
                     throw Failure.tooLong
                 }
                 PolishLog.write(String(
-                    format: "done in=%d out=%d prefill=%.2fs decode=%.2fs total=%.2fs",
+                    format: "done in=%d out=%d prefill=%.2fs decode=%.2fs total=%.2fs peak=%.0fMB",
                     output.promptTokens, output.generatedTokens, output.prefillSeconds, output.decodeSeconds,
-                    Date().timeIntervalSince(started)))
+                    Date().timeIntervalSince(started), peak.stop()))
                 guard !output.text.isEmpty else { throw Failure.empty }
                 return output.text
             } catch {
