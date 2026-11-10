@@ -4,78 +4,104 @@
 
 # Whisper Polish
 
-**An iPhone keyboard with its own AI, running on the phone.**
+An iPhone keyboard that can rewrite what you typed. The model runs on the phone.
 
-[**See it in action →**](https://whisper-polish.wooten-labs.com) &nbsp;·&nbsp; made by [Wooten Labs](https://wooten-labs.com)
+[Website](https://whisper-polish.wooten-labs.com) &nbsp;·&nbsp; made by [Wooten Labs](https://wooten-labs.com)
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0F756E)](LICENSE)
-[![iOS 17+](https://img.shields.io/badge/iOS-17%2B-111416)](project.yml)
-[![On-device AI](https://img.shields.io/badge/AI-on--device-2BB3A6)](#3-polish-in-the-keyboard)
-
-<a href="https://whisper-polish.wooten-labs.com"><img src="docs/media/demo.gif" width="300" alt="Typing with word predictions, holding space to glide the cursor across lines, and polishing a messy dictated message with one tap"></a>
+<a href="https://whisper-polish.wooten-labs.com"><img src="docs/media/demo.gif" width="300" alt="Tapping Polish on a messy message, holding space to move the cursor, and typing with word predictions"></a>
 
 </div>
 
-Most third-party iOS keyboards are worse at the basics than Apple's. Whisper Polish tries to be as good as the built-in keyboard at typing, then adds three things no other keyboard does well.
+It's free and open source. This repo has the keyboard, the app, and the scripts that trained both of its models.
 
-## 1. Its own word prediction
+## What it does
 
-<img src="docs/media/prediction.png" width="240" align="right" alt="The suggestion bar offering 'the', 'a' and 'school' after 'Running late for'">
-
-The suggestion bar runs a word model trained for this keyboard, not the system's.
-
-- **A small LSTM trained on public text** ([`scripts/keyboard-model`](scripts/keyboard-model)). Its Float16 weights are memory-mapped, so they fit inside a keyboard extension's tight memory limit.
-- **It learns your phrasing on the phone.** A personal trigram model counts which words follow which in what you type, and mixes them into the suggestions. Nothing leaves the phone.
-- **It learns where your thumbs land.** Thumbs miss consistently, a little right of one key and low on another. The keyboard learns each key's real target from the words you keep, and autocorrect aims there.
-
-<br clear="right">
-
-## 2. Hold space to move the cursor
-
-<img src="docs/media/cursor.png" width="240" align="right" alt="Holding space: the keyboard shows the message's text with the caret, which moves through the text in the field above">
-
-Hold the space bar and the keyboard turns into a panel showing your text, wrapped the way it is on screen. Slide your thumb and the caret moves up, down and across lines, and the caret in the app follows.
-
-Apple's keyboard can do this. Most third-party keyboards only move left and right, if at all, because iOS doesn't let a keyboard see the app's layout. Whisper Polish lays the text out itself ([`TrackpadTextView.swift`](WhisperPolishKeyboard/TrackpadTextView.swift), [`FloatingCursor.swift`](WhisperPolishKeyboard/FloatingCursor.swift)), so the line you steer to is the line you see.
-
-<br clear="right">
-
-## 3. Polish, in the keyboard
+**Polish.** Type or dictate something rough, tap the button, and it's rewritten as an email, a text, a Slack message or bullets. It takes out the "um"s and false starts. If you said "at 1, no wait, 1:30", it keeps 1:30. This happens in the keyboard, on the phone. There's no server and no account.
 
 <p>
-<img src="docs/media/polish-before.png" width="220" alt="A messy dictated message: um so basically i think we should move the team lunch to thursday at 1 no wait 1:30">
+<img src="docs/media/polish-before.png" width="220" alt="Before: um so basically i think we should move the team lunch to thursday at 1 no wait 1:30 because sarah has a dentist thing">
 &nbsp;
-<img src="docs/media/polish-after.png" width="220" alt="After one tap of Polish: a clean message moving lunch to Thursday at 1:30 and asking to book the place on 5th Street">
+<img src="docs/media/polish-after.png" width="220" alt="After: I think we should move the team lunch to Thursday at 1:30. Sarah has a dentist appointment, so 1:00 won't work.">
 </p>
 
-Tap the sparkle and your rough text, typed or dictated, is rewritten in the style you choose: an email, a text, a Slack message, bullets, or a style you describe. It drops filler and false starts, keeps the corrected fact ("1 no wait 1:30" becomes 1:30), and keeps names, places and numbers.
+**Hold space to move the cursor.** The keyboard shows your text, and you slide your thumb to move the caret, up and down as well as sideways. Apple's keyboard does this. Other keyboards mostly can't, because iOS doesn't tell a keyboard where the lines are. This one lays the text out itself.
 
-It runs **inside the keyboard, on the phone**, with no server and no account:
+**Its own word prediction.** The suggestions come from a small model trained for this keyboard, not from iOS. It also learns the words you use and where your thumbs land on each key. That stays on the phone.
 
-- **The model:** [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B), fine-tuned by us for polishing. It's an 812 MB, 8-bit download, made once in the app.
-- **The engine:** [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal, loaded only while Polish runs. A typical note takes 1.5 to 4 seconds on an iPhone Air.
+## How Polish was trained
 
-### How we trained it
+This is the part I'd want to read, so here's all of it. The scripts are in [`scripts/on-device-polish`](scripts/on-device-polish). The whole thing cost about $50.
 
-The training pipeline is in [`scripts/on-device-polish`](scripts/on-device-polish), and every step can be rerun. A cloud model ([GLM-5.2](https://openrouter.ai/z-ai/glm-5.2)) wrote reference polishes, and the small model learned to copy them. The interesting part is what went wrong:
+### The setup
 
-| Round | What changed | Polishes that pass a fact check* |
+- **Model:** [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B). A keyboard extension gets very little memory (I saw it killed around 177 MB), and Polish has to finish in about 5 seconds, so nothing bigger was an option.
+- **Teacher:** GLM-5.2 through OpenRouter. It polishes a rough note, and the small model is trained to give the same answer. This is plain distillation.
+- **Inputs:** about 25,000 rough notes. Real speech from [AMI](https://groups.inf.ed.ac.uk/ami/corpus/) meeting transcripts and [YODAS](https://huggingface.co/datasets/espnet/yodas) YouTube captions, plus messages written by Claude Haiku to sound dictated. Some get roughed up with fake thumb typos ([`typing_noise.py`](scripts/on-device-polish/typing_noise.py)).
+- **Prompt:** no system prompt. Just `Style: <instruction>` and `Text: <the note>`. A small model doesn't need a page of rules if it's trained on the task.
+- **Training:** a full fine-tune, not LoRA. Learning rate 3e-5, cosine schedule, batch 32, loss on the answer only. About 3.5 hours per pass on one NVIDIA L4 on AWS, at $0.80 an hour ([`cloud/train.py`](scripts/on-device-polish/cloud/train.py)).
+- **Grading:** 110 held-out notes. Claude compares the small model's polish with the teacher's, blind, and picks a winner ([`judge.py`](scripts/on-device-polish/judge.py)).
+
+### What went wrong: it made things up
+
+The first good version read well, but it invented things. You'd dictate a note and get back a sentence you never said.
+
+So I wrote a fact checker ([`check_references.py`](scripts/on-device-polish/check_references.py)). Claude Haiku reads the note and the polish, and rejects the polish if it adds something, changes a name or number, keeps a nonsense word, or drops a fact.
+
+Then I ran it on the *teacher's* answers, the ones the model was trained on. **22% of them failed.** On the garbled YouTube captions, 44% failed. When the input was a mess, the teacher filled the gaps with something that sounded right, and the small model learned that filling gaps is the job.
+
+### Fix 1: throw out the bad training answers
+
+I dropped every training answer that failed the check, asked the teacher again with stricter instructions, checked those, and trained on what passed: 34,897 examples, two passes.
+
+| | Pass the fact check (110 test notes) |
+|---|---|
+| Before | 73 |
+| After | 85 |
+| The teacher itself | 89 |
+
+The stricter instructions on their own did almost nothing (the teacher went from 89 to 87). Filtering is what worked.
+
+### Fix 2: train it on its own mistakes
+
+A student doesn't usually beat its teacher, and it was nearly level at 85 against 89. To go further I used the model's own output.
+
+1. The model polishes 8,000 notes, four times each, at temperature 0.8. That's 32,000 polishes. With [vLLM](https://github.com/vllm-project/vllm) it took 20 minutes on the L4.
+2. The fact checker marks each one. 69% passed.
+3. For every note where one version passed and another failed, that's a pair: prefer this one, not that one. 5,006 pairs.
+4. Train on the pairs with DPO ([`cloud/train_dpo.py`](scripts/on-device-polish/cloud/train_dpo.py)), plus a little ordinary loss on the good version so the writing doesn't drift.
+
+On 492 hard notes it had never seen:
+
+| | Before | After |
 |---|---|---|
-| 2 | 25,000 real and synthetic notes, references from the cloud model | 73 of 110 |
-| 3 | We fact-checked the references: 22% invented or changed details, and on garbled YouTube captions 44% did. The small model was learning to make things up. Training only on references that pass fixed most of it. | 85 of 110 |
-| 3 + preference | The model wrote 4 versions of 8,000 notes; we trained it toward its faithful versions and away from the ones that invented. | Hard, garbled notes: 58%, up from 48%; invented details down 58% |
+| Pass the fact check | 48% | 58% |
+| Invented something | 89 | 37 |
+| Changed a fact | 81 | 60 |
+| Left a garbled word in | 77 | 102 |
 
-\* A separate model checks each polish for invented, changed, dropped or garbled details. It agreed with a stronger model's judgment 86% of the time.
+It invents less than half as often. The cost is the last row: when it can't work out a garbled word, it now leaves it alone instead of guessing. I think that's the better way to fail, because you can see it.
 
-These three rounds cost about $50 in all: cloud-model calls on [OpenRouter](https://openrouter.ai) and an NVIDIA L4 GPU on AWS at $0.80 an hour.
+### Things I got wrong
 
-## Also in the app
+- **The first DPO run did nothing.** I used a learning rate of 1e-6 to be careful. After training, the model preferred the good polish 48.5% of the time, a coin flip. At 5e-6 it reached 66%.
+- **The checker is wrong sometimes.** I had a stronger model re-check 100 of its verdicts. They agreed on 86. That's fine for comparing two versions of the same note, but it's not a ground truth.
+- **A model can cheat a fact checker** by copying the input or writing less. The pairs only count a version as good if it actually changed the text and didn't just cut it short ([`make_pairs.py`](scripts/on-device-polish/make_pairs.py)).
+- **I shut down the GPU box with the only copy of the weights on it.** All I had was the phone-format GGUF file. [`rebuild_hf.py`](scripts/on-device-polish/rebuild_hf.py) turns a GGUF back into trainable weights by running llama.cpp's converter on tensors filled with their own indexes, to see where each number ends up.
+- **It still isn't as good as the teacher at writing.** The judge prefers the teacher's version about 70% of the time. And custom styles like "translate to Spanish" mostly don't work.
 
-Whisper Polish began as a voice-note app, and that's still there: record a note, transcribe it on the phone ([WhisperKit](https://github.com/argmaxinc/WhisperKit) or Parakeet), and polish it. Notes stay on the phone in SwiftData.
+### Running it in a keyboard
+
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. The model is an 812 MB 8-bit GGUF, memory-mapped, so the weights don't count against the keyboard's memory.
+- It's loaded for each polish and freed after. A typical note takes 1.5 to 4 seconds on an iPhone Air.
+- The first polish after downloading took 12 seconds, because iOS was paging the file in 16 KB at a time. Reading the file once, start to finish, before loading fixed it ([`OnDevicePolisher.swift`](WhisperPolishKeyboard/OnDevicePolisher.swift)).
+
+## The word prediction model
+
+A one-layer LSTM over words, trained on public text ([`scripts/keyboard-model`](scripts/keyboard-model)). It's a 32 MB file of Float16 weights, memory-mapped. On top of it, the keyboard counts your own word pairs and triples on the phone ([`PersonalModel.swift`](WhisperPolishKeyboard/PersonalModel.swift)) and learns where your touches land around each key ([`TouchAdaptation.swift`](WhisperPolishKeyboard/TouchAdaptation.swift)).
 
 ## Build it
 
-You need macOS with Xcode 26 or newer and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.45 or newer.
+You need Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```sh
 git clone https://github.com/jonclegg/whisper-polish.git
@@ -86,28 +112,10 @@ xcodegen generate
 open WhisperPolish.xcodeproj
 ```
 
-`Config/DevKeys.xcconfig` holds optional developer API keys and is never committed; an empty file builds. [`project.yml`](project.yml) is the source of truth for the Xcode project.
+It runs in the Simulator too. Add the keyboard in Settings › General › Keyboard › Keyboards and turn on Allow Full Access, which Polish needs.
 
-The app runs in the iOS Simulator, Polish included. To try the keyboard there, add it in **Settings › General › Keyboard › Keyboards** and turn on **Allow Full Access**, which Polish needs.
-
-To make the demo video from your own Simulator recordings, see [`docs/media/make-demo-video.sh`](docs/media/make-demo-video.sh).
-
-## Repository map
-
-| Path | What lives there |
-|---|---|
-| [`WhisperPolishKeyboard/`](WhisperPolishKeyboard/) | The keyboard: layout, prediction, cursor, and Polish |
-| [`WhisperPolish/`](WhisperPolish/) | The app: notes, transcription, model download, settings |
-| [`scripts/keyboard-model/`](scripts/keyboard-model/) | Training and exporting the word model |
-| [`scripts/on-device-polish/`](scripts/on-device-polish/) | Training, fact-checking and judging the Polish model |
-| [`Packages/LlamaCpp/`](Packages/LlamaCpp/) | llama.cpp for iPhone and the Simulator |
-| [`Tests/`](Tests/) | Unit tests and opt-in integration tests |
-| [`backend/`](backend/) | The optional cloud polish API |
-
-## Contributing
-
-Issues and pull requests are welcome. Keep changes focused, include tests when behavior changes, and never commit API keys or credentials. Please report security issues privately as described in [`SECURITY.md`](SECURITY.md).
+The app also records and transcribes voice notes on the phone. That's where the project started.
 
 ## License
 
-Whisper Polish is released under the [Apache License 2.0](LICENSE). Qwen3.5 and llama.cpp keep their own licenses (Apache 2.0 and MIT).
+[Apache 2.0](LICENSE). Qwen3.5 is Apache 2.0 and llama.cpp is MIT.

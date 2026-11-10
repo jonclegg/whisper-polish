@@ -30,8 +30,8 @@ drawtext=fontfile=$font:textfile=$work/line.txt:fontcolor=$teal:fontsize=46:x=(w
 
 # A feature clip: trimmed, sped up, the phone scaled below a caption.
 feature() {
-  local out=$1 source=$2 start=$3 end=$4 speed=$5 number=$6 caption=$7 note=$8
-  printf '%s' "$number  $caption" > "$work/caption.txt"
+  local out=$1 source=$2 start=$3 end=$4 speed=$5 caption=$6 note=$7
+  printf '%s' "$caption" > "$work/caption.txt"
   printf '%s' "$note" > "$work/note.txt"
   ffmpeg -v error -y -ss "$start" -to "$end" -i "$raw/$source" -vf "\
 setpts=PTS/$speed,fps=30,scale=-2:1560,pad=1080:1920:(ow-iw)/2:330:color=$background,\
@@ -40,13 +40,14 @@ drawtext=fontfile=$font:textfile=$work/note.txt:fontcolor=$teal:fontsize=38:x=(w
     -an -c:v libx264 -pix_fmt yuv420p "$out"
 }
 
-card "$work/1.mp4" 3 "Whisper Polish" "An iPhone keyboard with its own AI, on the phone"
-feature "$work/2.mp4" prediction.mp4 5 41 2 "1" "Its own word prediction" "A model trained for this keyboard  ·  shown at 2× speed"
-feature "$work/3.mp4" cursor.mp4 4.5 14.5 1 "2" "Hold space to move the cursor" "Up, down and across lines, with your text in view"
-feature "$work/4.mp4" polish.mp4 2.5 15 1 "3" "Polish, in the keyboard" "A model we trained, running on the phone  ·  no server"
-card "$work/5.mp4" 3.5 "Open source" "github.com/jonclegg/whisper-polish"
+# Polish goes first: it's the part people haven't seen a keyboard do. No title
+# card, and the waits between taps are sped up, so it's over in about 15 seconds.
+feature "$work/1.mp4" polish.mp4 1.8 8.5 1 "Tap Polish" "Runs on the phone. No server."
+feature "$work/2.mp4" cursor.mp4 5.5 11 1.5 "Hold space to move the cursor" "Up and down too."
+feature "$work/3.mp4" prediction.mp4 6 41 5 "Its own word prediction" "Shown at 5x speed."
+card "$work/4.mp4" 1.5 "Whisper Polish" "Free and open source"
 
-printf "file '%s'\n" "$work"/{1,2,3,4,5}.mp4 > "$work/list.txt"
+printf "file '%s'\n" "$work"/{1,2,3,4}.mp4 > "$work/list.txt"
 ffmpeg -v error -y -f concat -safe 0 -i "$work/list.txt" -c:v libx264 -crf 23 -pix_fmt yuv420p -movflags +faststart demo.mp4
 
 # The README can't play video from the repo, so it shows a GIF.
