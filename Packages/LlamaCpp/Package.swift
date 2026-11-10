@@ -1,7 +1,10 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// EXPERIMENT: llama.cpp's prebuilt b11869 with Metal, to measure GPU speed and memory.
+// llama.cpp b11869 with Metal. llama.cpp's own release ships no iOS Simulator
+// library, so this zip pairs the release's iPhone library, unchanged, with a
+// simulator build of the same tag (built with build-xcframework.sh); the
+// headers are identical. Hosted next to the polish model.
 let package = Package(
     name: "LlamaCpp",
     platforms: [.iOS(.v17)],
@@ -9,8 +12,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "llama",
-            url: "https://github.com/ggml-org/llama.cpp/releases/download/b11869/llama-b11869-xcframework.zip",
-            checksum: "1bd572b9ccf0829fd67e1d04e6ab8cafb7baca5459dc17cbfe6fcb2cce509d28"
+            url: "https://d36t08oi3ecji2.cloudfront.net/frameworks/llama-b11869-ios-sim.xcframework.zip",
+            checksum: "9abb6e3293f6e117f4d7228e67079bf9a87cc9f204b9afbbc4b0c763a164b4af"
         ),
     ]
 )
