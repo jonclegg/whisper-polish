@@ -14,3 +14,4 @@ scripts/on-device-polish/.venv/
 Packages/LlamaCpp/llama.xcframework/
 scripts/on-device-polish/data/
 scripts/on-device-polish/apple/polish_apple
+docs/media/raw/
