@@ -1,0 +1,104 @@
+name: DogballWhisper
+options:
+  bundleIdPrefix: com.jonclegg
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    from: 0.15.4
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    from: 0.18.0
+  LlamaCpp:
+    path: Packages/LlamaCpp
+
+targets:
+  DogballWhisper:
+    type: application
+    platform: macOS
+    sources:
+      - path: DogballWhisper
+    dependencies:
+      - package: FluidAudio
+      - package: WhisperKit
+      - package: LlamaCpp
+        product: llama
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jonclegg.DogballWhisper
+        PRODUCT_NAME: Dogball Whisper
+        PRODUCT_MODULE_NAME: DogballWhisper
+        # Placeholders. Both scripts override them on the xcodebuild command
+        # line: `release-macos.sh` from the tag being released, and
+        # `build-mac.sh` from the last release tag plus the commit count, so
+        # the menu bar menu always names the build. 0.0.0 (0) only shows up
+        # in a build made some other way, such as straight from Xcode.
+        MARKETING_VERSION: "0.0.0"
+        CURRENT_PROJECT_VERSION: "0"
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        # An accessory app has no Dock icon, but this is still what Finder and
+        # the System Settings privacy lists show next to the app's name when
+        # someone decides whether to grant it Accessibility.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Dogball Whisper records your voice while you hold the dictation key, and transcribes it on this Mac."
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Developer ID Application"
+        DEVELOPMENT_TEAM: 22CTWHGWQQ
+        CODE_SIGN_ENTITLEMENTS: DogballWhisper/DogballWhisper.entitlements
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+      configs:
+        # Hardened Runtime is required to notarize, and notarization is what
+        # lets anyone but this machine open the app without Gatekeeper refusing
+        # it. The microphone entitlement is the price of admission; sandboxing
+        # stays off either way, because an Accessibility client cannot be
+        # sandboxed.
+        #
+        # Release only, and that restriction is load-bearing: Hardened Runtime
+        # refuses to load an injected library, so a hardened test host hangs
+        # before the XCTest bundle can connect to it. Tests build Debug.
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+          # Without this, Xcode injects get-task-allow, which notarization rejects.
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+          # `xcodebuild build` signs without a secure timestamp, and the notary
+          # service rejects the submission for it: "The signature does not
+          # include a secure timestamp."
+          OTHER_CODE_SIGN_FLAGS: "--timestamp"
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
+
+  DogballWhisperTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: Tests/Fixtures
+        buildPhase: resources
+    dependencies:
+      - target: DogballWhisper
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Dogball Whisper.app/Contents/MacOS/Dogball Whisper"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  DogballWhisper:
+    build:
+      targets:
+        DogballWhisper: all
+        DogballWhisperTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - DogballWhisperTests
