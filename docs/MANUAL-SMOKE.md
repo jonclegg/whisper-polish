@@ -101,14 +101,14 @@ rebuilding it for each one.
       secure — so this is entirely carried by `IsSecureEventInputEnabled()`,
       checked before any AX work. Repeat at an `ssh` password prompt. Same
       blocker rule as above: a transcript here goes to Groq
-- [ ] Secure input left engaged: turn on Terminal > Secure Keyboard Entry
-      (or focus a password field in Chrome and ⌘-Tab away while it is still
-      focused) and dictate into TextEdit. Expect a refusal that names the
-      holder — "Secure input on in Terminal" or "Secure input on in Google
-      Chrome", on two lines without truncation — not "Not in a password
-      field". When loginwindow is stuck holding it after an unlock, the
-      notice says to lock and unlock the screen instead. That name is what tells a
-      stuck holder apart from a real password field
+- [ ] Secure input left engaged in the background: focus a password field
+      in Chrome, ⌘-Tab to TextEdit while it is still focused, and dictate.
+      Dictation works: only the app in front holding secure input refuses.
+      Then turn on Terminal > Secure Keyboard Entry and dictate into
+      Terminal: refused with "Secure input on in Terminal"
+- [ ] macOS password dialog: run `osascript -e 'do shell script "true" with
+      administrator privileges'` and hold the dictation key at the dialog.
+      Refused with "Secure input on in SecurityAgent"
 - [ ] Rebind to right ⌘ in Settings and confirm it works without a relaunch
 - [ ] Rebind to a custom combo (⌃⇧D) and confirm the keystroke does not
       reach the app you were typing in

@@ -53,7 +53,7 @@ final class PasteboardTextInserter: TextInserting {
     private let readTimeout: TimeInterval
 
     init(
-        secureInputProvider: @escaping () -> Bool = CaretLocator.isSecureInputActive,
+        secureInputProvider: @escaping () -> Bool = { CaretLocator.secureEventInput() != .off },
         pasteboard: NSPasteboard = .general,
         isTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
         postPaste: @escaping () -> Void = PasteboardTextInserter.postCommandV,

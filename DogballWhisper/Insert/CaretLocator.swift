@@ -6,7 +6,8 @@ import Carbon
 import IOKit
 import QuartzCore
 
-/// Whether some app has secure event input engaged, and which one.
+/// Whether secure event input is engaged for the app the user is typing
+/// into, and which app that is.
 enum SecureEventInput: Equatable {
     case off
     case on(holder: String?)
@@ -112,26 +113,52 @@ enum CaretLocator {
         return CGRect(x: x, y: rect.minY, width: 1, height: rect.height)
     }
 
-    /// True when any app has secure event input engaged: a `sudo`/`ssh`/`gpg`
-    /// prompt in a terminal, a `SecurityAgent` authorization dialog, a
-    /// browser password field. This is the cheap half of the secure check —
-    /// in-process, no accessibility permission needed, no IPC — and the only
-    /// signal that catches terminal password prompts at all, since those are
-    /// ordinary `AXTextArea`s with nothing secure about them as far as the
-    /// accessibility tree is concerned.
-    static func isSecureInputActive() -> Bool {
-        IsSecureEventInputEnabled()
+    /// Secure event input for the app the user is typing into: a
+    /// `sudo`/`ssh`/`gpg` prompt in a terminal, a `SecurityAgent`
+    /// authorization dialog, a browser password field. This is the cheap half
+    /// of the secure check — in-process, no accessibility permission needed —
+    /// and the only signal that catches terminal password prompts at all,
+    /// since those are ordinary `AXTextArea`s with nothing secure about them
+    /// as far as the accessibility tree is concerned.
+    static func secureEventInput() -> SecureEventInput {
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        return secureEventInput(
+            active: IsSecureEventInputEnabled(),
+            holderPID: secureInputHolderPID(),
+            frontPID: frontApp?.processIdentifier,
+            frontBundleIdentifier: frontApp?.bundleIdentifier,
+            frontName: frontApp?.localizedName
+        )
     }
 
-    /// `isSecureInputActive()`, plus the name of the app holding it. The
-    /// holder's PID is read from this user's entry in the registry's
-    /// `IOConsoleUsers`. `CGSessionCopyCurrentDictionary()` carries the same
-    /// key but reports whatever app is frontmost, not the holder, so it
-    /// named Claude or Finder while loginwindow was the one stuck. The name
-    /// is nil when the PID is not an app with one (a helper process, or one
-    /// that quit between the two reads).
-    static func secureEventInput() -> SecureEventInput {
-        guard isSecureInputActive() else { return .off }
+    /// `IsSecureEventInputEnabled()` is system-wide, and an app that never
+    /// releases it (Chrome after a password field, loginwindow after a
+    /// screen unlock) used to refuse every dictation everywhere until the
+    /// user logged out. A holder in the background is not where the user is
+    /// typing, so only a holder that is the frontmost app counts.
+    ///
+    /// SecurityAgent is the exception: its password dialogs become the
+    /// frontmost app, but the registry's holder stays wherever it was (it
+    /// stayed on a stuck loginwindow while one was open), so a SecurityAgent
+    /// in front counts on its own. With no holder to read at all, it fails
+    /// closed.
+    static func secureEventInput(
+        active: Bool, holderPID: pid_t?, frontPID: pid_t?,
+        frontBundleIdentifier: String?, frontName: String?
+    ) -> SecureEventInput {
+        guard active else { return .off }
+        guard let holderPID, let frontPID else { return .on(holder: nil) }
+        if holderPID == frontPID || frontBundleIdentifier == "com.apple.SecurityAgent" {
+            return .on(holder: frontName)
+        }
+        return .off
+    }
+
+    /// The PID holding secure event input, from this user's entry in the
+    /// registry's `IOConsoleUsers`. `CGSessionCopyCurrentDictionary()`
+    /// carries the same key but reports whatever app is frontmost, which
+    /// would make every app look like the holder.
+    private static func secureInputHolderPID() -> pid_t? {
         let root = IORegistryGetRootEntry(kIOMainPortDefault)
         defer { IOObjectRelease(root) }
         let consoleUsers = IORegistryEntryCreateCFProperty(
@@ -140,10 +167,7 @@ enum CaretLocator {
         let thisUser = consoleUsers?.first {
             ($0["kCGSSessionUserIDKey"] as? NSNumber)?.uint32Value == getuid()
         }
-        guard let pid = (thisUser?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value else {
-            return .on(holder: nil)
-        }
-        return .on(holder: NSRunningApplication(processIdentifier: pid)?.localizedName)
+        return (thisUser?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
     }
 
     /// Whether a failed `kAXFocusedUIElementAttribute` query means the app
@@ -174,7 +198,7 @@ enum CaretLocator {
 
         // First, before any AX work: a password being typed anywhere is a
         // refusal no matter what the accessibility tree says.
-        guard !isSecureInputActive() else {
+        guard secureEventInput() == .off else {
             return CaretLocation(rectQuartz: nil, pid: frontPID, isSecureField: true)
         }
 

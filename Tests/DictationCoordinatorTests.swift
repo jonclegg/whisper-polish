@@ -294,16 +294,6 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .notice("Secure input on in Terminal"))
     }
 
-    // loginwindow keeps secure input after a screen unlock. It is not an app
-    // the user can quit, so the notice says what does release it.
-    func testSecureInputStuckInLoginwindowSaysToLockAndUnlock() async {
-        let coordinator = makeCoordinator(cleaner: cleaner, secureInput: .on(holder: "loginwindow"))
-        coordinator.handle(.began)
-
-        XCTAssertEqual(recorder.startCount, 0)
-        XCTAssertEqual(coordinator.state, .notice("Lock and unlock the screen"))
-    }
-
     // The accessibility half of the gate: a web password field, where secure
     // event input may not be engaged. This one is only knowable after the
     // recorder has started (locating the caret is cross-process IPC and must

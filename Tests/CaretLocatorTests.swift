@@ -203,6 +203,51 @@ final class CaretLocatorTests: XCTestCase {
         XCTAssertLessThanOrEqual(CaretLocator.messagingTimeout, 0.05)
     }
 
+    // MARK: - secureEventInput
+
+    // A holder that never let go (loginwindow after an unlock, Chrome after a
+    // password field) used to refuse every dictation everywhere.
+    func testSecureInputHeldByABackgroundAppDoesNotCount() {
+        XCTAssertEqual(
+            CaretLocator.secureEventInput(
+                active: true, holderPID: 423, frontPID: 17796,
+                frontBundleIdentifier: "com.anthropic.claudefordesktop", frontName: "Claude"),
+            .off)
+    }
+
+    func testSecureInputHeldByTheFrontAppCounts() {
+        XCTAssertEqual(
+            CaretLocator.secureEventInput(
+                active: true, holderPID: 500, frontPID: 500,
+                frontBundleIdentifier: "com.apple.Terminal", frontName: "Terminal"),
+            .on(holder: "Terminal"))
+    }
+
+    // Its dialogs come to the front without the registry's holder moving.
+    func testASecurityAgentDialogInFrontCountsWhoeverTheHolderIs() {
+        XCTAssertEqual(
+            CaretLocator.secureEventInput(
+                active: true, holderPID: 423, frontPID: 67695,
+                frontBundleIdentifier: "com.apple.SecurityAgent", frontName: "SecurityAgent"),
+            .on(holder: "SecurityAgent"))
+    }
+
+    func testSecureInputWithNoHolderToReadFailsClosed() {
+        XCTAssertEqual(
+            CaretLocator.secureEventInput(
+                active: true, holderPID: nil, frontPID: 500,
+                frontBundleIdentifier: "com.apple.Terminal", frontName: "Terminal"),
+            .on(holder: nil))
+    }
+
+    func testNoSecureInputIsOffWhateverTheHolderSays() {
+        XCTAssertEqual(
+            CaretLocator.secureEventInput(
+                active: false, holderPID: 500, frontPID: 500,
+                frontBundleIdentifier: "com.apple.Terminal", frontName: "Terminal"),
+            .off)
+    }
+
     // MARK: - CaretLocation
 
     func testUnknownLocationHasNoRectNoPIDAndIsNotASecureField() {

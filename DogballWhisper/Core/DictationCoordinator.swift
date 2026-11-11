@@ -229,21 +229,13 @@ final class DictationCoordinator {
         state = .recording
     }
 
-    /// Secure event input is system-wide, and the app holding it is often
-    /// not the one in front: Chrome or Terminal's "Secure Keyboard Entry"
-    /// can leave it engaged long after the password field is gone, and then
-    /// every dictation everywhere is refused. "Not in a password field"
-    /// would be wrong there, so the notice names the holder instead, which
-    /// is what the user has to go and fix. loginwindow is the one holder
-    /// that is not an app the user can quit: it keeps secure input after a
-    /// screen unlock, and locking and unlocking again is what releases it.
+    /// Names the app holding secure input, because the user may not be at a
+    /// password prompt at all: Terminal's "Secure Keyboard Entry" keeps it on
+    /// for as long as Terminal is in front, and the name is what tells the
+    /// user which setting to go and turn off.
     private func refuseSecureEventInput(holder: String?) {
         Diagnostics.verbose("dictation refused: secure event input held by \(holder ?? "an unnamed process")")
-        switch holder {
-        case "loginwindow": notice("Lock and unlock the screen")
-        case let .some(name): notice("Secure input on in \(name)")
-        case nil: notice("Secure input is on")
-        }
+        notice(holder.map { "Secure input on in \($0)" } ?? "Secure input is on")
     }
 
     /// A focused password field the accessibility tree reports directly.
