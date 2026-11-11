@@ -132,7 +132,7 @@ final class DictationCoordinatorTests: XCTestCase {
         cleaner: TextCleaning? = nil,
         cleanerProvider: CleanerProvider? = nil,
         caretProvider: CaretProvider? = nil,
-        secureInput: Bool = false,
+        secureInput: SecureEventInput = .off,
         config: DictationCoordinator.Config = .init(minimumDuration: 0.3, cleanupTimeout: 0.2)
     ) -> DictationCoordinator {
         DictationCoordinator(
@@ -283,7 +283,7 @@ final class DictationCoordinatorTests: XCTestCase {
     // this is the only signal that it is a password prompt at all. It is
     // checked before the recorder is ever touched.
     func testSecureEventInputRefusesBeforeTheRecorderEverStarts() async {
-        let coordinator = makeCoordinator(cleaner: cleaner, secureInput: true)
+        let coordinator = makeCoordinator(cleaner: cleaner, secureInput: .on(holder: "Terminal"))
         coordinator.handle(.began)
         coordinator.handle(.ended)
         await coordinator.waitForWork()
@@ -291,7 +291,7 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.startCount, 0)
         XCTAssertNil(cleaner.receivedText)
         XCTAssertTrue(inserter.inserted.isEmpty)
-        XCTAssertEqual(coordinator.state, .notice("Not in a password field"))
+        XCTAssertEqual(coordinator.state, .notice("Terminal has secure input on"))
     }
 
     // The accessibility half of the gate: a web password field, where secure
@@ -315,7 +315,7 @@ final class DictationCoordinatorTests: XCTestCase {
 
     // A refusal must not wedge the coordinator: the next press works.
     func testARefusalDoesNotBlockTheNextDictation() async {
-        var secureNow = true
+        var secureNow: SecureEventInput = .on(holder: nil)
         let coordinator = DictationCoordinator(
             recorder: recorder,
             engineProvider: { [engine] in engine },
@@ -328,9 +328,9 @@ final class DictationCoordinatorTests: XCTestCase {
             config: .init(minimumDuration: 0.3, cleanupTimeout: 0.2)
         )
         coordinator.handle(.began)
-        XCTAssertEqual(coordinator.state, .notice("Not in a password field"))
+        XCTAssertEqual(coordinator.state, .notice("Another app has secure input on"))
 
-        secureNow = false
+        secureNow = .off
         coordinator.handle(.began)
         coordinator.handle(.ended)
         await coordinator.waitForWork()

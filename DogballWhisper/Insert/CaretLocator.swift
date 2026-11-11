@@ -5,6 +5,12 @@ import ApplicationServices
 import Carbon
 import QuartzCore
 
+/// Whether some app has secure event input engaged, and which one.
+enum SecureEventInput: Equatable {
+    case off
+    case on(holder: String?)
+}
+
 struct CaretLocation: Equatable {
     /// Caret rect in Quartz screen coordinates (origin top-left), or nil when
     /// the focused app does not report one.
@@ -114,6 +120,19 @@ enum CaretLocator {
     /// accessibility tree is concerned.
     static func isSecureInputActive() -> Bool {
         IsSecureEventInputEnabled()
+    }
+
+    /// `isSecureInputActive()`, plus the name of the app holding it. The
+    /// window server records the holder's PID in the session dictionary;
+    /// the name is nil when that PID is not an app with one (a helper
+    /// process, or one that quit between the two reads).
+    static func secureEventInput() -> SecureEventInput {
+        guard isSecureInputActive() else { return .off }
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        guard let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value else {
+            return .on(holder: nil)
+        }
+        return .on(holder: NSRunningApplication(processIdentifier: pid)?.localizedName)
     }
 
     /// Whether a failed `kAXFocusedUIElementAttribute` query means the app

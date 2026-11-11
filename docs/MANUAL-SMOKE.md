@@ -96,21 +96,17 @@ rebuilding it for each one.
       transcribed, cleaned, or inserted
 - [ ] Terminal password prompt: run `sudo -k true` in Terminal, and at the
       "Password:" prompt hold the dictation key. Recording never starts and
-      the panel shows "Not in a password field". A `sudo` prompt is an
+      the panel shows "Terminal has secure input on". A `sudo` prompt is an
       ordinary `AXTextArea` — nothing in the accessibility tree says it is
       secure — so this is entirely carried by `IsSecureEventInputEnabled()`,
       checked before any AX work. Repeat at an `ssh` password prompt. Same
       blocker rule as above: a transcript here goes to Groq
-- [ ] **(never verified)** Secure input left engaged: turn on Terminal >
-      Secure Keyboard Entry (or focus a password field and ⌘-Tab away while
-      it is still focused) and dictate into TextEdit. Expect a refusal, and
-      note it: this is the known false-positive of the secure-event-input
-      check. With verbose diagnostics on (see section 6),
-      `log show --last 5m --predicate 'subsystem ==
-      "com.jonclegg.DogballWhisper"'` shows "dictation refused: secure event
-      input", which is how a stuck refusal is told apart from a real password
-      field. Without the flag that line is absent by design, so turn it on
-      before trying to diagnose this
+- [ ] Secure input left engaged: turn on Terminal > Secure Keyboard Entry
+      (or focus a password field in Chrome and ⌘-Tab away while it is still
+      focused) and dictate into TextEdit. Expect a refusal that names the
+      holder — "Terminal has secure input on" or "Google Chrome has secure
+      input on" — not "Not in a password field". That name is what tells a
+      stuck holder apart from a real password field
 - [ ] Rebind to right ⌘ in Settings and confirm it works without a relaunch
 - [ ] Rebind to a custom combo (⌃⇧D) and confirm the keystroke does not
       reach the app you were typing in

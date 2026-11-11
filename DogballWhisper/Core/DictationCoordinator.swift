@@ -35,8 +35,9 @@ typealias CleanerProvider = () -> TextCleaning?
 /// so tests never set accessibility attributes on whatever happens to be
 /// frontmost while they run.
 typealias CaretProvider = () -> CaretLocation
-/// The cheap, in-process half of the same question (`IsSecureEventInputEnabled`).
-typealias SecureInputProvider = () -> Bool
+/// The cheap, in-process half of the same question (`IsSecureEventInputEnabled`),
+/// plus which app is holding it, so a refusal can name it.
+typealias SecureInputProvider = () -> SecureEventInput
 
 /// The single stateful component: turns hotkey signals into recorded audio,
 /// text, and a paste. Everything it touches is a protocol so the whole state
@@ -91,7 +92,7 @@ final class DictationCoordinator {
         presenter: DictationPresenting,
         preferences: Preferences,
         caretProvider: @escaping CaretProvider = CaretLocator.current,
-        secureInputProvider: @escaping SecureInputProvider = CaretLocator.isSecureInputActive,
+        secureInputProvider: @escaping SecureInputProvider = CaretLocator.secureEventInput,
         config: Config = Config()
     ) {
         self.recorder = recorder
@@ -190,8 +191,8 @@ final class DictationCoordinator {
         // or ssh prompt in a terminal and every macOS auth dialog — runs
         // first, before anything else is true or false: it is in-process,
         // costs nothing, and needs no accessibility permission.
-        guard !secureInputProvider() else {
-            refuseSecureField(reason: "secure event input")
+        if case let .on(holder) = secureInputProvider() {
+            refuseSecureEventInput(holder: holder)
             return
         }
         guard engineProvider() != nil else {
@@ -228,11 +229,18 @@ final class DictationCoordinator {
         state = .recording
     }
 
-    /// Both refusals show the same thing; the reason is logged rather than
-    /// displayed, because it is the only way to tell a genuine password
-    /// prompt from an app that left secure event input engaged behind it
-    /// (Terminal's "Secure Keyboard Entry" being the usual suspect) when a
-    /// user reports dictation refusing everywhere.
+    /// Secure event input is system-wide, and the app holding it is often
+    /// not the one in front: Chrome or Terminal's "Secure Keyboard Entry"
+    /// can leave it engaged long after the password field is gone, and then
+    /// every dictation everywhere is refused. "Not in a password field"
+    /// would be wrong there, so the notice names the holder instead, which
+    /// is what the user has to go and fix.
+    private func refuseSecureEventInput(holder: String?) {
+        Diagnostics.verbose("dictation refused: secure event input held by \(holder ?? "an unnamed process")")
+        notice("\(holder ?? "Another app") has secure input on")
+    }
+
+    /// A focused password field the accessibility tree reports directly.
     ///
     /// Verbose, not a plain log, even though it is a refusal: at `notice`
     /// with `.public` this persists for days, and a durable record of the
