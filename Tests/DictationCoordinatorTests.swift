@@ -291,7 +291,17 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.startCount, 0)
         XCTAssertNil(cleaner.receivedText)
         XCTAssertTrue(inserter.inserted.isEmpty)
-        XCTAssertEqual(coordinator.state, .notice("Terminal has secure input on"))
+        XCTAssertEqual(coordinator.state, .notice("Secure input on in Terminal"))
+    }
+
+    // loginwindow keeps secure input after a screen unlock. It is not an app
+    // the user can quit, so the notice says what does release it.
+    func testSecureInputStuckInLoginwindowSaysToLockAndUnlock() async {
+        let coordinator = makeCoordinator(cleaner: cleaner, secureInput: .on(holder: "loginwindow"))
+        coordinator.handle(.began)
+
+        XCTAssertEqual(recorder.startCount, 0)
+        XCTAssertEqual(coordinator.state, .notice("Lock and unlock the screen"))
     }
 
     // The accessibility half of the gate: a web password field, where secure
@@ -328,7 +338,7 @@ final class DictationCoordinatorTests: XCTestCase {
             config: .init(minimumDuration: 0.3, cleanupTimeout: 0.2)
         )
         coordinator.handle(.began)
-        XCTAssertEqual(coordinator.state, .notice("Another app has secure input on"))
+        XCTAssertEqual(coordinator.state, .notice("Secure input is on"))
 
         secureNow = .off
         coordinator.handle(.began)

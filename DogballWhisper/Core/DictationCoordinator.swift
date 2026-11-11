@@ -234,10 +234,16 @@ final class DictationCoordinator {
     /// can leave it engaged long after the password field is gone, and then
     /// every dictation everywhere is refused. "Not in a password field"
     /// would be wrong there, so the notice names the holder instead, which
-    /// is what the user has to go and fix.
+    /// is what the user has to go and fix. loginwindow is the one holder
+    /// that is not an app the user can quit: it keeps secure input after a
+    /// screen unlock, and locking and unlocking again is what releases it.
     private func refuseSecureEventInput(holder: String?) {
         Diagnostics.verbose("dictation refused: secure event input held by \(holder ?? "an unnamed process")")
-        notice("\(holder ?? "Another app") has secure input on")
+        switch holder {
+        case "loginwindow": notice("Lock and unlock the screen")
+        case let .some(name): notice("Secure input on in \(name)")
+        case nil: notice("Secure input is on")
+        }
     }
 
     /// A focused password field the accessibility tree reports directly.

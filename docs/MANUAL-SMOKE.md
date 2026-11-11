@@ -96,7 +96,7 @@ rebuilding it for each one.
       transcribed, cleaned, or inserted
 - [ ] Terminal password prompt: run `sudo -k true` in Terminal, and at the
       "Password:" prompt hold the dictation key. Recording never starts and
-      the panel shows "Terminal has secure input on". A `sudo` prompt is an
+      the panel shows "Secure input on in Terminal". A `sudo` prompt is an
       ordinary `AXTextArea` — nothing in the accessibility tree says it is
       secure — so this is entirely carried by `IsSecureEventInputEnabled()`,
       checked before any AX work. Repeat at an `ssh` password prompt. Same
@@ -104,8 +104,10 @@ rebuilding it for each one.
 - [ ] Secure input left engaged: turn on Terminal > Secure Keyboard Entry
       (or focus a password field in Chrome and ⌘-Tab away while it is still
       focused) and dictate into TextEdit. Expect a refusal that names the
-      holder — "Terminal has secure input on" or "Google Chrome has secure
-      input on" — not "Not in a password field". That name is what tells a
+      holder — "Secure input on in Terminal" or "Secure input on in Google
+      Chrome", on two lines without truncation — not "Not in a password
+      field". When loginwindow is stuck holding it after an unlock, the
+      notice says to lock and unlock the screen instead. That name is what tells a
       stuck holder apart from a real password field
 - [ ] Rebind to right ⌘ in Settings and confirm it works without a relaunch
 - [ ] Rebind to a custom combo (⌃⇧D) and confirm the keystroke does not

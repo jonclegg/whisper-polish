@@ -3,6 +3,7 @@ import ApplicationServices
 // `IsSecureEventInputEnabled` lives in HIToolbox and is reachable no other
 // way; ApplicationServices does not re-export it. This import is load-bearing.
 import Carbon
+import IOKit
 import QuartzCore
 
 /// Whether some app has secure event input engaged, and which one.
@@ -123,13 +124,23 @@ enum CaretLocator {
     }
 
     /// `isSecureInputActive()`, plus the name of the app holding it. The
-    /// window server records the holder's PID in the session dictionary;
-    /// the name is nil when that PID is not an app with one (a helper
-    /// process, or one that quit between the two reads).
+    /// holder's PID is read from this user's entry in the registry's
+    /// `IOConsoleUsers`. `CGSessionCopyCurrentDictionary()` carries the same
+    /// key but reports whatever app is frontmost, not the holder, so it
+    /// named Claude or Finder while loginwindow was the one stuck. The name
+    /// is nil when the PID is not an app with one (a helper process, or one
+    /// that quit between the two reads).
     static func secureEventInput() -> SecureEventInput {
         guard isSecureInputActive() else { return .off }
-        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
-        guard let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value else {
+        let root = IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
+        let consoleUsers = IORegistryEntryCreateCFProperty(
+            root, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0
+        )?.takeRetainedValue() as? [[String: Any]]
+        let thisUser = consoleUsers?.first {
+            ($0["kCGSSessionUserIDKey"] as? NSNumber)?.uint32Value == getuid()
+        }
+        guard let pid = (thisUser?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value else {
             return .on(holder: nil)
         }
         return .on(holder: NSRunningApplication(processIdentifier: pid)?.localizedName)

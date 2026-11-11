@@ -43,7 +43,7 @@ struct DictationPanelContent: View {
             case .polishing:
                 label("Polishing…").foregroundStyle(Color(nsColor: .systemBlue))
             case let .notice(message):
-                label(message)
+                label(message, lines: 2)
             case let .failed(message):
                 label(message).foregroundStyle(.orange)
             case .idle:
@@ -55,10 +55,13 @@ struct DictationPanelContent: View {
         .overlay(Capsule(style: .continuous).strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
     }
 
-    private func label(_ text: String) -> some View {
+    /// Notices get a second line: the panel is 104pt wide, and a refusal
+    /// that names an app ("Secure input on in Google Chrome") does not fit
+    /// on one.
+    private func label(_ text: String, lines: Int = 1) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
-            .lineLimit(1)
+            .lineLimit(lines)
             .minimumScaleFactor(0.8)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
