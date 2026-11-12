@@ -8,8 +8,11 @@
 #     --apple-id jonclegg@gmail.com --team-id 22CTWHGWQQ
 #
 # Usage:
-#   ./scripts/release-macos.sh v0.1.0          # build, notarize, staple, publish
-#   ./scripts/release-macos.sh v0.1.0 --dry-run  # everything except publishing
+#   ./scripts/release-macos.sh mac-v0.1.0            # build, notarize, staple, publish
+#   ./scripts/release-macos.sh mac-v0.1.0 --dry-run  # everything except publishing
+#
+# Mac tags carry a `mac-` prefix because this repo also holds the iPhone app,
+# whose releases are not the Mac app's.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,9 +35,9 @@ step() { printf "\n\033[1m→ %s\033[0m\n" "$1"; }
 # The version string is the only way to tell which build someone is running:
 # there is no auto-update and no crash reporting, so a bug report says
 # "1.0 (1)" for every build ever shipped unless this is derived from the tag.
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-  || fail "Tag must look like v1.2.3, got '$TAG'"
-MARKETING_VERSION="${TAG#v}"
+[[ "$TAG" =~ ^mac-v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+  || fail "Tag must look like mac-v1.2.3, got '$TAG'"
+MARKETING_VERSION="${TAG#mac-v}"
 # Monotonic across the whole history, and monotonic is all CURRENT_PROJECT_VERSION
 # has to be.
 BUILD_NUMBER="$(git rev-list --count HEAD)"
@@ -44,9 +47,9 @@ BUILD_NUMBER="$(git rev-list --count HEAD)"
 # it is, or collide with one already downloaded.
 EXISTING_TAGS="$(
   {
-    git tag --list 'v*'
+    git tag --list 'mac-v*'
     git ls-remote --tags origin 2>/dev/null | sed 's|.*refs/tags/||; s|\^{}$||'
-  } | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -u || true
+  } | grep -E '^mac-v[0-9]+\.[0-9]+\.[0-9]+$' | sort -u || true
 )"
 # An empty list means either a genuinely first release or an unreachable
 # remote. Those must not be treated alike: degrading to "no guard" when the

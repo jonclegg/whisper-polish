@@ -5,10 +5,12 @@ import os
 
 /// S1-mini by Superwhisper: a 0.6B model fine-tuned for one job, turning a raw
 /// speech transcript into clean written text. It runs on this Mac through
-/// llama.cpp, so choosing it means no dictated text leaves the machine.
+/// llama.cpp, and it is the app's only cleanup engine, so no dictated text
+/// ever leaves the machine.
 ///
-/// Measured against Groq's gpt-oss-120b on the same 44 synthetic dictations it
-/// scored 94.6 to Groq's 95.4, at a 185ms median instead of 958ms.
+/// Measured against gpt-oss-120b (through Groq, the cloud engine it replaced)
+/// on the same 44 synthetic dictations it scored 94.6 to 95.4, at a 185ms
+/// median instead of 958ms.
 enum S1Mini {
     /// Its license requires this exact name, capitalization included, wherever
     /// the model is identified.
@@ -66,6 +68,7 @@ enum S1Mini {
 enum S1MiniError: LocalizedError, Equatable {
     case notInstalled
     case checksumMismatch
+    case emptyResponse
 
     var errorDescription: String? {
         switch self {
@@ -73,23 +76,25 @@ enum S1MiniError: LocalizedError, Equatable {
             return "Download \(S1Mini.displayName) in Settings > Cleanup."
         case .checksumMismatch:
             return "The downloaded model did not match its checksum and was deleted. Try again."
+        case .emptyResponse:
+            return "The cleanup model returned nothing."
         }
     }
 }
 
-/// The on-device cleaner, for dictation and for ⌘⇧1. `prompt` and `model`
-/// are ignored: S1-mini has one fixed prompt and is the model.
+/// The on-device cleaner, for dictation and for ⌘⇧1. There is no prompt to
+/// pass: S1-mini has one fixed prompt, built by `S1Mini.prompt(for:)`.
 final class S1MiniCleaner: TextCleaning, TextFixing {
     private let loader = Loader()
 
-    func clean(_ text: String, prompt: String, model: String) async throws -> String {
+    func clean(_ text: String) async throws -> String {
         let runner = try await loader.runner()
         let cleaned = try await runner.complete(S1Mini.prompt(for: text))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         // S1-mini answers nothing when the input was only filler. The
-        // coordinator's contract is the same as for Groq: no text means fall
-        // back to the raw transcript rather than paste nothing.
-        guard !cleaned.isEmpty else { throw PolishError.emptyResponse }
+        // coordinator treats any error as "insert the raw transcript", so
+        // throwing here pastes what was said rather than nothing.
+        guard !cleaned.isEmpty else { throw S1MiniError.emptyResponse }
         return cleaned
     }
 

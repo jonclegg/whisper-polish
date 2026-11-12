@@ -67,7 +67,7 @@ final class FakeCleaner: TextCleaning, @unchecked Sendable {
     var delay: TimeInterval = 0
     private(set) var receivedText: String?
 
-    func clean(_ text: String, prompt: String, model: String) async throws -> String {
+    func clean(_ text: String) async throws -> String {
         receivedText = text
         if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
         if let error { throw error }
@@ -176,19 +176,20 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertTrue(presenter.states.contains(.polishing))
     }
 
-    // Switching the cleanup engine in Settings must apply to the very next
-    // dictation, so the cleaner is asked for each time rather than captured.
-    func testTheCleanerIsChosenAfreshForEachDictation() async {
-        let other = FakeCleaner()
-        other.result = "From the other engine."
-        var current: TextCleaning = cleaner
+    // Until the cleanup model is downloaded there is no cleaner, and the raw
+    // transcript goes in without a cleanup step. Finishing the download in
+    // Settings must apply to the very next dictation, so the cleaner is asked
+    // for each time rather than captured.
+    func testTheRawTranscriptIsInsertedUntilACleanerIsAvailable() async {
+        var current: TextCleaning?
         let coordinator = makeCoordinator(cleanerProvider: { current })
 
         await dictate(coordinator)
-        current = other
+        XCTAssertFalse(presenter.states.contains(.polishing))
+        current = cleaner
         await dictate(coordinator)
 
-        XCTAssertEqual(inserter.inserted, ["So the thing is.", "From the other engine."])
+        XCTAssertEqual(inserter.inserted, ["um so the thing is", "So the thing is."])
     }
 
     func testCleanupIsSkippedWhenDisabled() async {
@@ -273,9 +274,9 @@ final class DictationCoordinatorTests: XCTestCase {
 
     // MARK: - Password refusal
     //
-    // The one failure mode that would leak a secret: dictated text is sent to
-    // Groq for cleanup, so a dictation that starts at a password prompt
-    // ships the password to a third party. These test the promise itself —
+    // The one failure mode that would leak a secret: a dictation that starts
+    // at a password prompt puts the spoken password through the clipboard,
+    // where clipboard managers can keep it. These test the promise itself —
     // nothing recorded, nothing cleaned, nothing inserted — not the mechanism.
 
     // Secure event input covers what the accessibility tree cannot see: a

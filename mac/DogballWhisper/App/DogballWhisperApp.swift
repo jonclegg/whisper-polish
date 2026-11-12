@@ -16,7 +16,6 @@ enum DogballWhisperMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences()
     private lazy var models = ModelManager(preferences: preferences)
-    private let polish = PolishService()
     private let s1Mini = S1MiniModel()
 
     private var menuBar: MenuBarController?
@@ -44,12 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             recorder: recorder,
             engineProvider: { [weak self] in self?.models.activeEngine },
             inserter: inserter,
+            // No cleaner until S1-mini is downloaded, so dictation inserts
+            // the raw transcript rather than failing cleanup every time.
             cleanerProvider: { [weak self] in
-                guard let self else { return nil }
-                switch self.preferences.cleanupEngine {
-                case .groq: return self.polish
-                case .s1Mini: return self.s1Mini.cleaner
-                }
+                guard let self, self.s1Mini.state == .installed else { return nil }
+                return self.s1Mini.cleaner
             },
             presenter: panel,
             preferences: preferences
@@ -105,7 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await models.loadActiveEngine()
                 refreshActiveModelLabel()
             }
-            // ⌘⇧1 uses S1-mini whichever cleanup engine is chosen.
+            // Warmed even with dictation cleanup switched off, because ⌘⇧1
+            // uses it too.
             if S1Mini.isInstalled {
                 Task { await s1Mini.cleaner.prewarm() }
             }
@@ -130,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onboarding = OnboardingWindowController(
                 preferences: preferences,
                 models: models,
+                s1Mini: s1Mini,
                 onHotkeyChange: { [weak self] binding in self?.monitor?.binding = binding },
                 onFinished: { [weak self] in
                     guard let self else { return }
@@ -175,10 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// An accessory app has no menu bar of its own, and macOS routes ⌘X/⌘C/⌘V
-    /// through a menu's key equivalents — so without this, paste simply does
-    /// nothing in every text field the app shows, including the API key fields
-    /// in onboarding and settings. The menu is never drawn anywhere; it exists
-    /// purely so the standard editing shortcuts reach the first responder.
+    /// through a menu's key equivalents — so without this, ⌘C simply does
+    /// nothing in the text the app lets you select, such as the cleanup test
+    /// result in Settings. The menu is never drawn anywhere; it exists purely
+    /// so the standard editing shortcuts reach the first responder.
     private func installEditMenu() {
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(

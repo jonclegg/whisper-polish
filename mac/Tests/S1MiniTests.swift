@@ -75,7 +75,7 @@ final class S1MiniIntegrationTests: XCTestCase {
         var timings: [TimeInterval] = []
         for (said, expected) in cases {
             let start = Date()
-            let cleaned = try await cleaner.clean(said, prompt: "", model: "")
+            let cleaned = try await cleaner.clean(said)
             timings.append(Date().timeIntervalSince(start))
             XCTAssertEqual(cleaned, expected)
         }
@@ -115,7 +115,7 @@ final class S1MiniIntegrationTests: XCTestCase {
         await cleaner.prewarm()
         let long = Array(repeating: "and then um we talked about the the roadmap for next quarter", count: 30)
             .joined(separator: " ")
-        let task = Task { try await cleaner.clean(long, prompt: "", model: "") }
+        let task = Task { try await cleaner.clean(long) }
         try await Task.sleep(nanoseconds: 100_000_000)
         let start = Date()
         task.cancel()

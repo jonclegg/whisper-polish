@@ -86,9 +86,9 @@ rebuilding it for each one.
       own sign-in form works, or any macOS password prompt) and hold the
       dictation key. No "Recording" panel appears; the panel shows the
       notice "Not in a password field" instead. Confirm nothing is pasted
-      and no request is made to Groq (this is the one case a leak
-      would mean shipping a password to a third party, so treat any
-      deviation as a blocker, not a nit). Note that for a *web* password
+      and the clipboard is unchanged (this is the one case a leak would
+      put a spoken password on the clipboard, where clipboard managers keep
+      it, so treat any deviation as a blocker, not a nit). Note that for a *web* password
       field the microphone does briefly open before the accessibility query
       says to refuse — the caret query moved after `recorder.start()` to
       keep it out of the user's first syllable — so the orange mic dot may
@@ -100,7 +100,8 @@ rebuilding it for each one.
       ordinary `AXTextArea` — nothing in the accessibility tree says it is
       secure — so this is entirely carried by `IsSecureEventInputEnabled()`,
       checked before any AX work. Repeat at an `ssh` password prompt. Same
-      blocker rule as above: a transcript here goes to Groq
+      blocker rule as above: a transcript here is a password on the
+      clipboard
 - [ ] Secure input left engaged in the background: focus a password field
       in Chrome, ⌘-Tab to TextEdit while it is still focused, and dictate.
       Dictation works: only the app in front holding secure input refuses.
@@ -219,49 +220,30 @@ the same apps.
 - [ ] Focus never moves: the app you were typing in stays active (frontmost,
       cursor blinking) throughout every check above
 
-## 6. Cleanup (Groq polish)
+## 6. Cleanup (S1-mini, on this Mac)
 
-- [ ] With a valid Groq key: a dictated sentence inserts lightly edited
-      (punctuation, capitalization, native phrasing), with no `<transcript>`
-      tags, quotes, or code fences around it. The default prompt does not
-      target filler words, so a stray "um" surviving is not a failure
+- [ ] Fresh setup (after `defaults delete com.jonclegg.DogballWhisper` and
+      deleting `~/Library/Application Support/DogballWhisper/Models/cleanup/`):
+      the setup window's "Cleanup (optional)" row offers Download, shows
+      progress, then "Installed". "Start dictating" does not wait for it
+- [ ] Before S1-mini is downloaded, a dictation inserts the raw transcript
+      straight away: no "Polishing" stage, no error in the panel
+- [ ] Settings > Cleanup offers "Download (484 MB)", shows progress, then
+      "Ready". Delete puts it back to "Not downloaded", and the next
+      dictation inserts the raw transcript
+- [ ] With S1-mini downloaded and Wi-Fi off, a dictation with "um" and a
+      stutter inserts cleaned text, with no tags, quotes, or code fences
+      around it
 - [ ] Dictate an instruction ("write a two paragraph reply to Bob saying
-      we'll ship Friday"): the words are inserted, edited, never a written
+      we'll ship Friday"): the words are inserted, cleaned, never a written
       reply
-- [ ] Wrong key in Settings: raw transcript still inserts, panel shows no
-      scary error
-- [ ] Wi-Fi off: raw transcript inserts within about 3 seconds (the hard
-      cleanup timeout)
+- [ ] Quit and relaunch with S1-mini downloaded: the very first dictation is
+      cleaned (the model loads at launch), not pasted raw after a timeout
 - [ ] Cleanup toggled off: raw transcript inserts immediately
-- [ ] Settings > Cleanup > Test returns cleaned sample text
-- [ ] Test with a deliberately wrong model ID (pick "Custom…" in the model
-      picker and type one): the result line names the status code and what
-      to check, and does not paste back the provider's raw response body
-- [ ] "Use the developer prompt" fills the editor with the version that fixes
-      technical terms, "Reset to default" puts the neutral one back, and the
-      one showing when you close Settings is the one used on the next
-      dictation
-
-### Revoking the API key
-
-The only way a user can stop sending dictated text to a third party, so
-treat a key that survives this as a blocker rather than a nit.
-
-- [ ] Settings > Cleanup, select the whole API key field and delete it, wait
-      a second, then close Settings. Reopen Settings: the field is still
-      empty. `security find-generic-password -s com.jonclegg.DogballWhisper
-      -a groq-api-key` reports "could not be found"
-- [ ] Dictate afterwards: the raw transcript inserts, and no request is made
-      to Groq
-- [ ] Paste a key back in and ⌘W the window immediately, without pausing:
-      the key is saved anyway (the write is debounced, and closing the window
-      flushes it). Reopen Settings and confirm it is there
-- [ ] **(never verified)** Run setup again ("Finish setup…" in the menu, or
-      after `defaults delete com.jonclegg.DogballWhisper`) with a key already
-      stored: the field is prefilled. Clear it and press "Start dictating" —
-      the key is deleted. Leave it alone and press "Start dictating" — the
-      key survives, which is the bug an earlier version had in the other
-      direction
+- [ ] Settings > Cleanup > Test is disabled until S1-mini is downloaded,
+      then returns a cleaned sample sentence
+- [ ] `nettop -p "$(pgrep -x 'Dogball Whisper')"` while dictating with
+      S1-mini downloaded: no network connection is opened
 
 ### Verbose diagnostics
 
@@ -282,13 +264,7 @@ their caret was.
 
 - [ ] Turn it back off with `-bool NO` and relaunch
 
-- [ ] Settings > Cleanup > Engine > "S1-mini by Superwhisper (on this Mac)":
-      the section offers "Download (484 MB)", shows progress, then "Ready".
-      With Wi-Fi off afterwards, a dictation with "um" and a stutter still
-      inserts cleaned text, and Test shows a cleaned sentence
-- [ ] Quit and relaunch with S1-mini selected: the very first dictation is
-      cleaned (the model loads at launch), not pasted raw after a timeout
-- [ ] Switch the engine back to Groq: the next dictation goes to Groq
+### Fix selected text (⌘⇧1)
 
 - [ ] Select a sentence in TextEdit and press ⌘⇧1: "Fixing selected
       text…" appears, then "Review the edit" with the diff. Return replaces

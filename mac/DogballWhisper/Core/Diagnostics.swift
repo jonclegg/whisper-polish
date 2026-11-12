@@ -4,7 +4,7 @@ import os
 
 /// Diagnostic breadcrumbs for problems that only reproduce in real use.
 ///
-/// Deliberately never records transcript text, cleaned text, or the API key —
+/// Deliberately never records transcript text or cleaned text —
 /// only lengths, counts, and state names. Read them back with:
 ///
 ///     log show --last 10m --predicate 'subsystem == "com.jonclegg.DogballWhisper"'
@@ -61,11 +61,11 @@ enum Diagnostics {
     /// type and code are logged.
     static func describe(_ error: Error) -> String {
         switch error {
-        case let polish as PolishError:
-            switch polish {
-            case .missingAPIKey: return "no API key"
+        case let s1Mini as S1MiniError:
+            switch s1Mini {
+            case .notInstalled: return "S1-mini not installed"
+            case .checksumMismatch: return "S1-mini checksum mismatch"
             case .emptyResponse: return "empty response"
-            case let .http(status): return "HTTP \(status)"
             }
         case let urlError as URLError:
             return "URLError \(urlError.code.rawValue)"

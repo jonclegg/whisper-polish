@@ -9,16 +9,18 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let preferences: Preferences
     private let models: ModelManager
+    private let s1Mini: S1MiniModel
     private let onHotkeyChange: (HotkeyBinding) -> Void
     private let onFinished: () -> Void
     private let poller = OnboardingPermissionPoller()
 
     init(
-        preferences: Preferences, models: ModelManager,
+        preferences: Preferences, models: ModelManager, s1Mini: S1MiniModel,
         onHotkeyChange: @escaping (HotkeyBinding) -> Void, onFinished: @escaping () -> Void
     ) {
         self.preferences = preferences
         self.models = models
+        self.s1Mini = s1Mini
         self.onHotkeyChange = onHotkeyChange
         self.onFinished = onFinished
     }
@@ -38,6 +40,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
                 rootView: OnboardingView(
                     preferences: preferences,
                     models: models,
+                    s1Mini: s1Mini,
                     poller: poller,
                     onHotkeyChange: onHotkeyChange,
                     onFinished: { [weak self] in
@@ -99,11 +102,11 @@ final class OnboardingPermissionPoller {
 struct OnboardingView: View {
     let preferences: Preferences
     let models: ModelManager
+    let s1Mini: S1MiniModel
     let poller: OnboardingPermissionPoller
     let onHotkeyChange: (HotkeyBinding) -> Void
     let onFinished: () -> Void
 
-    @State private var apiKey = ""
     /// Mirrors the hotkey the picker below currently holds, so the headline
     /// keeps naming the key the user actually has to hold. This window
     /// contains a hotkey picker, so a hardcoded "right ⌥" would be wrong the
@@ -180,10 +183,25 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Cleanup (optional)").font(.headline)
-                SecureField("Groq API key", text: $apiKey)
-                Text("Polishes your wording so it reads like a native speaker wrote it. Only text is sent, never audio.")
+                HStack {
+                    Text("\(S1Mini.displayName) · 484 MB")
+                    Spacer()
+                    switch s1Mini.state {
+                    case .notInstalled:
+                        Button("Download") { Task { await s1Mini.install() } }
+                    case let .downloading(fraction):
+                        ProgressView(value: fraction).frame(width: 120)
+                    case .installed:
+                        Label("Installed", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+                Text("Removes filler words and false starts and fixes punctuation, on this Mac. Nothing you say is sent anywhere. Until it is downloaded, dictation inserts the raw transcript.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let error = s1Mini.lastError {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                }
             }
 
             Spacer()
@@ -192,13 +210,7 @@ struct OnboardingView: View {
                 Text(Permissions.summary(granted: poller.granted))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Start dictating") {
-                    // Same rule as the settings tab: the field is prefilled
-                    // from the Keychain, so leaving it empty is a decision to
-                    // have no key rather than an accident.
-                    KeychainStore.setKey(fromField: apiKey)
-                    onFinished()
-                }
+                Button("Start dictating") { onFinished() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canFinish)
             }
@@ -207,10 +219,6 @@ struct OnboardingView: View {
         .onAppear {
             poller.refresh()
             hotkeyName = preferences.hotkeyBinding.displayName
-            // Show the key that is already stored, so running setup a second
-            // time does not present an empty field that looks like there is
-            // no key.
-            apiKey = KeychainStore.read() ?? ""
         }
     }
 

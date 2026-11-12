@@ -14,6 +14,8 @@ An iPhone keyboard that can rewrite what you typed. The model runs on the phone.
 
 It's free and open source. This repo has the keyboard, the app, and the scripts that trained both of its models.
 
+The Mac version is in [`mac/`](mac): a menu-bar app where you hold a key, talk, and the cleaned-up text lands wherever you were typing. Speech recognition and cleanup both run on the Mac.
+
 ## What it does
 
 **Polish.** Type or dictate something rough, tap the button, and it's rewritten as an email, a text, a Slack message or bullets. It takes out the "um"s and false starts. If you said "at 1, no wait, 1:30", it keeps 1:30. This happens in the keyboard, on the phone. There's no server and no account.

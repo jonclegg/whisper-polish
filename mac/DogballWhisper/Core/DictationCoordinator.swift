@@ -15,7 +15,7 @@ enum DictationState: Equatable {
 /// Runs off the main actor (a task-group child inside `cleanIfEnabled`), so
 /// a conforming type must be safe to invoke from another isolation domain.
 protocol TextCleaning: Sendable {
-    func clean(_ text: String, prompt: String, model: String) async throws -> String
+    func clean(_ text: String) async throws -> String
 }
 
 @MainActor
@@ -25,14 +25,15 @@ protocol DictationPresenting: AnyObject {
 }
 
 typealias EngineProvider = () -> TranscriptionEngine?
-/// Asked once per dictation, so switching the cleanup engine in Settings takes
-/// effect on the next dictation.
+/// Asked once per dictation, so downloading or deleting the cleanup model in
+/// Settings takes effect on the next dictation. Nil while there is no model to
+/// clean with, which inserts the raw transcript.
 typealias CleanerProvider = () -> TextCleaning?
 
 /// Where the caret is, and whether dictating there is allowed at all.
-/// Injected so the refusal path — the one place a bug means shipping a
-/// password to a third party — is testable without a real focused app, and
-/// so tests never set accessibility attributes on whatever happens to be
+/// Injected so the refusal path — the one place a bug means pasting a
+/// spoken password into the open — is testable without a real focused app,
+/// and so tests never set accessibility attributes on whatever happens to be
 /// frontmost while they run.
 typealias CaretProvider = () -> CaretLocation
 /// The cheap, in-process half of the same question (`IsSecureEventInputEnabled`),
@@ -185,12 +186,13 @@ final class DictationCoordinator {
         // at the fallback position rather than wherever the last one landed.
         location = .unknown
 
-        // Dictated text is sent to Groq for cleanup, so recording into
-        // a password field would ship the password to a third party. The
-        // cheap half of that gate — secure event input, which covers a sudo
-        // or ssh prompt in a terminal and every macOS auth dialog — runs
-        // first, before anything else is true or false: it is in-process,
-        // costs nothing, and needs no accessibility permission.
+        // A password field is no place for dictation: the spoken password
+        // would go through the clipboard, where clipboard managers can keep
+        // it, and in clipboard-only mode it would stay there for any app to
+        // read. The cheap half of that gate — secure event input, which
+        // covers a sudo or ssh prompt in a terminal and every macOS auth
+        // dialog — runs first, before anything else is true or false: it is
+        // in-process, costs nothing, and needs no accessibility permission.
         if case let .on(holder) = secureInputProvider() {
             refuseSecureEventInput(holder: holder)
             return
@@ -348,8 +350,9 @@ final class DictationCoordinator {
     /// dictation has started or `abort()` has given up on this one.
     private func isCurrent(_ token: Int) -> Bool { token == generation }
 
-    /// Cleanup is best-effort by design: any failure, timeout, or missing key
-    /// falls through to the raw transcript rather than losing the dictation.
+    /// Cleanup is best-effort by design: any failure, timeout, or model not
+    /// yet downloaded falls through to the raw transcript rather than losing
+    /// the dictation.
     ///
     /// Guards `token` itself before writing `.polishing`: today there is no
     /// actor hop between the caller's own `isCurrent` check and this call,
@@ -364,7 +367,10 @@ final class DictationCoordinator {
             return text
         }
         guard let cleaner = cleanerProvider() else {
-            Diagnostics.verbose("cleanup skipped: no cleaner wired up")
+            // Not a failure: until the cleanup model is downloaded there is
+            // nothing to clean with, and logging that at notice level would
+            // persist a timestamped line for every dictation the user makes.
+            Diagnostics.verbose("cleanup skipped: no cleanup model installed")
             return text
         }
         guard isCurrent(token) else {
@@ -372,31 +378,23 @@ final class DictationCoordinator {
             return text
         }
         state = .polishing
-        let prompt = preferences.cleanupPrompt
-        let model = preferences.cleanupModelID
         Diagnostics.verbose(
-            "cleanup starting: model=\(model) promptChars=\(prompt.count) textChars=\(text.count) timeout=\(config.cleanupTimeout)s")
+            "cleanup starting: textChars=\(text.count) timeout=\(config.cleanupTimeout)s")
         let started = Date()
         do {
             let cleaned = try await withTimeout(seconds: config.cleanupTimeout) {
-                try await cleaner.clean(text, prompt: prompt, model: model)
+                try await cleaner.clean(text)
             }
             let elapsed = Date().timeIntervalSince(started)
             Diagnostics.verbose(
                 "cleanup ok in \(Int(elapsed * 1000))ms: \(text.count) -> \(cleaned.count) chars")
             return cleaned
         } catch is TimedOutError {
-            // The most likely cause of "cleanup stopped working": the request
-            // is fine but slower than the budget, so every dictation silently
+            // The most likely cause of "cleanup stopped working": the model
+            // runs but slower than the budget, so every dictation silently
             // falls back to the raw transcript.
             Diagnostics.log(
                 "cleanup TIMED OUT after \(config.cleanupTimeout)s, inserting the raw transcript")
-            return text
-        } catch let error as PolishError where error == .missingAPIKey {
-            // Not a failure: cleanup is optional, and having no key is an
-            // ordinary way to run this app. Logging it at notice level would
-            // persist a timestamped line for every dictation the user makes.
-            Diagnostics.verbose("cleanup skipped: no API key")
             return text
         } catch {
             let elapsed = Date().timeIntervalSince(started)
