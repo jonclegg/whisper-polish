@@ -41,11 +41,12 @@ final class FixPanelSnapshotTests: XCTestCase {
     }
 }
 
-/// The whole of ⌘⇧1 for real, inside the test host's own window: a real key
-/// press through the real event tap, a real ⌘C, real S1-mini, the real
+/// The whole of the fix shortcut for real, inside the test host's own
+/// window: a real ⌘⇧1 through the real Carbon hot key, a real ⌘C, real S1-mini, the real
 /// dialog accepted with a real Return, and a real ⌘V back into the text.
 /// Needs S1-mini installed and Accessibility granted to this build, and takes
-/// focus for a few seconds while it runs:
+/// focus for a few seconds while it runs. The installed app has to be quit
+/// first, since it owns the same hot key:
 /// RUN_FIX_E2E=1 ./scripts/test.sh DogballWhisperTests/FixEndToEndTests
 @MainActor
 final class FixEndToEndTests: XCTestCase {
@@ -80,16 +81,18 @@ final class FixEndToEndTests: XCTestCase {
         let controller = FixController(
             selection: PasteboardSelection(inserter: PasteboardTextInserter()),
             fixer: cleaner, presenter: panel)
-        let monitor = HotkeyMonitor(binding: .rightOption) { _ in }
-        monitor.onFixShortcut = { MainActor.assumeIsolated { controller.trigger() } }
-        try monitor.start()
-        defer { monitor.stop() }
+        let registration = FixShortcutRegistration(onPress: { controller.trigger() })
+        registration.register(.defaultFixShortcut)
+        XCTAssertNil(registration.registrationError)
+        defer { registration.unregister() }
 
         try await waitUntil("this app is frontmost") {
             NSWorkspace.shared.frontmostApplication?.processIdentifier
                 == ProcessInfo.processInfo.processIdentifier && window.isKeyWindow
         }
-        Self.post(keyCode: CGKeyCode(FixShortcut.keyCode), flags: [.maskCommand, .maskShift])
+        Self.post(
+            keyCode: CGKeyCode(HotkeyBinding.defaultFixShortcut.keyCode),
+            flags: HotkeyBinding.defaultFixShortcut.modifiers)
 
         try await waitUntil("the dialog shows the edit") { panel.shownResult != nil }
         let result = try XCTUnwrap(panel.shownResult)

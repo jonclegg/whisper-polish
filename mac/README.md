@@ -108,10 +108,15 @@ To check it end to end (downloads the real model):
 
     RUN_S1MINI_IT=1 ./scripts/test.sh DogballWhisperTests/S1MiniIntegrationTests
 
-## Fix selected text (⌘⇧1)
+## Fix selected text (⌘⇧1 by default)
 
-Select text in any app and press ⌘⇧1, the shortcut the
-[Fixit](https://github.com/ivanrvpereira/fixit) app uses. Dogball Whisper
+Select text in any app and press the fix shortcut (⌘⇧1 by default, the
+shortcut the [Fixit](https://github.com/ivanrvpereira/fixit) app uses).
+Change it in Settings > General > Fix selected text: click the shortcut,
+press the new combination (it needs ⌘, ⌃ or ⌥; Esc cancels), or Reset to
+go back to ⌘⇧1. It works even while macOS has secure input on, such as
+with a password field focused, because it is a registered system hot key
+rather than something read from the keyboard tap. Dogball Whisper
 copies the selection, runs it through S1-mini on this Mac, and shows Fixit's
 review dialog: the edit as an inline diff (or the plain result), with Replace
 (Return), Copy, and Dismiss (Esc). Replace pastes the fix over the selection
@@ -123,7 +128,8 @@ It uses S1-mini even with dictation cleanup switched off, so the model
 stays loaded once downloaded. S1-mini takes no prompt: it does what it does
 for dictation (punctuation, capitalization, fillers, stutters), not Fixit's
 "Sound native" rewrite, so it leaves grammar like "I am agree" alone. Quit
-Fixit, or change its shortcut, since only one app can own ⌘⇧1.
+Fixit, or change one of the two shortcuts, since only one app can own a
+combination; if another app has it, Settings says so under the shortcut.
 
 To check it end to end (takes focus for a few seconds, needs Accessibility
 granted to the test build and S1-mini downloaded):
@@ -162,12 +168,12 @@ granularity, managed by `Transcribe/ModelManager.swift`.
 
 ## Layout
 
-- `Hotkey/` - the event tap and the pure matcher that decides began / ended / cancelled
+- `Hotkey/` - the event tap and the pure matcher that decides began / ended / cancelled, and the fix shortcut's Carbon hot key
 - `Capture/` - 16kHz mono WAV recording with level metering
 - `Transcribe/` - engine protocol, Parakeet (FluidAudio), Whisper (WhisperKit), model catalog
 - `Polish/` - S1-mini on llama.cpp, the on-device cleanup model
 - `Insert/` - caret location and clipboard-preserving paste
-- `Fix/` - ⌘⇧1: copy the selection, fix it with S1-mini, Fixit's review dialog
+- `Fix/` - the fix shortcut (⌘⇧1 by default): copy the selection, fix it with S1-mini, Fixit's review dialog
 - `Core/DictationCoordinator.swift` - the state machine everything else hangs off
 - `UI/` - floating panel, settings, onboarding
 

@@ -26,7 +26,7 @@ struct HotkeyPickerView: View {
                 Text("Custom").tag(selection.customTag)
             }
             if selection.binding.kind == .combo || selection.isChoosingCustom {
-                ShortcutRecorderView(binding: recordedBinding)
+                ShortcutRecorderView(binding: recordedBinding, rule: .dictation)
             }
             if let fnWarning {
                 Text(fnWarning).font(.callout).foregroundStyle(.orange)

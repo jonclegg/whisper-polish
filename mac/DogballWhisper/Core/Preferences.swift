@@ -9,6 +9,7 @@ enum InsertionMode: String, Codable {
 final class Preferences {
     private enum Key {
         static let hotkeyBinding = "hotkeyBinding"
+        static let fixShortcut = "fixShortcut"
         static let activeModelID = "activeModelID"
         static let cleanupEnabled = "cleanupEnabled"
         static let insertionMode = "insertionMode"
@@ -59,5 +60,23 @@ final class Preferences {
             return binding
         }
         set { hotkeyBindingData = try? JSONEncoder().encode(newValue) }
+    }
+
+    /// The key combination that fixes the selected text. Unset until the
+    /// user records one, which means `HotkeyBinding.defaultFixShortcut`.
+    var fixShortcut: HotkeyBinding {
+        get {
+            guard let data = defaults.data(forKey: Key.fixShortcut) else { return .defaultFixShortcut }
+            do {
+                return try JSONDecoder().decode(HotkeyBinding.self, from: data)
+            } catch {
+                Diagnostics.log("Stored fix shortcut unreadable, using the default: \(Diagnostics.describe(error))")
+                return .defaultFixShortcut
+            }
+        }
+        set {
+            // Encoding two integers and an enum cannot fail.
+            defaults.set(try! JSONEncoder().encode(newValue), forKey: Key.fixShortcut)
+        }
     }
 }

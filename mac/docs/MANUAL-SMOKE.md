@@ -264,15 +264,27 @@ their caret was.
 
 - [ ] Turn it back off with `-bool NO` and relaunch
 
-### Fix selected text (⌘⇧1)
+### Fix selected text (the fix shortcut, ⌘⇧1 by default)
 
-- [ ] Select a sentence in TextEdit and press ⌘⇧1: "Fixing selected
+- [ ] Select a sentence in TextEdit and press the fix shortcut: "Fixing selected
       text…" appears, then "Review the edit" with the diff. Return replaces
       the selection, and ⌘V afterwards pastes what was on the clipboard before
-- [ ] ⌘⇧1 again, then Esc: the text is unchanged and TextEdit has focus
-- [ ] ⌘⇧1 with nothing selected: it fixes the clipboard, and the button
+- [ ] The fix shortcut again, then Esc: the text is unchanged and TextEdit has focus
+- [ ] The fix shortcut with nothing selected: it fixes the clipboard, and the button
       reads Copy to Clipboard
-- [ ] ⌘⇧1 in Slack or a browser text field: Replace lands there too
+- [ ] The fix shortcut in Slack or a browser text field: Replace lands there too
+- [ ] With a password field focused in Safari (secure input on), switch to
+      TextEdit, select text and press the fix shortcut: the dialog still opens
+- [ ] Settings > General > Fix selected text shows ⇧⌘1. Click it, press
+      ⇧1: it keeps recording and says ⌘, ⌃ or ⌥ is needed. Press ⌃⌥F: the
+      button shows ⌃⌥F, and ⌃⌥F fixes selected text at once, with no relaunch;
+      ⌘⇧1 no longer does
+- [ ] Click the shortcut, press Esc: it is unchanged and still works.
+      Reset brings back ⇧⌘1
+- [ ] Record a combination another app has registered as a hot key: a red
+      message under the shortcut says it is in use, and
+      `log show --last 5m --predicate 'subsystem == "com.jonclegg.DogballWhisper"'`
+      has a "Fix shortcut … not registered" line
 - [ ] Quit from the menu bar with S1-mini downloaded: no crash report in
       ~/Library/Logs/DiagnosticReports
 

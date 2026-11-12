@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: DictationCoordinator?
     private var monitor: HotkeyMonitor?
     private var fixController: FixController?
+    private var fixShortcutRegistration: FixShortcutRegistration?
     private var settings: SettingsWindowController?
     private var onboarding: OnboardingWindowController?
 
@@ -36,8 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         self.recorder = recorder
 
-        // One inserter for dictation and ⌘⇧1, so a paste from one never
-        // snapshots the other's text as the clipboard to restore.
+        // One inserter for dictation and the fix shortcut, so a paste from
+        // one never snapshots the other's text as the clipboard to restore.
         let inserter = PasteboardTextInserter()
         let coordinator = DictationCoordinator(
             recorder: recorder,
@@ -87,8 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fixer: s1Mini.cleaner,
             presenter: FixOverlayPanel())
         self.fixController = fixController
-        monitor.onFixShortcut = { MainActor.assumeIsolated { fixController.trigger() } }
         self.monitor = monitor
+        fixShortcutRegistration = FixShortcutRegistration(onPress: { fixController.trigger() })
 
         let readyToLaunch = preferences.hasCompletedOnboarding && Permissions.allRequiredGranted
         menuBar.setSetupIncomplete(!readyToLaunch)
@@ -103,8 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await models.loadActiveEngine()
                 refreshActiveModelLabel()
             }
-            // Warmed even with dictation cleanup switched off, because ⌘⇧1
-            // uses it too.
+            // Warmed even with dictation cleanup switched off, because the
+            // fix shortcut uses it too.
             if S1Mini.isInstalled {
                 Task { await s1Mini.cleaner.prewarm() }
             }
@@ -115,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// llama.cpp's Metal backend aborts in its exit-time teardown if a model
     /// is still loaded, so Quit would end in a crash report. S1-mini stays
-    /// loaded for ⌘⇧1, so it is freed first.
+    /// loaded for the fix shortcut, so it is freed first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {
             await s1Mini.cleaner.unload()
@@ -203,7 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
+    /// The fix shortcut is registered here rather than at launch, with the
+    /// dictation key, so neither is live before setup has granted the
+    /// permissions they need.
     func startMonitoring() {
+        fixShortcutRegistration?.register(preferences.fixShortcut)
         do {
             try monitor?.start()
         } catch {
@@ -218,6 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 models: models,
                 s1Mini: s1Mini,
                 onHotkeyChange: { [weak self] binding in self?.monitor?.binding = binding },
+                fixShortcutRegistration: fixShortcutRegistration!,
                 onLaunchAtLoginChange: { [weak self] in self?.menuBar?.refreshLaunchAtLoginState() }
             )
         }

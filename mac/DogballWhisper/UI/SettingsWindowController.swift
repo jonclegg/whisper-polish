@@ -10,6 +10,7 @@ final class SettingsWindowController {
     private let models: ModelManager
     private let s1Mini: S1MiniModel
     private let onHotkeyChange: (HotkeyBinding) -> Void
+    private let fixShortcutRegistration: FixShortcutRegistration
     private let onLaunchAtLoginChange: () -> Void
 
     init(
@@ -17,12 +18,14 @@ final class SettingsWindowController {
         models: ModelManager,
         s1Mini: S1MiniModel,
         onHotkeyChange: @escaping (HotkeyBinding) -> Void,
+        fixShortcutRegistration: FixShortcutRegistration,
         onLaunchAtLoginChange: @escaping () -> Void
     ) {
         self.preferences = preferences
         self.models = models
         self.s1Mini = s1Mini
         self.onHotkeyChange = onHotkeyChange
+        self.fixShortcutRegistration = fixShortcutRegistration
         self.onLaunchAtLoginChange = onLaunchAtLoginChange
     }
 
@@ -31,6 +34,7 @@ final class SettingsWindowController {
             let view = SettingsView(
                 preferences: preferences, models: models, s1Mini: s1Mini,
                 onHotkeyChange: onHotkeyChange,
+                fixShortcutRegistration: fixShortcutRegistration,
                 onLaunchAtLoginChange: onLaunchAtLoginChange)
             let window = NSWindow(
                 contentRect: CGRect(x: 0, y: 0, width: 520, height: 420),

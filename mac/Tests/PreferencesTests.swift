@@ -51,4 +51,18 @@ final class PreferencesTests: XCTestCase {
         prefs.hotkeyBindingData = Data("not valid json".utf8)
         XCTAssertEqual(prefs.hotkeyBinding, .rightOption)
     }
+
+    func testFixShortcutDefaultsToCommandShiftOneAndRoundTrips() {
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.fixShortcut, .defaultFixShortcut)
+
+        let recorded = HotkeyBinding(comboKeyCode: 3, modifiers: [.maskControl, .maskAlternate])
+        prefs.fixShortcut = recorded
+        XCTAssertEqual(Preferences(defaults: defaults).fixShortcut, recorded)
+    }
+
+    func testFixShortcutFallsBackToDefaultWhenStoredDataFailsToDecode() {
+        defaults.set(Data("not valid json".utf8), forKey: "fixShortcut")
+        XCTAssertEqual(Preferences(defaults: defaults).fixShortcut, .defaultFixShortcut)
+    }
 }

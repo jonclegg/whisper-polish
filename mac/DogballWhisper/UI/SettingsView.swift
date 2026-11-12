@@ -6,12 +6,14 @@ struct SettingsView: View {
     let models: ModelManager
     let s1Mini: S1MiniModel
     let onHotkeyChange: (HotkeyBinding) -> Void
+    let fixShortcutRegistration: FixShortcutRegistration
     let onLaunchAtLoginChange: () -> Void
 
     var body: some View {
         TabView {
             GeneralSettingsTab(
                 preferences: preferences, onHotkeyChange: onHotkeyChange,
+                fixShortcutRegistration: fixShortcutRegistration,
                 onLaunchAtLoginChange: onLaunchAtLoginChange)
                 .tabItem { Label("General", systemImage: "gearshape") }
             ModelsSettingsTab(models: models)
@@ -26,6 +28,7 @@ struct SettingsView: View {
 private struct GeneralSettingsTab: View {
     let preferences: Preferences
     let onHotkeyChange: (HotkeyBinding) -> Void
+    let fixShortcutRegistration: FixShortcutRegistration
     let onLaunchAtLoginChange: () -> Void
 
     @State private var insertionMode: InsertionMode = .paste
@@ -36,11 +39,7 @@ private struct GeneralSettingsTab: View {
             Section("Hold to talk") {
                 HotkeyPickerView(preferences: preferences, onHotkeyChange: onHotkeyChange)
             }
-            Section("Fix selected text") {
-                Text("Select text in any app and press ⌘⇧1, the Fixit shortcut. \(S1Mini.displayName) cleans it up on this Mac and shows the edit for you to Replace, Copy or Dismiss. With nothing selected, it fixes the clipboard. Download the model in Cleanup.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            FixShortcutSection(preferences: preferences, registration: fixShortcutRegistration)
             Section("Insertion") {
                 Picker("When dictation finishes", selection: $insertionMode) {
                     Text("Paste into the focused app").tag(InsertionMode.paste)
@@ -62,6 +61,59 @@ private struct GeneralSettingsTab: View {
             LoginItem.setEnabled(new)
             onLaunchAtLoginChange()
         }
+    }
+}
+
+/// The fix shortcut's recorder. Every change is written to `preferences` and
+/// registered straight away, so it takes effect without a relaunch.
+private struct FixShortcutSection: View {
+    let preferences: Preferences
+    let registration: FixShortcutRegistration
+
+    @State private var shortcut = HotkeyBinding.defaultFixShortcut
+
+    var body: some View {
+        Section("Fix selected text") {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Shortcut")
+                Spacer()
+                ShortcutRecorderView(
+                    binding: recordedShortcut, rule: .fixShortcut,
+                    onRecordingChange: { isRecording in
+                        if isRecording {
+                            registration.unregister()
+                        } else {
+                            registration.register(preferences.fixShortcut)
+                        }
+                    })
+                Button("Reset") {
+                    preferences.fixShortcut = .defaultFixShortcut
+                    shortcut = .defaultFixShortcut
+                    registration.register(preferences.fixShortcut)
+                }
+                .disabled(shortcut == .defaultFixShortcut)
+            }
+            if let error = registration.registrationError {
+                Text(error.localizedDescription).font(.caption).foregroundStyle(.red)
+            }
+            Text("Select text in any app and press \(shortcut.displayName). \(S1Mini.displayName) cleans it up on this Mac and shows the edit for you to Replace, Copy or Dismiss. With nothing selected, it fixes the clipboard. Download the model in Cleanup.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear { shortcut = preferences.fixShortcut }
+    }
+
+    /// Persists as it is set, before the recorder reports that recording
+    /// stopped, so the re-registration that follows, which reads
+    /// `preferences`, picks up the new shortcut.
+    private var recordedShortcut: Binding<HotkeyBinding> {
+        Binding(
+            get: { shortcut },
+            set: { recorded in
+                preferences.fixShortcut = recorded
+                shortcut = recorded
+            }
+        )
     }
 }
 
@@ -182,7 +234,7 @@ private struct CleanupSettingsTab: View {
             if let error = s1Mini.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
-            Text("A small model built only for cleaning up dictation: it removes filler words and false starts, keeps your self-corrections, and fixes punctuation and capitalization. Anything slower than \(Int(DictationCoordinator.Config().cleanupTimeout)) seconds is abandoned and the raw transcript is used. It is also what ⌘⇧1 uses to fix selected text.")
+            Text("A small model built only for cleaning up dictation: it removes filler words and false starts, keeps your self-corrections, and fixes punctuation and capitalization. Anything slower than \(Int(DictationCoordinator.Config().cleanupTimeout)) seconds is abandoned and the raw transcript is used. It is also what the fix shortcut uses to fix selected text.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

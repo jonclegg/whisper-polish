@@ -29,10 +29,6 @@ final class HotkeyMonitor {
     /// is already in flight. Never consumes the key.
     var onEscape: (() -> Void)?
 
-    /// Called when ⌘⇧1 is pressed, to fix the selected text. The keystroke is
-    /// consumed, so the focused app never sees it.
-    var onFixShortcut: (() -> Void)?
-
     private static let escapeKeyCode: UInt16 = 53
 
     private var matcher: HotkeyMatcher
@@ -115,30 +111,11 @@ final class HotkeyMonitor {
             DispatchQueue.main.async { onEscape() }
         }
 
-        if case let .keyDown(keyCode, flags) = input, FixShortcut.matches(keyCode: keyCode, flags: flags),
-           let onFixShortcut {
-            // Holding the keys auto-repeats; one press is one fix.
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.main.async { onFixShortcut() }
-            }
-            return nil
-        }
-
         let consume = matcher.consumesEvent(input)
         if let signal = matcher.handle(input) {
             let callback = onSignal
             DispatchQueue.main.async { callback(signal) }
         }
         return consume ? nil : Unmanaged.passUnretained(event)
-    }
-}
-
-/// ⌘⇧1, the shortcut the Fixit app uses, so the habit carries over.
-enum FixShortcut {
-    static let keyCode: UInt16 = 18
-    static let modifiers: CGEventFlags = [.maskCommand, .maskShift]
-
-    static func matches(keyCode: UInt16, flags: CGEventFlags) -> Bool {
-        keyCode == Self.keyCode && flags.intersection(HotkeyMatcher.relevantMasks) == modifiers
     }
 }

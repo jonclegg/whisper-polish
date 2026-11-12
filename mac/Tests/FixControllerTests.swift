@@ -223,25 +223,6 @@ final class FixControllerTests: XCTestCase {
     }
 }
 
-final class FixShortcutTests: XCTestCase {
-    func testCommandShiftOneMatches() {
-        XCTAssertTrue(FixShortcut.matches(keyCode: 18, flags: [.maskCommand, .maskShift]))
-    }
-
-    // Caps lock and the non-coalesced bit ride along on real events.
-    func testIrrelevantFlagsAreIgnored() {
-        XCTAssertTrue(FixShortcut.matches(
-            keyCode: 18, flags: [.maskCommand, .maskShift, .maskAlphaShift, .maskNonCoalesced]))
-    }
-
-    func testOtherShortcutsDoNotMatch() {
-        XCTAssertFalse(FixShortcut.matches(keyCode: 18, flags: [.maskCommand]))
-        XCTAssertFalse(FixShortcut.matches(keyCode: 18, flags: [.maskShift]))
-        XCTAssertFalse(FixShortcut.matches(keyCode: 18, flags: [.maskCommand, .maskShift, .maskAlternate]))
-        XCTAssertFalse(FixShortcut.matches(keyCode: 19, flags: [.maskCommand, .maskShift]))
-    }
-}
-
 final class InlineDiffBuilderTests: XCTestCase {
     private let font = NSFont.systemFont(ofSize: 14)
 
