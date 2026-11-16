@@ -75,7 +75,7 @@ private struct SuggestionBar: View {
     }
 
     private var pasteControl: some View {
-        PasteControl(target: model.controller)
+        PasteControl(target: model.controller!)
             .frame(width: 110, height: 32)
     }
 

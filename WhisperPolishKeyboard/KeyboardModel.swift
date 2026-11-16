@@ -47,7 +47,11 @@ final class KeyboardModel {
     private(set) var options = KeyboardOptions()
     var isPickingStyle = false
 
-    @ObservationIgnored unowned let controller: KeyboardViewController
+    /// iOS frees the controller when it closes the keyboard, while answers from the
+    /// predictor, a polish, or a held delete can still be on their way. Those check
+    /// `isOpen` and drop themselves rather than reach a text field that's gone.
+    @ObservationIgnored private(set) weak var controller: KeyboardViewController?
+    private var isOpen: Bool { controller != nil }
     @ObservationIgnored let prediction = PredictionEngine()
     /// Set once earlier sessions' learning has loaded into the predictor.
     @ObservationIgnored private var isPredictorLoaded = false
@@ -116,7 +120,7 @@ final class KeyboardModel {
                     predictor.setLexicon(lexicon, wordModel: wordModel, decoder: decoder, personal: personal)
                 }
                 DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
+                    guard let self, isOpen else { return }
                     isPredictorLoaded = true
                     syncLearnedWords()
                     updateSuggestions()
@@ -126,7 +130,7 @@ final class KeyboardModel {
         }
     }
 
-    private var proxy: UITextDocumentProxy { controller.textDocumentProxy }
+    private var proxy: UITextDocumentProxy { controller!.textDocumentProxy }
     /// Safari reports no document while focus moves between form fields, which
     /// `proxy.documentIdentifier`'s non-optional import traps on.
     private var documentIdentifier: UUID? {
@@ -195,9 +199,9 @@ final class KeyboardModel {
 
     func refresh() {
         learnKeptWords()
-        hasFullAccess = controller.hasFullAccess
+        hasFullAccess = controller!.hasFullAccess
         options = KeyboardOptions.load()
-        needsInputModeSwitchKey = controller.needsInputModeSwitchKey
+        needsInputModeSwitchKey = controller!.needsInputModeSwitchKey
         layout = proxy.keyboardType == .numbersAndPunctuation ? .numbers : .letters
         isPickingStyle = false
         letterTouches = []
@@ -437,6 +441,12 @@ final class KeyboardModel {
         }
     }
 
+    /// The keyboard is closing: work that would still type into the field stops.
+    func close() {
+        polishTask?.cancel()
+        stopDeleting()
+    }
+
     func savePersonal() {
         // Before earlier sessions' learning loads there's only an empty model, which would overwrite it.
         guard isPredictorLoaded else { return }
@@ -510,7 +520,7 @@ final class KeyboardModel {
         deleteRepeatTask = Task {
             try? await Task.sleep(for: .milliseconds(450))
             var repeats = 0
-            while !Task.isCancelled {
+            while !Task.isCancelled, isOpen {
                 UIDevice.current.playInputClick()
                 if repeats < 12 {
                     deleteBackward()
@@ -643,7 +653,7 @@ final class KeyboardModel {
         guard !suggestionsScheduled else { return }
         suggestionsScheduled = true
         DispatchQueue.main.async { [weak self] in
-            guard let self, suggestionsScheduled else { return }
+            guard let self, isOpen, suggestionsScheduled else { return }
             updateSuggestions()
         }
     }
@@ -672,7 +682,7 @@ final class KeyboardModel {
     }
 
     private func receive(_ result: Predictor.Result, letterOdds odds: [Character: Double], after text: String, for number: Int) {
-        guard number == requestNumber else { return }
+        guard isOpen, number == requestNumber else { return }
         letterOdds = (text, odds)
         let before = textBeforeCursor
         let shown = WritingField.holdsWriting(proxy)
@@ -746,7 +756,7 @@ final class KeyboardModel {
             bars: loggedBars,
             slowestBarMilliseconds: loggedBars.isEmpty ? nil : Int(slowestBar * 1000),
             taps: loggedTaps,
-            keyboardWidth: Double(controller.view.bounds.width)
+            keyboardWidth: Double(controller!.view.bounds.width)
         ))
     }
 
@@ -905,6 +915,7 @@ final class KeyboardModel {
                 let selected = proxy.selectedText ?? ""
                 let reader = DocumentReader(proxy: proxy)
                 let text = selected.isEmpty ? try await reader.readWholeDocument() : selected
+                guard isOpen else { return }
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     show(.message("Type or select some text to polish."))
                     return
@@ -912,6 +923,7 @@ final class KeyboardModel {
                 let started = Date()
                 let polished = try await OnDevicePolisher.polish(text: text, style: style)
                 try Task.checkCancellation()
+                guard isOpen else { return }
                 let id = UUID()
                 PolishHistory.recordPolish(id: id, input: text, style: style, output: polished,
                                            seconds: Date().timeIntervalSince(started))
@@ -950,13 +962,13 @@ final class KeyboardModel {
 
     func record() {
         guard hasFullAccess else { return show(.message(Self.fullAccessMessage)) }
-        controller.openContainingApp(AppGroup.dictationURL)
+        controller!.openContainingApp(AppGroup.dictationURL)
     }
 
     func createStyle() {
         guard hasFullAccess else { return }
         isPickingStyle = false
-        controller.openContainingApp(AppGroup.newStyleURL)
+        controller!.openContainingApp(AppGroup.newStyleURL)
     }
 
     func insertPendingDictation() {

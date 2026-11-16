@@ -99,7 +99,7 @@ final class KeyGridView: UIView {
         popup.hide()
         rows = configuration.layout.rows(bottomRow: configuration.bottomRow, showsNextKeyboard: configuration.showsNextKeyboard).map { specs in
             specs.map { spec in
-                let cap = KeyCapView(spec: spec, controller: model.controller)
+                let cap = KeyCapView(spec: spec, controller: model.controller!)
                 insertSubview(cap, belowSubview: popup)
                 return cap
             }
@@ -133,7 +133,7 @@ final class KeyGridView: UIView {
 
     /// Hands a finished key press to the model, with where it landed for the typing log.
     private func type(_ cap: KeyCapView, for tracker: Tracker) {
-        model.noteTouch(at: convert(tracker.origin, to: model.controller.view), on: cap.spec.key)
+        model.noteTouch(at: convert(tracker.origin, to: model.controller!.view), on: cap.spec.key)
         model.keyUp(cap.spec.key, at: tracker.landing)
     }
 

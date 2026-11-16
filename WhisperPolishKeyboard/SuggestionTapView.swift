@@ -59,7 +59,7 @@ final class SuggestionTapView: UIView {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         let tapped = pressed
         release()
-        if let tapped, let point = touches.first?.location(in: model.controller.view) { model.tapBarSlot(tapped, at: point) }
+        if let tapped, let point = touches.first?.location(in: model.controller!.view) { model.tapBarSlot(tapped, at: point) }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {

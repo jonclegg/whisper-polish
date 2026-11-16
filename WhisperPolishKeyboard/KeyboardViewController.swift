@@ -146,6 +146,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         model.savePersonal()
+        model.close()
         dictationTimer?.invalidate()
         dictationTimer = nil
         if let pasteboardObserver {
