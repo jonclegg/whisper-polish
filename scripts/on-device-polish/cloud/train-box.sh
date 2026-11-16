@@ -45,12 +45,20 @@ up() {
     ami="$(aws ssm get-parameter --region $REGION \
       --name /aws/service/deeplearning/ami/x86_64/oss-nvidia-driver-gpu-pytorch-2.12-ubuntu-24.04/latest/ami-id \
       --query Parameter.Value --output text)"
-    instance="$(aws ec2 run-instances --region $REGION --image-id "$ami" --instance-type "$TYPE" \
-      --key-name $NAME --security-group-ids "$group" \
-      --instance-initiated-shutdown-behavior terminate \
-      --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3,DeleteOnTermination=true}' \
-      --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME}]" \
-      --query 'Instances[0].InstanceId' --output text)"
+    # One zone is often out of L4s; try each zone's default subnet until one has room.
+    instance=""
+    for subnet in $(aws ec2 describe-subnets --region $REGION --filters Name=default-for-az,Values=true \
+                      --query 'Subnets[].SubnetId' --output text); do
+      instance="$(aws ec2 run-instances --region $REGION --image-id "$ami" --instance-type "$TYPE" \
+        --subnet-id "$subnet" --key-name $NAME --security-group-ids "$group" \
+        --instance-initiated-shutdown-behavior terminate \
+        --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3,DeleteOnTermination=true}' \
+        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME}]" \
+        --query 'Instances[0].InstanceId' --output text)" && break
+      log "could not launch in $subnet"
+      instance=""
+    done
+    [ -n "$instance" ] || { log "could not launch $TYPE in any zone of $REGION"; exit 1; }
     log "launched $instance ($TYPE, $ami)"
     aws ec2 wait instance-running --region $REGION --instance-ids "$instance"
     read -r instance ip <<<"$(running_instance)"
