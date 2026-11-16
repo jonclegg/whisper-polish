@@ -1,7 +1,7 @@
 # Cuts filler hedges and intensifiers ("really", "actually", "just", ...) and
 # filler "like" / "you know" from training answers, so the model learns to cut
-# them too. Round three's answers
-# kept about three in four of them, and the model copied that.
+# them too. Round three's answers kept about three in four of them, and the
+# model copied that.
 #
 # Claude (through the `claude -p` CLI, on Jon's subscription) decides which uses
 # carry meaning. A word-level diff then rejects any edit that does more than
