@@ -132,6 +132,7 @@ final class FloatingCursor {
     private var endsParagraph = false
     private var isReading = false
     private var isEnded = false
+    private var isClosed = false
 
     init(proxy: UITextDocumentProxy, width: CGFloat, onChange: @escaping (TrackpadLayout, Int) -> Void) {
         self.proxy = proxy
@@ -159,6 +160,11 @@ final class FloatingCursor {
     /// A read in progress still finishes and puts the cursor under the finger.
     func end() {
         isEnded = true
+    }
+
+    /// The keyboard closed: a read in progress stops without touching the field again.
+    func close() {
+        isClosed = true
     }
 
     private func follow() {
@@ -214,6 +220,7 @@ final class FloatingCursor {
         isReading = true
         Task {
             if up { await readUp(crossingLine: crossingLine) } else { await readDown(crossingLine: crossingLine) }
+            guard !isClosed else { return }
             layout = TrackpadLayout(text: text, width: width)
             isReading = false
             follow()
@@ -224,7 +231,7 @@ final class FloatingCursor {
     /// paragraph's start that means stepping over its line break, which only
     /// happens when the finger has gone up a line.
     private func readUp(crossingLine: Bool) async {
-        guard await moveHost(to: 0) else {
+        guard await moveHost(to: 0), !isClosed else {
             reachedStart = true
             startsParagraph = true
             return
@@ -260,7 +267,7 @@ final class FloatingCursor {
     /// Reads the text after the known text and puts it behind.
     private func readDown(crossingLine: Bool) async {
         let length = text.utf16.count
-        guard await moveHost(to: length) else {
+        guard await moveHost(to: length), !isClosed else {
             reachedEnd = true
             endsParagraph = true
             return
@@ -336,6 +343,7 @@ final class FloatingCursor {
         var context = hostContext
         var lastChange = Date()
         while true {
+            guard !isClosed else { return false }
             let now = Date()
             if hostContext != context {
                 context = hostContext
