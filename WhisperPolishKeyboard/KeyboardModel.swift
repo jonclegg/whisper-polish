@@ -47,11 +47,11 @@ final class KeyboardModel {
     private(set) var options = KeyboardOptions()
     var isPickingStyle = false
 
-    /// iOS frees the controller when it closes the keyboard, while answers from the
-    /// predictor, a polish, or a held delete can still be on their way. Those check
-    /// `isOpen` and drop themselves rather than reach a text field that's gone.
     @ObservationIgnored private(set) weak var controller: KeyboardViewController?
-    private var isOpen: Bool { controller != nil }
+    /// iOS tears down the text field when it closes the keyboard, while answers from
+    /// the predictor, a polish, or a held delete can still be on their way. Those
+    /// check `isOpen` and drop themselves rather than reach a text field that's gone.
+    @ObservationIgnored private var isOpen = false
     @ObservationIgnored let prediction = PredictionEngine()
     /// Set once earlier sessions' learning has loaded into the predictor.
     @ObservationIgnored private var isPredictorLoaded = false
@@ -198,6 +198,7 @@ final class KeyboardModel {
     }
 
     func refresh() {
+        isOpen = true
         learnKeptWords()
         hasFullAccess = controller!.hasFullAccess
         options = KeyboardOptions.load()
@@ -221,6 +222,7 @@ final class KeyboardModel {
 
     /// The host reports each keystroke several times, mostly echoes of edits already synced.
     func textDidChange() {
+        guard isOpen else { return }
         hostText.reconcile(
             reported: proxy.documentContextBeforeInput,
             after: proxy.documentContextAfterInput,
@@ -443,8 +445,10 @@ final class KeyboardModel {
 
     /// The keyboard is closing: work that would still type into the field stops.
     func close() {
+        isOpen = false
         polishTask?.cancel()
         stopDeleting()
+        floatingCursor?.close()
     }
 
     func savePersonal() {
@@ -995,6 +999,7 @@ final class KeyboardModel {
     }
 
     func paste(_ text: String) {
+        guard isOpen else { return }
         insert(text)
         dismissPasteOffer()
         syncWithDocument()

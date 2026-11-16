@@ -75,7 +75,7 @@ private struct SuggestionBar: View {
     }
 
     private var pasteControl: some View {
-        PasteControl(target: model.controller!)
+        PasteControl(target: model.controller)
             .frame(width: 110, height: 32)
     }
 
@@ -303,7 +303,7 @@ private extension View {
 /// The system's paste button. Pasting through it hands over the text without iOS's paste prompt,
 /// which reading the pasteboard directly raises on every new copy.
 private struct PasteControl: UIViewRepresentable {
-    let target: KeyboardViewController
+    let target: KeyboardViewController?
 
     func makeUIView(context: Context) -> UIPasteControl {
         let configuration = UIPasteControl.Configuration()
