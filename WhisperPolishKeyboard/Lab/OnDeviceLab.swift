@@ -30,6 +30,9 @@ enum OnDeviceLab {
         var microBatch: Int?
         var cpuOnly: Bool?
         var draftLength: Int?
+        /// Ends the keyboard after this step, so the next starts in a fresh process
+        /// the way a polish does after iOS has killed the keyboard.
+        var freshProcess: Bool?
     }
 
     struct Input: Codable {
@@ -103,6 +106,7 @@ enum OnDeviceLab {
                 progress.running = nil
                 progress.next = index + 1
                 save(progress)
+                if step.freshProcess == true { exit(0) }
             }
             isRunning = false
             report("Lab: all \(plan.steps.count) steps done")
@@ -228,7 +232,8 @@ enum OnDeviceLab {
     }
 
     private static func llama(_ step: Step, plan: Plan) throws -> [String: Any] {
-        let path = directory.appendingPathComponent("models/\(step.model!)").path
+        // "installed" is the Polish model the app downloaded, so the lab needn't copy 800 MB.
+        let path = step.model == "installed" ? OnDevicePolishModel.fileURL.path : directory.appendingPathComponent("models/\(step.model!)").path
         guard FileManager.default.fileExists(atPath: path) else { throw LabError.missingModel(step.model!) }
         let watcher = LabMemory.PeakWatcher()
         watcher.start()

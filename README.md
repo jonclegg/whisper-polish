@@ -93,7 +93,7 @@ It invents less than half as often. The cost is the last row: when it can't work
 
 ### Running it in a keyboard
 
-- [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. The model is an 812 MB 8-bit GGUF, memory-mapped, so the weights don't count against the keyboard's memory.
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. The model is a 689 MB 8-bit GGUF, memory-mapped, so the weights don't count against the keyboard's memory. Its tokenizer is trimmed to Latin-script tokens, which the keyboard has to hold in memory (`scripts/on-device-polish/prune_vocab.py`).
 - It's loaded for each polish and freed after. A typical note takes 1.5 to 4 seconds on an iPhone Air.
 - The first polish after downloading took 12 seconds, because iOS was paging the file in 16 KB at a time. Reading the file once, start to finish, before loading fixed it ([`OnDevicePolisher.swift`](WhisperPolishKeyboard/OnDevicePolisher.swift)).
 
