@@ -104,7 +104,9 @@ So I had Claude cut those words from the training answers, keeping the ones that
 | Pass the fact check, 500 hard notes | 242 | 231 |
 | Invented something | 47 | 62 |
 
-The fillers are mostly gone. The fact-check numbers moved a little the wrong way. 44 notes went from pass to fail and 33 the other way, which is close to chance. The preference step probably helped less this time because its pairs came from round three's model, not this one.
+The fillers are mostly gone. The fact-check numbers moved a little the wrong way. 44 notes went from pass to fail and 33 the other way, which is close to chance.
+
+I guessed the preference step helped less because its pairs came from round three's model, so I redid it with 5,344 pairs from this model's own polishes. That made it worse: 215 passed, and it invented something on 93 notes. It did leave fewer garbled words in (80, down from 121). My best guess is the new fact checker, Haiku through `claude -p` instead of OpenRouter, flags garbled words more often (19% of its rejections, against 15% before). So the pairs taught the model to guess at garbled words, and guessing is how it invents. The first version stays the round-four model.
 
 Two things broke along the way. llama.cpp changed how it saves Qwen3.5 the day I trained, and the phone's version couldn't read the new file, so the training box now uses the same llama.cpp release as the app. And the fact checker moved from OpenRouter to `claude -p`, so these fact-check numbers aren't comparable to the ones above.
 
