@@ -5,7 +5,8 @@
 **What changed for users:** Polish in the keyboard often failed silently, because iOS
 shut the keyboard down for using too much memory while it polished. Polish now uses
 about 25 MB less at its peak (148–150 MB instead of 173–175 MB, against the 177 MB
-limit) and gives the same results. The app asks once to download the updated Polish
+limit) and gives the same results for English and other Latin-script text. Emoji
+and other scripts still work but may polish slightly differently. The app asks once to download the updated Polish
 model (689 MB, smaller than before), replacing the old one.
 
 **Operator:** the model `polish/qwen3.5-0.8b-r3dpo-latin-Q8_0.gguf` is already in the

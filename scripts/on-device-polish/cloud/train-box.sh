@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A throwaway GPU box for fine-tuning polish models, so training stays off the laptop.
 # With KIND=cpu it is instead a Graviton spot box (c7g.2xlarge, about $0.10/h) for
-# CPU-only jobs such as building and checking GGUF files.
+# CPU-only jobs such as building and checking GGUF files. Pass KIND=cpu to every
+# command for that box, down included, or it acts on the GPU box instead.
 #
 #     cloud/train-box.sh up      # launch (or reuse) the box and print its address
 #     cloud/train-box.sh ssh ... # run a command on it

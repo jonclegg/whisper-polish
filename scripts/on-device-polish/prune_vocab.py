@@ -3,10 +3,12 @@
 # in memory, and the full 248k-token list cost about 57 MB of the keyboard's
 # 177 MB. A token stays when its text is only Latin letters, digits, punctuation
 # and symbols (see KEPT_RANGES); the 256 single-byte tokens and every control
-# token stay too, so any text still tokenizes. Every merge that builds Latin text
-# only joins pieces that are kept too (partial bytes of characters such as ’
-# included), so Latin text tokenizes exactly as before. The embedding rows of
-# dropped tokens go with them.
+# token stay too, so any text still tokenizes. Every piece a merge needs to build
+# a kept token is kept too (partial bytes of characters such as ’ included), so
+# Latin text tokenizes as before; on 147 eval and dictation inputs every token
+# matched. Other text (emoji, other scripts, combining accents) falls back to
+# smaller pieces, down to single bytes, which the model saw less in training.
+# The embedding rows of dropped tokens go with them.
 #
 # With --corpus, a token stays instead when tokenizing the given text (every string
 # in the JSONL files, through the base model's tokenizer.json) produces it, along
