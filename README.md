@@ -91,6 +91,23 @@ It invents less than half as often. The cost is the last row: when it can't work
 - **I shut down the GPU box with the only copy of the weights on it.** All I had was the phone-format GGUF file. [`rebuild_hf.py`](scripts/on-device-polish/rebuild_hf.py) turns a GGUF back into trainable weights by running llama.cpp's converter on tensors filled with their own indexes, to see where each number ends up.
 - **It still isn't as good as the teacher at writing.** The judge prefers the teacher's version about 70% of the time. And custom styles like "translate to Spanish" mostly don't work.
 
+### Round four: words like "really"
+
+Polish kept words like "really", "actually" and "honestly". The model wasn't missing a rule. Its training answers kept about three in four of them, and it copied that.
+
+So I had Claude cut those words from the training answers, keeping the ones that matter ("I just got here", "pretty much done"). A script then compares each edited answer word by word with the original and throws out any edit that did more than delete those words ([`clean_fillers.py`](scripts/on-device-polish/clean_fillers.py)). Then I trained again the same way.
+
+| | Before | After |
+|---|---|---|
+| Filler words left, 110 test notes (186 in the inputs) | 137 | 63 |
+| Filler words left, 500 hard notes (1,083 in the inputs) | 753 | 300 |
+| Pass the fact check, 500 hard notes | 242 | 231 |
+| Invented something | 47 | 62 |
+
+The fillers are mostly gone. The fact-check numbers moved a little the wrong way. 44 notes went from pass to fail and 33 the other way, which is close to chance. The preference step probably helped less this time because its pairs came from round three's model, not this one.
+
+Two things broke along the way. llama.cpp changed how it saves Qwen3.5 the day I trained, and the phone's version couldn't read the new file, so the training box now uses the same llama.cpp release as the app. And the fact checker moved from OpenRouter to `claude -p`, so these fact-check numbers aren't comparable to the ones above.
+
 ### Running it in a keyboard
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) with Metal. The model is an 812 MB 8-bit GGUF, memory-mapped, so the weights don't count against the keyboard's memory.
