@@ -39,9 +39,9 @@ final class LlamaPolisher {
 
     /// `outputsPerBatch` is how many positions in one batch need next-token scores:
     /// 1 for plain decoding, `draftLength + 1` for prompt lookup. llama.cpp sizes its
-    /// working buffer for that many rows of 248k scores, so leaving it at the batch
-    /// size (256) reserves about 250 MB, past the keyboard's 177 MB limit once long
-    /// text fills it.
+    /// working buffer for that many rows of scores, one per token in the vocabulary
+    /// (141k), so leaving it at the batch size reserves over 100 MB, past what the
+    /// keyboard can spare under its 177 MB limit once long text fills it.
     init(modelPath: String, gpuLayers: Int32, contextTokens: Int, threads: Int32, cacheBits: Int, extraBuffers: Bool, microBatch: Int, outputsPerBatch: Int, cpuOnly: Bool, trace: ((String) -> Void)? = nil) throws {
         llama_backend_init()
         var modelParams = llama_model_default_params()

@@ -18,10 +18,12 @@ enum OnDevicePolisher {
         }
     }
 
-    /// Settings measured on an iPhone Air: GPU, 8-bit cache and 256-token batches
-    /// polish a typical note in 1.5–4 s. iOS kills the keyboard past 177 MB, so
-    /// llama.cpp is told only one position per batch needs scores (see LlamaPolisher).
+    /// Settings measured on an iPhone Air: GPU, 8-bit cache and 64-token batches
+    /// polish a typical note in 0.5–3 s. iOS kills the keyboard past 177 MB, so
+    /// llama.cpp is told only one position per batch needs scores (see LlamaPolisher),
+    /// and 64-token batches need a smaller working buffer than 256 at the same speed.
     private static let contextTokens = 2048
+    private static let microBatch = 64
 
     static func polish(text: String, style: PolishStyle) async throws -> String {
         guard OnDevicePolishModel.isInstalled else { throw Failure.modelMissing }
@@ -41,7 +43,7 @@ enum OnDevicePolisher {
                     threads: 4,
                     cacheBits: 8,
                     extraBuffers: false,
-                    microBatch: 256,
+                    microBatch: microBatch,
                     outputsPerBatch: 1,
                     cpuOnly: false,
                     trace: { PolishLog.write("\($0) footprint=\(Int(LabMemory.footprintMB()))MB") }

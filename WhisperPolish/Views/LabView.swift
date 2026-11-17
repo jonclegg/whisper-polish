@@ -91,8 +91,10 @@ struct LabView: View {
         let models = (try? manager.contentsOfDirectory(atPath: Self.groupLab.appendingPathComponent("models").path)) ?? []
         status = "steps \(next)/\(steps.count) · results \(resultCount) · models \(models.count)"
         guard next < steps.count else { return }
-        // A dead keyboard stops beating; refocusing starts a fresh one.
-        let stale = Date().timeIntervalSince(updatedAt ?? .distantPast) > 900
+        // A live keyboard saves progress every 3 s while a step runs; once it stops,
+        // the keyboard is gone (killed, or ended for a fresh-process step) and
+        // refocusing starts a fresh one.
+        let stale = Date().timeIntervalSince(updatedAt ?? .distantPast) > 30
         if stale {
             status += " · relaunching keyboard"
             isFocused = false

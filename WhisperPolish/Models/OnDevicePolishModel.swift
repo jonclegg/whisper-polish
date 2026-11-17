@@ -2,10 +2,13 @@ import Foundation
 
 /// The small polish model the keyboard runs on the phone: Qwen3.5-0.8B tuned (round three, on fact-checked examples, then preference-trained away from its own invented details) on
 /// dictated and phone-typed notes. The app downloads it into the App Group once,
-/// and the keyboard memory-maps it from there.
+/// and the keyboard memory-maps it from there. Its tokenizer keeps only Latin-script
+/// tokens (scripts/on-device-polish/prune_vocab.py), which cuts about 37 MB from
+/// the keyboard while polishing and gives the same polishes for Latin-script text;
+/// emoji and other scripts reach the model in smaller pieces.
 enum OnDevicePolishModel {
-    static let fileName = "qwen3.5-0.8b-r3dpo-Q8_0.gguf"
-    static let byteCount = 811_843_232
+    static let fileName = "qwen3.5-0.8b-r3dpo-latin-Q8_0.gguf"
+    static let byteCount = 688_852_288
     static let remoteURL = ModelHost.baseURL.appendingPathComponent("polish/\(fileName)")
 
     static var fileURL: URL {
