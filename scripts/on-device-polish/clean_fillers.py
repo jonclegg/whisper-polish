@@ -15,6 +15,7 @@
 import concurrent.futures
 import difflib
 import json
+import pathlib
 import re
 import subprocess
 import sys
@@ -23,7 +24,7 @@ import common
 
 FILLERS = ["really", "actually", "basically", "literally", "honestly", "totally", "just", "kind of", "sort of", "pretty much", "like", "you know"]
 FILLER_PATTERN = re.compile(r"\b(" + "|".join(FILLERS) + r")\b", re.IGNORECASE)
-FILLER_WORDS = {word for phrase in FILLERS for word in phrase.split()}
+FILLER_PHRASES = [phrase.split() for phrase in FILLERS]
 BATCH = 20
 WORKERS = 8
 MODEL = "sonnet"
@@ -49,14 +50,28 @@ def words(text):
     return [re.sub(r"[^\w']", "", token).lower() for token in text.split() if re.sub(r"[^\w']", "", token)]
 
 
+def whole_fillers(span):
+    # True when the words are a run of whole filler phrases ("kind of", not "of").
+    if not span:
+        return True
+    return any(span[:len(phrase)] == phrase and whole_fillers(span[len(phrase):]) for phrase in FILLER_PHRASES)
+
+
+def article_swap(before_span, after_span):
+    # "a really awesome" -> "an awesome": one article swapped for the other next to deleted fillers.
+    if len(after_span) != 1 or after_span[0] not in ("a", "an") or not before_span or before_span[0] not in ("a", "an"):
+        return False
+    return whole_fillers(before_span[1:])
+
+
 def only_deletes_fillers(before, after):
     before_words, after_words = words(before), words(after)
     for tag, start, end, new_start, new_end in difflib.SequenceMatcher(None, before_words, after_words, autojunk=False).get_opcodes():
         if tag == "equal":
             continue
-        if tag == "replace" and {*before_words[start:end], *after_words[new_start:new_end]} <= {"a", "an"}:
+        if tag == "replace" and article_swap(before_words[start:end], after_words[new_start:new_end]):
             continue
-        if tag == "delete" and set(before_words[start:end]) <= FILLER_WORDS:
+        if tag == "delete" and whole_fillers(before_words[start:end]):
             continue
         return False
     return True
@@ -65,17 +80,18 @@ def only_deletes_fillers(before, after):
 def clean_batch(texts):
     blocks = "\n\n".join(f'<text id="{index}">\n{text}\n</text>' for index, text in enumerate(texts))
     prompt = PROMPT.format(texts=blocks)
+    problem = "reply had the wrong number of texts"
     for attempt in range(3):
-        completed = subprocess.run(["claude", "-p", "--model", MODEL, "--output-format", "json", "--max-turns", "1"],
-                                   input=prompt, capture_output=True, text=True, timeout=900, cwd=common.DATA)
         try:
+            completed = subprocess.run(["claude", "-p", "--model", MODEL, "--output-format", "json", "--max-turns", "1"],
+                                       input=prompt, capture_output=True, text=True, timeout=900, cwd=common.DATA)
             reply = json.loads(completed.stdout)["result"]
             cleaned = json.loads(re.search(r"\[.*\]", reply, re.S).group(0))
             if len(cleaned) == len(texts) and all(isinstance(item["text"], str) for item in cleaned):
                 return [item["text"].strip() for item in cleaned]
-        except (json.JSONDecodeError, AttributeError, KeyError, TypeError):
-            pass
-    raise RuntimeError(f"cleaning failed: {completed.stdout[-500:]} {completed.stderr[-500:]}")
+        except (json.JSONDecodeError, AttributeError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+            problem = error
+    raise RuntimeError(f"cleaning failed: {problem}")
 
 
 def main():
@@ -91,15 +107,25 @@ def main():
                    if FILLER_PATTERN.search(row[field]) and f"{index}:{field}" not in done})
     print(f"{len(todo)} answers to clean ({len(done)} already done), {len(todo) // BATCH + 1} calls")
     batches = [todo[start:start + BATCH] for start in range(0, len(todo), BATCH)]
+    pathlib.Path(out).parent.mkdir(parents=True, exist_ok=True)
+    failed = 0
     with open(partial, "a") as log, concurrent.futures.ThreadPoolExecutor(WORKERS) as pool:
         futures = {pool.submit(clean_batch, [rows[index][field] for index, field in batch]): batch for batch in batches}
         for count, future in enumerate(concurrent.futures.as_completed(futures), 1):
-            for (index, field), text in zip(futures[future], future.result()):
+            try:
+                cleaned_batch = future.result()
+            except RuntimeError as error:
+                failed += 1
+                print(f"  batch failed: {error}", flush=True)
+                continue
+            for (index, field), text in zip(futures[future], cleaned_batch):
                 done[f"{index}:{field}"] = text
                 log.write(json.dumps({"key": f"{index}:{field}", "text": text}, ensure_ascii=False) + "\n")
             log.flush()
             if count % 25 == 0:
                 print(f"  {count} of {len(batches)} calls", flush=True)
+    if failed:
+        sys.exit(f"{failed} batches failed; run again to finish them")
 
     changed = rejected = 0
     for index, row in enumerate(rows):

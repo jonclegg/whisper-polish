@@ -2,12 +2,13 @@
 # Round four: round three's training, on answers with the filler hedges cut
 # (clean_fillers.py). Trains Qwen3.5-0.8B on the cleaned answers, preference-
 # trains it on the cleaned pairs on the same box, brings back the 8-bit GGUF,
-# and tests it on the 110 test notes and the 492 hard notes.
+# and tests it on the 110 test notes and the 500 hard notes.
 #
 #     ./run_round4.sh    # after clean_fillers.py has written data/sft-r4.jsonl and data/r4/dpo-pairs.jsonl
 set -euo pipefail
 cd "$(dirname "$0")"
-export AWS_PROFILE=jclegg HOURS=10
+# The box idles while run-training.sh tests the first model here, so allow for that.
+export AWS_PROFILE=jclegg HOURS=12
 name=qwen3.5-0.8b-r4
 box=cloud/train-box.sh
 ssh_options=(-i "$HOME/.ssh/whisper-polish-train" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
@@ -16,6 +17,7 @@ ip="$($box up)"
 rsync -a -e "ssh ${ssh_options[*]}" cloud/train_dpo.py data/r4/dpo-pairs.jsonl "ubuntu@$ip:~/"
 $box ssh "source /opt/pytorch/bin/activate && cd ~ && python train_dpo.py runs/$name/merged dpo-pairs.jsonl runs/${name}dpo --lr 5e-6 > runs-${name}dpo.log 2>&1; echo EXIT=\$? >> runs-${name}dpo.log"
 $box ssh "grep -E \"final eval|EXIT=\" runs-${name}dpo.log | tail -3"
+$box ssh "grep -q EXIT=0 runs-${name}dpo.log" || { $box down; exit 1; }
 rsync -a -e "ssh ${ssh_options[*]}" "ubuntu@$ip:~/runs/${name}dpo/model-q8_0.gguf" ~/dev/ondevice-models/tuned/${name}dpo-Q8_0.gguf
 $box down
 model=~/dev/ondevice-models/tuned/${name}dpo-Q8_0.gguf
