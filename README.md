@@ -14,6 +14,8 @@ An iPhone keyboard that can rewrite what you typed. The model runs on the phone.
 
 It's free and open source. This repo has the keyboard, the app, and the scripts that trained both of its models.
 
+The Mac version is in [`mac/`](mac): a menu-bar app where you hold a key, talk, and the cleaned-up text lands wherever you were typing. Speech recognition and cleanup both run on the Mac.
+
 ## What it does
 
 **Polish.** Type or dictate something rough, tap the button, and it's rewritten as an email, a text, a Slack message or bullets. It takes out the "um"s and false starts. If you said "at 1, no wait, 1:30", it keeps 1:30. This happens in the keyboard, on the phone. There's no server and no account.
@@ -88,6 +90,25 @@ It invents less than half as often. The cost is the last row: when it can't work
 - **A model can cheat a fact checker** by copying the input or writing less. The pairs only count a version as good if it actually changed the text and didn't just cut it short ([`make_pairs.py`](scripts/on-device-polish/make_pairs.py)).
 - **I shut down the GPU box with the only copy of the weights on it.** All I had was the phone-format GGUF file. [`rebuild_hf.py`](scripts/on-device-polish/rebuild_hf.py) turns a GGUF back into trainable weights by running llama.cpp's converter on tensors filled with their own indexes, to see where each number ends up.
 - **It still isn't as good as the teacher at writing.** The judge prefers the teacher's version about 70% of the time. And custom styles like "translate to Spanish" mostly don't work.
+
+### Round four: words like "really"
+
+Polish kept words like "really", "actually" and "honestly". The model wasn't missing a rule. Its training answers kept about three in four of them, and it copied that.
+
+So I had Claude cut those words from the training answers, keeping the ones that matter ("I just got here", "pretty much done"). A script then compares each edited answer word by word with the original and throws out any edit that did more than delete those words ([`clean_fillers.py`](scripts/on-device-polish/clean_fillers.py)). Then I trained again the same way.
+
+| | Before | After |
+|---|---|---|
+| Filler words left, 110 test notes (186 in the inputs) | 137 | 63 |
+| Filler words left, 500 hard notes (1,083 in the inputs) | 753 | 300 |
+| Pass the fact check, 500 hard notes | 242 | 231 |
+| Invented something | 47 | 62 |
+
+The fillers are mostly gone. The fact-check numbers moved a little the wrong way. 44 notes went from pass to fail and 33 the other way, which is close to chance.
+
+I guessed the preference step helped less because its pairs came from round three's model, so I redid it with 5,344 pairs from this model's own polishes. That made it worse: 215 passed, and it invented something on 93 notes. It did leave fewer garbled words in (80, down from 121). My best guess is the new fact checker, Haiku through `claude -p` instead of OpenRouter, flags garbled words more often (19% of its rejections, against 15% before). So the pairs taught the model to guess at garbled words, and guessing is how it invents. The first version stays the round-four model.
+
+Two things broke along the way. llama.cpp changed how it saves Qwen3.5 the day I trained, and the phone's version couldn't read the new file, so the training box now uses the same llama.cpp release as the app. And the fact checker moved from OpenRouter to `claude -p`, so these fact-check numbers aren't comparable to the ones above.
 
 ### Running it in a keyboard
 
