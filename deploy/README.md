@@ -9,7 +9,7 @@ The host uses Ubuntu 24.04 with the distribution packages `docker.io` and
 is an A record in the `yallware.com` Route 53 zone.
 
 The uncommitted production `.env` must define `POSTGRES_PASSWORD` and
-`OPENROUTER_API_KEY`. The OpenRouter key is sourced from AWS Secrets Manager.
+`OPENROUTER_API_KEY`. The OpenRouter key is sourced from SSM Parameter Store (`/roger-archive/openrouter`).
 
 From the repository root on the server:
 
